@@ -100,10 +100,16 @@ elif [[ -n "${BAMBUCAM_BRANCH:-}" ]]; then
   info "Target branch: $INSTALL_BRANCH"
 elif [[ "$LOCAL_SOURCE" == "false" ]]; then
   step "Fetching latest release info from GitHub"
-  LATEST_JSON=$(curl -fsSL "${GITHUB_API}/releases/latest")
+  LATEST_JSON=$(curl -sSL "${GITHUB_API}/releases/latest" 2>/dev/null || true)
   INSTALL_TAG=$(echo "$LATEST_JSON" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-  BAMBUCAM_VERSION="${INSTALL_TAG#v}"
-  info "Latest release: $INSTALL_TAG (v$BAMBUCAM_VERSION)"
+  if [[ -z "$INSTALL_TAG" ]]; then
+    warn "No release found on GitHub — installing from main branch"
+    INSTALL_BRANCH="main"
+    INSTALL_TAG=""
+  else
+    BAMBUCAM_VERSION="${INSTALL_TAG#v}"
+    info "Latest release: $INSTALL_TAG (v$BAMBUCAM_VERSION)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -126,9 +132,10 @@ apt-get install -y --no-install-recommends \
 SRC_DIR="$SOURCE_ROOT"
 
 if [[ "$LOCAL_SOURCE" == "false" ]]; then
-  step "Downloading BambuCam ${INSTALL_TAG}"
+  _INSTALL_REF="${INSTALL_TAG:-${INSTALL_BRANCH:-main}}"
+  step "Downloading BambuCam ${_INSTALL_REF}"
   TMP_SRC=$(mktemp -d)
-  TARBALL_URL="https://api.github.com/repos/${BAMBUCAM_REPO}/tarball/${INSTALL_TAG:-${INSTALL_BRANCH:-main}}"
+  TARBALL_URL="https://api.github.com/repos/${BAMBUCAM_REPO}/tarball/${_INSTALL_REF}"
   info "Downloading from $TARBALL_URL"
   curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMP_SRC" --strip-components=1
   SRC_DIR="$TMP_SRC"
