@@ -172,8 +172,6 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
-      position: sticky;
-      top: 60px;
     }
 
     .stream-view {
@@ -869,12 +867,7 @@
       </div>
     </div>
 
-  </section>
-
-  <!-- RIGHT: Sidebar -->
-  <aside class="sidebar">
-
-    <!-- ① Camera Status ─────────────────────────────────────────── -->
+    <!-- ① Kamerastatus ──────────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">Kamerastatus</span>
@@ -904,6 +897,106 @@
         </div>
       </div>
     </div>
+
+    <!-- ② System ────────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">System</span>
+        <span style="font-size:0.65rem;color:var(--text-faint)">↻ 10s</span>
+      </div>
+      <div class="card-body">
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-key">CPU Temp</div>
+            <div class="metric-val" id="sys-temp">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-key">CPU Last</div>
+            <div class="metric-val" id="sys-cpu">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-key">RAM frei</div>
+            <div class="metric-val" id="sys-ram-free">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-key">Disk frei</div>
+            <div class="metric-val" id="sys-disk-free">—</div>
+          </div>
+        </div>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-key">RAM gesamt</span>
+            <span class="info-val" id="sys-ram-total">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Disk gesamt</span>
+            <span class="info-val" id="sys-disk-total">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Hostname</span>
+            <span class="info-val" id="sys-host">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Pi-Modell</span>
+            <span class="info-val" id="sys-pi">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Uptime</span>
+            <span class="info-val" id="sys-uptime">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ Software-Update ───────────────────────────────────────── -->
+    <div class="card" id="update-card">
+      <div class="card-header">
+        <span class="card-title">Software-Update</span>
+      </div>
+      <div class="card-body">
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-key">Installiert</span>
+            <span class="info-val" id="upd-current">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Verfügbar</span>
+            <span class="info-val" id="upd-latest">—</span>
+          </div>
+          <div class="info-row" id="upd-release-row" style="display:none">
+            <span class="info-key">Release</span>
+            <span class="info-val">
+              <a id="upd-release-link" href="#" target="_blank" style="color:var(--info);font-size:0.72rem">
+                Changelog →
+              </a>
+            </span>
+          </div>
+        </div>
+
+        <div class="progress-wrap" id="upd-progress-wrap" style="display:none">
+          <div class="progress-track">
+            <div class="progress-fill" id="upd-progress-fill" style="width:0%"></div>
+          </div>
+          <div class="progress-label" id="upd-progress-label"></div>
+        </div>
+
+        <div class="update-state-msg dim" id="upd-msg"></div>
+
+        <div style="display:flex;flex-direction:column;gap:0.35rem">
+          <button class="btn btn-secondary" id="btn-check-update" onclick="checkUpdate()">
+            Nach Updates suchen
+          </button>
+          <button class="btn btn-accent-outline" id="btn-do-update" onclick="doUpdate()" style="display:none">
+            Jetzt aktualisieren
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- RIGHT: Sidebar -->
+  <aside class="sidebar">
 
     <!-- ② Stream Settings ──────────────────────────────────────── -->
     <div class="card">
@@ -1086,101 +1179,6 @@
           </button>
         </div>
         <div class="snapshot-list" id="snapshot-list"></div>
-      </div>
-    </div>
-
-    <!-- ⑥ System Info ───────────────────────────────────────────── -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">System</span>
-        <span style="font-size:0.65rem;color:var(--text-faint)">↻ 10s</span>
-      </div>
-      <div class="card-body">
-        <div class="metrics-grid">
-          <div class="metric-card">
-            <div class="metric-key">CPU Temp</div>
-            <div class="metric-val" id="sys-temp">—</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-key">CPU Last</div>
-            <div class="metric-val" id="sys-cpu">—</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-key">RAM frei</div>
-            <div class="metric-val" id="sys-ram-free">—</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-key">Disk frei</div>
-            <div class="metric-val" id="sys-disk-free">—</div>
-          </div>
-        </div>
-        <div class="info-grid">
-          <div class="info-row">
-            <span class="info-key">RAM gesamt</span>
-            <span class="info-val" id="sys-ram-total">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Disk gesamt</span>
-            <span class="info-val" id="sys-disk-total">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Hostname</span>
-            <span class="info-val" id="sys-host">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Pi-Modell</span>
-            <span class="info-val" id="sys-pi">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Uptime</span>
-            <span class="info-val" id="sys-uptime">—</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ⑦ Software Update ──────────────────────────────────────── -->
-    <div class="card" id="update-card">
-      <div class="card-header">
-        <span class="card-title">Software-Update</span>
-      </div>
-      <div class="card-body">
-        <div class="info-grid">
-          <div class="info-row">
-            <span class="info-key">Installiert</span>
-            <span class="info-val" id="upd-current">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Verfügbar</span>
-            <span class="info-val" id="upd-latest">—</span>
-          </div>
-          <div class="info-row" id="upd-release-row" style="display:none">
-            <span class="info-key">Release</span>
-            <span class="info-val">
-              <a id="upd-release-link" href="#" target="_blank" style="color:var(--info);font-size:0.72rem">
-                Changelog →
-              </a>
-            </span>
-          </div>
-        </div>
-
-        <div class="progress-wrap" id="upd-progress-wrap" style="display:none">
-          <div class="progress-track">
-            <div class="progress-fill" id="upd-progress-fill" style="width:0%"></div>
-          </div>
-          <div class="progress-label" id="upd-progress-label"></div>
-        </div>
-
-        <div class="update-state-msg dim" id="upd-msg"></div>
-
-        <div style="display:flex;flex-direction:column;gap:0.35rem">
-          <button class="btn btn-secondary" id="btn-check-update" onclick="checkUpdate()">
-            Nach Updates suchen
-          </button>
-          <button class="btn btn-accent-outline" id="btn-do-update" onclick="doUpdate()" style="display:none">
-            Jetzt aktualisieren
-          </button>
-        </div>
       </div>
     </div>
 
