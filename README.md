@@ -196,23 +196,6 @@ HTTP :8080          RTSP :8554
 
 ---
 
-## Planned Features / Ideas
-
-- [ ] **Motion detection** — record on motion, push notifications (Telegram/Discord)
-- [ ] **Timelapse** — auto-timelapse of print jobs
-- [ ] **OSD / Overlay** — timestamp, printer name, temperature overlay on stream
-- [ ] **AI spaghetti detection** — detect failed prints (Obico-style)
-- [ ] **Multi-camera** — multiple cameras on one Pi, multiple streams
-- [ ] **Circular recording** — keep last N minutes to disk
-- [ ] **ONVIF support** — industry-standard camera protocol
-- [ ] **IR LED control** — night vision for NoIR cameras
-- [ ] **mDNS / Bonjour** — zero-config discovery on local network (`bambucam.local`)
-- [ ] **Docker image** — containerized deployment
-- [ ] **HTTPS / TLS** — secure connections with Let's Encrypt
-- [ ] **WebUI redesign** — full design via Claude Design
-
----
-
 ## Development
 
 ```bash
