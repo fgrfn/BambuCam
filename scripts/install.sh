@@ -243,9 +243,17 @@ step "Installing systemd service"
 install -m 644 "$SRC_DIR/systemd/bambucam.service" \
   /etc/systemd/system/bambucam.service
 
-systemctl daemon-reload
-systemctl enable bambucam.service
-info "Service enabled: bambucam.service"
+SYSTEMD_OK=false
+if command -v systemctl &>/dev/null && systemctl --version &>/dev/null 2>&1; then
+  if systemctl daemon-reload 2>/dev/null && systemctl enable bambucam.service 2>/dev/null; then
+    SYSTEMD_OK=true
+    info "Service enabled: bambucam.service"
+  fi
+fi
+if [[ "$SYSTEMD_OK" == "false" ]]; then
+  warn "systemd not available (LXC/container?) — service file installed but not enabled."
+  warn "  Start BambuCam manually: sudo -u $SERVICE_USER $BAMBUCAM_DIR/venv/bin/bambucam"
+fi
 
 # ---------------------------------------------------------------------------
 # Camera (raspi-config enable legacy camera interface if needed)
@@ -280,8 +288,13 @@ echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━�
 echo -e "${GREEN}${BOLD}  BambuCam installation complete!${NC}"
 echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  ${BOLD}Start:${NC}     sudo systemctl start bambucam"
-echo -e "  ${BOLD}Logs:${NC}      journalctl -u bambucam -f"
+if [[ "$SYSTEMD_OK" == "true" ]]; then
+  echo -e "  ${BOLD}Start:${NC}     sudo systemctl start bambucam"
+  echo -e "  ${BOLD}Logs:${NC}      journalctl -u bambucam -f"
+else
+  echo -e "  ${BOLD}Start:${NC}     sudo -u $SERVICE_USER $BAMBUCAM_DIR/venv/bin/bambucam"
+  echo -e "  ${BOLD}Logs:${NC}      (stdout of the command above)"
+fi
 echo ""
 echo -e "  ${BOLD}WebUI:${NC}     ${CYAN}http://${LOCAL_IP}:8080${NC}"
 echo -e "  ${BOLD}RTSP URL:${NC}  ${CYAN}rtsp://${LOCAL_IP}:8554/cam${NC}  ← BambuBuddy"
