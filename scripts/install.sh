@@ -197,16 +197,15 @@ info "MediaMTX → /usr/local/bin/mediamtx"
 step "Installing BambuCam Python package"
 
 # Re-use existing venv if present (keeps user data intact on update)
+# --system-site-packages lets the venv see python3-picamera2 installed via apt
 if [[ ! -d "$BAMBUCAM_DIR/venv" ]]; then
-  python3 -m venv "$BAMBUCAM_DIR/venv"
+  python3 -m venv --system-site-packages "$BAMBUCAM_DIR/venv"
 fi
 
 PIP="$BAMBUCAM_DIR/venv/bin/pip"
 
 "$PIP" install --quiet --upgrade pip
-"$PIP" install --quiet \
-  --system-site-packages \
-  "$SRC_DIR"
+"$PIP" install --quiet "$SRC_DIR"
 
 info "BambuCam $(${BAMBUCAM_DIR}/venv/bin/bambucam --version 2>/dev/null || echo installed)"
 
