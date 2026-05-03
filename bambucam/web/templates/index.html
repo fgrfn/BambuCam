@@ -4,400 +4,1300 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BambuCam</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
-    /* Minimal baseline — full design via Claude Design in a later step */
+    /* ── Reset & base ──────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0f0f0f;
-      color: #e0e0e0;
-      min-height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
+
+    :root {
+      --bg:       #0f0f0f;
+      --surface:  #1a1a1a;
+      --surface2: #222222;
+      --border:   #2a2a2a;
+      --border2:  #333333;
+      --text:     #d8d8d8;
+      --text-dim: #888888;
+      --text-faint: #555555;
+      --accent:   #00c896;
+      --accent-dim: #00c89620;
+      --accent-hover: #00e0aa;
+      --error:    #e05555;
+      --error-dim: #e0555520;
+      --warn:     #f0a040;
+      --info:     #5599ee;
+      --radius:   6px;
+      --radius-lg: 10px;
     }
+
+    html { font-size: 14px; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); }
+
+    /* ── Scrollbar ─────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
     header {
-      background: #1a1a1a;
-      border-bottom: 1px solid #333;
-      padding: 0.75rem 1.5rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.25rem;
+      height: 48px;
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 0.75rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      flex-shrink: 0;
     }
-    header h1 { font-size: 1.25rem; font-weight: 700; color: #00c896; }
-    header .badge {
-      background: #00c896;
-      color: #000;
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 0.1rem 0.4rem;
-      border-radius: 4px;
-      text-transform: uppercase;
-    }
-    .status-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: #555; display: inline-block;
-    }
-    .status-dot.ok { background: #00c896; }
-    .status-dot.error { background: #e05555; }
 
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .logo-icon {
+      width: 26px;
+      height: 26px;
+      background: var(--accent);
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-icon svg {
+      width: 15px;
+      height: 15px;
+      fill: #000;
+    }
+
+    .logo-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .logo-version {
+      font-size: 0.64rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+    }
+
+    .header-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border2);
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-faint);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.ok     { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+    .status-dot.error  { background: var(--error);  box-shadow: 0 0 6px var(--error); }
+    .status-dot.pulse  { animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .header-link {
+      font-size: 0.75rem;
+      color: var(--text-faint);
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius);
+      transition: color 0.15s, background 0.15s;
+    }
+    .header-link:hover { color: var(--text-dim); background: var(--surface2); }
+
+    /* ── Main layout ───────────────────────────────────────────────────── */
     main {
       display: grid;
       grid-template-columns: 1fr 320px;
       gap: 1rem;
-      padding: 1rem 1.5rem;
-      max-width: 1400px;
+      padding: 1rem 1.25rem;
+      flex: 1;
+      align-items: start;
+      max-width: 1440px;
       width: 100%;
       margin: 0 auto;
     }
 
-    .stream-panel { display: flex; flex-direction: column; gap: 0.75rem; }
+    /* ── Stream panel (left) ───────────────────────────────────────────── */
+    .stream-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      position: sticky;
+      top: 60px;
+    }
+
     .stream-view {
       background: #000;
-      border: 1px solid #333;
-      border-radius: 8px;
-      aspect-ratio: 16/9;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      aspect-ratio: 16 / 9;
       overflow: hidden;
       position: relative;
     }
+
     .stream-view img {
-      width: 100%; height: 100%; object-fit: contain;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
     }
+
+    /* Placeholder shown when stream is not live */
+    .stream-view:not(.live) img {
+      visibility: hidden;
+    }
+
+    .stream-view::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(
+          45deg,
+          #111 0px, #111 20px,
+          #0d0d0d 20px, #0d0d0d 40px
+        );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .stream-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .stream-placeholder svg { opacity: 0.18; }
+    .stream-placeholder span {
+      font-size: 0.72rem;
+      color: var(--text-faint);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Hide placeholder once stream loads */
+    .stream-view.live .stream-placeholder { display: none; }
+    .stream-view.live::before { display: none; }
+
     .stream-overlay {
-      position: absolute; bottom: 0; left: 0; right: 0;
-      background: linear-gradient(transparent, rgba(0,0,0,0.7));
-      padding: 0.5rem 0.75rem;
-      display: flex; justify-content: space-between; align-items: flex-end;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(transparent, rgba(0,0,0,0.75));
+      padding: 1rem 0.75rem 0.6rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      z-index: 3;
     }
-    .stream-urls { font-size: 0.72rem; color: #aaa; }
-    .stream-urls a { color: #00c896; text-decoration: none; }
 
-    .controls { display: flex; flex-direction: column; gap: 0.75rem; }
-    .card {
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      padding: 1rem;
+    .stream-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      background: rgba(0,200,150,0.18);
+      border: 1px solid rgba(0,200,150,0.35);
+      color: var(--accent);
+      padding: 0.15em 0.5em;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
     }
-    .card h2 {
-      font-size: 0.8rem;
+
+    .viewers-badge {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--border2);
+      padding: 0.15em 0.5em;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .viewers-badge.hidden { display: none; }
+
+    /* Stream URL chips */
+    .url-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .url-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.4rem 0.6rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .url-chip:hover { border-color: var(--border2); background: var(--surface2); }
+    .url-chip.copied { border-color: var(--accent) !important; }
+
+    .url-chip-label {
+      font-weight: 500;
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #888;
-      margin-bottom: 0.75rem;
+      color: var(--text-dim);
+      min-width: 3.2rem;
+      flex-shrink: 0;
+    }
+    .url-chip-label.rtsp  { color: var(--accent); }
+    .url-chip-label.hls   { color: var(--info); }
+    .url-chip-label.mjpeg { color: var(--warn); }
+
+    .url-chip-url {
+      flex: 1;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .field { margin-bottom: 0.6rem; }
-    .field label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 0.25rem; }
-    .field select, .field input[type=range], .field input[type=number] {
-      width: 100%; background: #111; border: 1px solid #333;
-      color: #e0e0e0; border-radius: 4px; padding: 0.4rem 0.5rem;
-      font-size: 0.85rem;
+    .url-chip-copy {
+      color: var(--text-faint);
+      flex-shrink: 0;
+      transition: color 0.15s;
     }
-    .field input[type=range] { padding: 0; cursor: pointer; accent-color: #00c896; }
-    .range-row { display: flex; align-items: center; gap: 0.5rem; }
-    .range-row span { font-size: 0.8rem; color: #aaa; width: 2.5rem; text-align: right; }
+    .url-chip:hover .url-chip-copy { color: var(--text-dim); }
 
-    .toggle-row {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 0.5rem;
+    /* ── Sidebar ───────────────────────────────────────────────────────── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
     }
-    .toggle-row label { font-size: 0.85rem; color: #ccc; }
-    .toggle {
-      position: relative; display: inline-block; width: 36px; height: 20px;
-    }
-    .toggle input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute; cursor: pointer; inset: 0;
-      background: #444; border-radius: 20px; transition: 0.2s;
-    }
-    .slider::before {
-      content: ""; position: absolute;
-      height: 14px; width: 14px; left: 3px; bottom: 3px;
-      background: #fff; border-radius: 50%; transition: 0.2s;
-    }
-    .toggle input:checked + .slider { background: #00c896; }
-    .toggle input:checked + .slider::before { transform: translateX(16px); }
 
-    button {
-      background: #00c896; color: #000; border: none;
-      border-radius: 6px; padding: 0.5rem 1rem; cursor: pointer;
-      font-weight: 600; font-size: 0.85rem; width: 100%; margin-top: 0.25rem;
+    /* ── Card ──────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
     }
-    button.secondary {
-      background: #2a2a2a; color: #ccc; border: 1px solid #444;
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 0.875rem 0;
     }
-    button:hover { opacity: 0.85; }
+
+    .card-title {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+    }
+
+    .card-body {
+      padding: 0.6rem 0.875rem 0.875rem;
+    }
+
+    /* ── Info rows ─────────────────────────────────────────────────────── */
+    .info-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
 
     .info-row {
-      display: flex; justify-content: space-between;
-      font-size: 0.8rem; padding: 0.25rem 0;
-      border-bottom: 1px solid #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid var(--border);
+      gap: 0.5rem;
     }
     .info-row:last-child { border-bottom: none; }
-    .info-row .key { color: #888; }
-    .info-row .val { color: #ccc; font-family: monospace; }
 
-    .url-box {
-      background: #111; border: 1px solid #333; border-radius: 4px;
-      padding: 0.4rem 0.5rem; font-family: monospace; font-size: 0.75rem;
-      color: #00c896; word-break: break-all; margin-bottom: 0.4rem;
-      cursor: pointer; user-select: all;
+    .info-key {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      flex-shrink: 0;
     }
-    .url-box:hover { border-color: #00c896; }
 
-    footer {
-      background: #1a1a1a;
-      border-top: 1px solid #333;
-      padding: 0.5rem 1.5rem;
+    .info-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text);
+      text-align: right;
+      word-break: break-all;
+    }
+    .info-val.accent { color: var(--accent); }
+    .info-val.warn   { color: var(--warn); }
+    .info-val.error  { color: var(--error); }
+
+    /* ── Form fields ───────────────────────────────────────────────────── */
+    .field {
+      margin-bottom: 0.55rem;
+    }
+    .field:last-of-type { margin-bottom: 0; }
+
+    .field-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 0.25rem;
+    }
+
+    .field-label-val {
+      font-family: 'JetBrains Mono', monospace;
       font-size: 0.72rem;
-      color: #555;
+      color: var(--text);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      padding: 0.05em 0.35em;
+      border-radius: 3px;
+      min-width: 2.8em;
       text-align: center;
     }
 
+    select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 0.4rem 0.55rem;
+      font-size: 0.8rem;
+      font-family: inherit;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.55rem center;
+      padding-right: 1.75rem;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+      height: 3px;
+      background: var(--border2);
+      border-radius: 2px;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.2); }
+
+    /* ── Toggle switch ─────────────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .toggle-row:last-of-type { border-bottom: none; }
+    .toggle-row.hidden { display: none !important; }
+
+    .toggle-label {
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #333;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-thumb {
+      position: absolute;
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      pointer-events: none;
+    }
+    .toggle-switch input:checked ~ .toggle-track { background: var(--accent); }
+    .toggle-switch input:checked ~ .toggle-thumb { transform: translateX(16px); }
+
+    /* ── Buttons ───────────────────────────────────────────────────────── */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.45rem 0.875rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+      width: 100%;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn:not(:disabled):hover { opacity: 0.85; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+    }
+
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border2);
+    }
+
+    .btn-accent-outline {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid rgba(0,200,150,0.35);
+    }
+    .btn-accent-outline:not(:disabled):hover { background: rgba(0,200,150,0.15); opacity: 1; }
+
+    .btn-danger-outline {
+      background: var(--error-dim);
+      color: var(--error);
+      border: 1px solid rgba(224,85,85,0.35);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.6rem;
+    }
+    .btn-row .btn { flex: 1; }
+
+    /* ── Spinner ───────────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Progress bar ──────────────────────────────────────────────────── */
+    .progress-wrap { margin: 0.5rem 0 0.25rem; }
+    .progress-track {
+      background: var(--surface2);
+      border-radius: 3px;
+      height: 5px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+    .progress-label {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 0.3rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Copy box ──────────────────────────────────────────────────────── */
+    .copy-box {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 0.4rem 0.6rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      word-break: break-all;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      margin-bottom: 0.4rem;
+    }
+    .copy-box:hover { border-color: rgba(0,200,150,0.4); }
+    .copy-box.copied { border-color: var(--accent); }
+    .copy-box-url { flex: 1; }
+    .copy-box-icon { flex-shrink: 0; opacity: 0.5; }
+    .copy-box.secondary { color: var(--info); }
+
+    /* ── Snapshot list ─────────────────────────────────────────────────── */
+    .snapshot-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      margin-top: 0.5rem;
+    }
+
+    .snapshot-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.4rem;
+      padding: 0.3rem 0.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.72rem;
+    }
+
+    .snapshot-name {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .snapshot-meta {
+      color: var(--text-faint);
+      font-size: 0.65rem;
+      white-space: nowrap;
+    }
+
+    .snapshot-dl {
+      color: var(--info);
+      font-size: 0.75rem;
+      flex-shrink: 0;
+      padding: 0.1em 0.3em;
+    }
+    .snapshot-dl:hover { color: var(--accent); }
+
+    /* ── System metrics grid ───────────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .metric-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.45rem 0.55rem;
+    }
+
+    .metric-key {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.15rem;
+    }
+
+    .metric-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .metric-val.ok   { color: var(--accent); }
+    .metric-val.warn { color: var(--warn); }
+    .metric-val.crit { color: var(--error); }
+
+    /* ── Update states ─────────────────────────────────────────────────── */
+    .update-state-msg {
+      font-size: 0.78rem;
+      min-height: 1.2em;
+      margin: 0.35rem 0;
+    }
+    .update-state-msg.ok    { color: var(--accent); }
+    .update-state-msg.error { color: var(--error); }
+    .update-state-msg.dim   { color: var(--text-dim); }
+
+    /* ── Toast notifications ───────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 1.25rem;
+      right: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 0.875rem;
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+      font-weight: 500;
+      pointer-events: auto;
+      animation: toastIn 0.2s ease forwards;
+      max-width: 280px;
+      border: 1px solid;
+    }
+    .toast.out { animation: toastOut 0.2s ease forwards; }
+    .toast.success {
+      background: #0e2e22;
+      border-color: rgba(0,200,150,0.35);
+      color: var(--accent);
+    }
+    .toast.error {
+      background: #2e0e0e;
+      border-color: rgba(224,85,85,0.35);
+      color: var(--error);
+    }
+    @keyframes toastIn  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(4px); } }
+
+    .toast-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
+    /* ── Section divider ───────────────────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0.55rem 0;
+    }
+
+    /* ── Instruction text ──────────────────────────────────────────────── */
+    .hint {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+      margin-bottom: 0.5rem;
+    }
+    .hint em { color: var(--text); font-style: normal; }
+
+    /* ── Footer ────────────────────────────────────────────────────────── */
+    footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 0.5rem 1.25rem;
+      font-size: 0.68rem;
+      color: var(--text-faint);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    /* ── Mobile ────────────────────────────────────────────────────────── */
     @media (max-width: 768px) {
-      main { grid-template-columns: 1fr; }
+      main {
+        grid-template-columns: 1fr;
+        padding: 0.75rem;
+      }
+      .stream-panel {
+        position: static;
+      }
+      .metrics-grid {
+        grid-template-columns: 1fr 1fr;
+      }
     }
   </style>
 </head>
 <body>
 
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
 <header>
-  <h1>BambuCam</h1>
-  <span class="badge">v0.1</span>
-  <span id="status-dot" class="status-dot" title="Camera status"></span>
-  <span id="status-text" style="font-size:0.8rem;color:#888">Verbinde…</span>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="5"/>
+        <circle cx="12" cy="12" r="9" fill="none" stroke="#000" stroke-width="2"/>
+        <circle cx="19" cy="5" r="2.5"/>
+      </svg>
+    </div>
+    <span class="logo-name">BambuCam</span>
+    <span class="logo-version" id="hdr-version">v0.1.0</span>
+  </div>
+
+  <div class="header-sep"></div>
+
+  <div class="status-pill">
+    <span class="status-dot pulse" id="status-dot"></span>
+    <span id="status-text">Verbinde…</span>
+  </div>
+
+  <div class="header-right">
+    <a class="header-link" href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.477 2 2 6.484 2 12.021c0 4.428 2.865 8.185 6.839 9.504.5.092.682-.217.682-.482 0-.237-.009-.868-.014-1.703-2.782.605-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.026 2.747-1.026.546 1.378.202 2.397.1 2.65.64.7 1.028 1.595 1.028 2.688 0 3.848-2.338 4.695-4.566 4.943.36.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .267.18.579.688.481C19.138 20.2 22 16.444 22 12.021 22 6.484 17.522 2 12 2z"/>
+      </svg>
+      GitHub
+    </a>
+  </div>
 </header>
 
+<!-- ── Main content ─────────────────────────────────────────────────────── -->
 <main>
-  <!-- Live stream preview -->
+
+  <!-- LEFT: Stream panel -->
   <section class="stream-panel">
+
+    <!-- 16:9 stream view -->
     <div class="stream-view">
-      <img id="stream-img" src="/stream" alt="Live Stream" />
+      <img id="stream-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Live Stream" />
+      <div class="stream-placeholder" id="stream-placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/><circle cx="19" cy="5" r="2" fill="white" stroke="none"/>
+        </svg>
+        <span>Kein Stream</span>
+      </div>
       <div class="stream-overlay">
-        <div class="stream-urls">
-          MJPEG: <a id="mjpeg-url" href="/stream" target="_blank">/stream</a> &nbsp;|&nbsp;
-          Snapshot: <a id="snap-url" href="/snapshot" target="_blank">/snapshot</a>
-        </div>
-        <div id="fps-badge" style="font-size:0.72rem;color:#aaa"></div>
+        <span class="stream-badge" id="stream-badge">MJPEG</span>
+        <span class="viewers-badge hidden" id="viewers-badge">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5a7 7 0 100 14A7 7 0 0012 5zm-9 7a9 9 0 1118 0 9 9 0 01-18 0z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span id="viewers-count">0</span> Zuschauer
+        </span>
       </div>
     </div>
 
-    <!-- BambuBuddy Integration Card -->
-    <div class="card">
-      <h2>BambuBuddy / BambuStudio Integration</h2>
-      <p style="font-size:0.78rem;color:#888;margin-bottom:0.6rem">
-        RTSP-URL in BambuBuddy unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:
-      </p>
-      <div class="url-box" id="rtsp-url" title="Klicken zum Kopieren">rtsp://…</div>
-      <div class="url-box" id="hls-url" title="Klicken zum Kopieren" style="color:#6bb5ff">http://…/index.m3u8</div>
-      <button class="secondary" onclick="copyUrl('rtsp-url')">RTSP URL kopieren</button>
+    <!-- URL chips -->
+    <div class="url-chips">
+      <div class="url-chip" id="chip-rtsp" onclick="copyChip(this)">
+        <span class="url-chip-label rtsp">RTSP</span>
+        <span class="url-chip-url" id="chip-rtsp-url">rtsp://…</span>
+        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+        </svg>
+      </div>
+      <div class="url-chip" id="chip-hls" onclick="copyChip(this)">
+        <span class="url-chip-label hls">HLS</span>
+        <span class="url-chip-url" id="chip-hls-url">http://…/index.m3u8</span>
+        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+        </svg>
+      </div>
+      <div class="url-chip" id="chip-mjpeg" onclick="copyChip(this)">
+        <span class="url-chip-label mjpeg">MJPEG</span>
+        <span class="url-chip-url" id="chip-mjpeg-url">http://…/stream</span>
+        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+        </svg>
+      </div>
     </div>
+
   </section>
 
-  <!-- Right sidebar: controls -->
-  <aside class="controls">
+  <!-- RIGHT: Sidebar -->
+  <aside class="sidebar">
 
-    <!-- Camera status -->
+    <!-- ① Camera Status ─────────────────────────────────────────── -->
     <div class="card">
-      <h2>Kamera</h2>
-      <div id="cam-info">
-        <div class="info-row"><span class="key">Modell</span><span class="val" id="cam-model">—</span></div>
-        <div class="info-row"><span class="key">Sensor</span><span class="val" id="cam-sensor">—</span></div>
-        <div class="info-row"><span class="key">Backend</span><span class="val" id="cam-backend">—</span></div>
-        <div class="info-row"><span class="key">Auflösung</span><span class="val" id="cam-res">—</span></div>
-        <div class="info-row"><span class="key">Framerate</span><span class="val" id="cam-fps">—</span></div>
+      <div class="card-header">
+        <span class="card-title">Kamerastatus</span>
       </div>
-    </div>
-
-    <!-- Resolution & FPS -->
-    <div class="card">
-      <h2>Auflösung & Framerate</h2>
-      <div class="field">
-        <label>Auflösung</label>
-        <select id="sel-resolution"></select>
-      </div>
-      <div class="field">
-        <label>Framerate (fps)</label>
-        <select id="sel-framerate"></select>
-      </div>
-      <div class="field">
-        <label>RTSP Bitrate (kbps)</label>
-        <div class="range-row">
-          <input type="range" id="sl-bitrate" min="500" max="8000" step="500" value="2000" oninput="document.getElementById('val-bitrate').textContent=this.value" />
-          <span id="val-bitrate">2000</span>
+      <div class="card-body">
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-key">Modell</span>
+            <span class="info-val" id="cam-model">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Sensor</span>
+            <span class="info-val" id="cam-sensor">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Backend</span>
+            <span class="info-val" id="cam-backend">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Auflösung</span>
+            <span class="info-val" id="cam-res">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Framerate</span>
+            <span class="info-val" id="cam-fps">—</span>
+          </div>
         </div>
       </div>
-      <button onclick="applyStreamSettings()">Übernehmen</button>
     </div>
 
-    <!-- Image settings -->
+    <!-- ② Stream Settings ──────────────────────────────────────── -->
     <div class="card">
-      <h2>Bild</h2>
+      <div class="card-header">
+        <span class="card-title">Streameinstellungen</span>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <div class="field-label"><span>Auflösung</span></div>
+          <select id="sel-resolution"></select>
+        </div>
+        <div class="field">
+          <div class="field-label"><span>Framerate</span></div>
+          <select id="sel-framerate"></select>
+        </div>
+        <div class="field">
+          <div class="field-label">
+            <span>RTSP Bitrate</span>
+            <span class="field-label-val"><span id="val-bitrate">2000</span> kbps</span>
+          </div>
+          <input type="range" id="sl-bitrate" min="500" max="8000" step="500" value="2000"
+            oninput="document.getElementById('val-bitrate').textContent=this.value" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-stream-apply" onclick="applyStreamSettings()">
+            Übernehmen
+          </button>
+        </div>
+      </div>
+    </div>
 
-      <div class="field">
-        <label>Helligkeit</label>
-        <div class="range-row">
+    <!-- ③ Image Settings ───────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Bildeinstellungen</span>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <div class="field-label">
+            <span>Helligkeit</span>
+            <span class="field-label-val" id="val-brightness">0.0</span>
+          </div>
           <input type="range" id="sl-brightness" min="-100" max="100" step="1" value="0"
-            oninput="document.getElementById('val-brightness').textContent=this.value" />
-          <span id="val-brightness">0</span>
+            oninput="document.getElementById('val-brightness').textContent=(this.value/100).toFixed(2)" />
         </div>
-      </div>
-      <div class="field">
-        <label>Kontrast</label>
-        <div class="range-row">
-          <input type="range" id="sl-contrast" min="0" max="200" step="1" value="100"
-            oninput="document.getElementById('val-contrast').textContent=this.value" />
-          <span id="val-contrast">100</span>
+        <div class="field">
+          <div class="field-label">
+            <span>Kontrast</span>
+            <span class="field-label-val" id="val-contrast">1.0</span>
+          </div>
+          <input type="range" id="sl-contrast" min="0" max="3200" step="10" value="100"
+            oninput="document.getElementById('val-contrast').textContent=(this.value/100).toFixed(1)" />
         </div>
-      </div>
-      <div class="field">
-        <label>Sättigung</label>
-        <div class="range-row">
-          <input type="range" id="sl-saturation" min="0" max="200" step="1" value="100"
-            oninput="document.getElementById('val-saturation').textContent=this.value" />
-          <span id="val-saturation">100</span>
+        <div class="field">
+          <div class="field-label">
+            <span>Sättigung</span>
+            <span class="field-label-val" id="val-saturation">1.0</span>
+          </div>
+          <input type="range" id="sl-saturation" min="0" max="3200" step="10" value="100"
+            oninput="document.getElementById('val-saturation').textContent=(this.value/100).toFixed(1)" />
         </div>
-      </div>
-      <div class="field">
-        <label>Schärfe</label>
-        <div class="range-row">
-          <input type="range" id="sl-sharpness" min="0" max="160" step="1" value="100"
-            oninput="document.getElementById('val-sharpness').textContent=this.value" />
-          <span id="val-sharpness">100</span>
+        <div class="field">
+          <div class="field-label">
+            <span>Schärfe</span>
+            <span class="field-label-val" id="val-sharpness">1.0</span>
+          </div>
+          <input type="range" id="sl-sharpness" min="0" max="1600" step="10" value="100"
+            oninput="document.getElementById('val-sharpness').textContent=(this.value/100).toFixed(1)" />
         </div>
-      </div>
 
-      <div class="field">
-        <label>Belichtungsmodus</label>
-        <select id="sel-exposure">
-          <option value="auto">Auto</option>
-          <option value="sport">Sport (kurze Belichtung)</option>
-          <option value="night">Nacht (lange Belichtung)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Weißabgleich</label>
-        <select id="sel-awb">
-          <option value="auto">Auto</option>
-          <option value="sunlight">Sonnenlicht</option>
-          <option value="cloudy">Bewölkt</option>
-          <option value="shade">Schatten</option>
-          <option value="tungsten">Glühlampe</option>
-          <option value="fluorescent">Leuchtstoffröhre</option>
-        </select>
-      </div>
+        <div class="divider"></div>
 
-      <div class="toggle-row">
-        <label>Vertikal spiegeln</label>
-        <label class="toggle"><input type="checkbox" id="chk-vflip" /><span class="slider"></span></label>
-      </div>
-      <div class="toggle-row">
-        <label>Horizontal spiegeln</label>
-        <label class="toggle"><input type="checkbox" id="chk-hflip" /><span class="slider"></span></label>
-      </div>
-      <div class="toggle-row" id="row-autofocus" style="display:none">
-        <label>Autofokus</label>
-        <label class="toggle"><input type="checkbox" id="chk-autofocus" checked /><span class="slider"></span></label>
-      </div>
-      <div class="toggle-row" id="row-hdr" style="display:none">
-        <label>HDR</label>
-        <label class="toggle"><input type="checkbox" id="chk-hdr" /><span class="slider"></span></label>
-      </div>
+        <div class="field">
+          <div class="field-label"><span>Belichtungsmodus</span></div>
+          <select id="sel-exposure">
+            <option value="auto">Auto</option>
+            <option value="sport">Sport</option>
+            <option value="night">Nacht</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="field-label"><span>Weißabgleich</span></div>
+          <select id="sel-awb">
+            <option value="auto">Auto</option>
+            <option value="sunlight">Sonnenlicht</option>
+            <option value="cloudy">Bewölkt</option>
+            <option value="shade">Schatten</option>
+            <option value="tungsten">Glühlampe</option>
+            <option value="fluorescent">Leuchtstoffröhre</option>
+          </select>
+        </div>
 
-      <button onclick="applyImageSettings()">Bild-Einstellungen anwenden</button>
+        <div class="divider"></div>
+
+        <div class="toggle-row">
+          <span class="toggle-label">Vertikal spiegeln</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-vflip" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Horizontal spiegeln</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-hflip" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div class="toggle-row hidden" id="row-autofocus">
+          <span class="toggle-label">Autofokus</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-autofocus" checked />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div class="toggle-row hidden" id="row-hdr">
+          <span class="toggle-label">HDR</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-hdr" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-img-apply" onclick="applyImageSettings()">
+            Anwenden
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- System info -->
+    <!-- ④ BambuBuddy Integration ────────────────────────────────── -->
     <div class="card">
-      <h2>System</h2>
-      <div class="info-row"><span class="key">CPU Temp</span><span class="val" id="sys-temp">—</span></div>
-      <div class="info-row"><span class="key">CPU Last</span><span class="val" id="sys-cpu">—</span></div>
-      <div class="info-row"><span class="key">RAM frei</span><span class="val" id="sys-ram">—</span></div>
-      <div class="info-row"><span class="key">Speicher</span><span class="val" id="sys-disk">—</span></div>
-      <div class="info-row"><span class="key">Hostname</span><span class="val" id="sys-host">—</span></div>
-      <div class="info-row"><span class="key">Pi-Modell</span><span class="val" id="sys-pi">—</span></div>
+      <div class="card-header">
+        <span class="card-title">BambuBuddy Integration</span>
+      </div>
+      <div class="card-body">
+        <p class="hint">
+          RTSP-URL unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:
+        </p>
+        <div class="copy-box" id="bb-rtsp-box" onclick="copyBox(this)" title="Klicken zum Kopieren">
+          <span class="copy-box-url" id="bb-rtsp-url">rtsp://…</span>
+          <svg class="copy-box-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+        </div>
+        <div class="copy-box secondary" id="bb-hls-box" onclick="copyBox(this)" title="Klicken zum Kopieren">
+          <span class="copy-box-url" id="bb-hls-url">http://…/index.m3u8</span>
+          <svg class="copy-box-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+          </svg>
+        </div>
+      </div>
     </div>
 
-    <!-- Update -->
-    <div class="card" id="update-card">
-      <h2>Software-Update</h2>
-      <div class="info-row">
-        <span class="key">Installiert</span>
-        <span class="val" id="upd-current">—</span>
+    <!-- ⑤ Snapshot ──────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Snapshot</span>
       </div>
-      <div class="info-row">
-        <span class="key">Verfügbar</span>
-        <span class="val" id="upd-latest">—</span>
-      </div>
-      <div class="info-row" id="upd-release-row" style="display:none">
-        <span class="key">Release</span>
-        <span class="val"><a id="upd-release-link" href="#" target="_blank" style="color:#6bb5ff;font-size:0.78rem">Changelog anzeigen</a></span>
-      </div>
-
-      <!-- Progress bar (hidden when idle) -->
-      <div id="upd-progress-wrap" style="display:none; margin:0.6rem 0 0.3rem">
-        <div style="background:#222;border-radius:4px;height:6px;overflow:hidden">
-          <div id="upd-progress-bar" style="height:100%;background:#00c896;width:0%;transition:width 0.4s"></div>
+      <div class="card-body">
+        <div class="toggle-row" style="border-bottom: none; padding-bottom: 0;">
+          <span class="toggle-label">Auf Disk speichern</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-snap-save" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
         </div>
-        <div id="upd-progress-label" style="font-size:0.72rem;color:#888;margin-top:0.25rem"></div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btn-snapshot" onclick="takeSnapshot()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="13" r="4"/><path d="M5 7h2l2-3h6l2 3h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z"/>
+            </svg>
+            Snapshot aufnehmen
+          </button>
+        </div>
+        <div class="snapshot-list" id="snapshot-list"></div>
       </div>
+    </div>
 
-      <div id="upd-message" style="font-size:0.78rem;color:#888;margin:0.4rem 0 0.5rem;min-height:1em"></div>
+    <!-- ⑥ System Info ───────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">System</span>
+        <span style="font-size:0.65rem;color:var(--text-faint)">↻ 10s</span>
+      </div>
+      <div class="card-body">
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-key">CPU Temp</div>
+            <div class="metric-val" id="sys-temp">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-key">CPU Last</div>
+            <div class="metric-val" id="sys-cpu">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-key">RAM frei</div>
+            <div class="metric-val" id="sys-ram-free">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-key">Disk frei</div>
+            <div class="metric-val" id="sys-disk-free">—</div>
+          </div>
+        </div>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-key">RAM gesamt</span>
+            <span class="info-val" id="sys-ram-total">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Disk gesamt</span>
+            <span class="info-val" id="sys-disk-total">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Hostname</span>
+            <span class="info-val" id="sys-host">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Pi-Modell</span>
+            <span class="info-val" id="sys-pi">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Uptime</span>
+            <span class="info-val" id="sys-uptime">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
-      <div style="display:flex;gap:0.4rem;flex-direction:column">
-        <button id="btn-check-update" onclick="checkUpdate()">Nach Updates suchen</button>
-        <button id="btn-do-update" class="secondary" onclick="doUpdate()"
-          style="display:none;background:#1a3a2a;color:#00c896;border-color:#00c896">
-          Jetzt aktualisieren
-        </button>
+    <!-- ⑦ Software Update ──────────────────────────────────────── -->
+    <div class="card" id="update-card">
+      <div class="card-header">
+        <span class="card-title">Software-Update</span>
+      </div>
+      <div class="card-body">
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-key">Installiert</span>
+            <span class="info-val" id="upd-current">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Verfügbar</span>
+            <span class="info-val" id="upd-latest">—</span>
+          </div>
+          <div class="info-row" id="upd-release-row" style="display:none">
+            <span class="info-key">Release</span>
+            <span class="info-val">
+              <a id="upd-release-link" href="#" target="_blank" style="color:var(--info);font-size:0.72rem">
+                Changelog →
+              </a>
+            </span>
+          </div>
+        </div>
+
+        <div class="progress-wrap" id="upd-progress-wrap" style="display:none">
+          <div class="progress-track">
+            <div class="progress-fill" id="upd-progress-fill" style="width:0%"></div>
+          </div>
+          <div class="progress-label" id="upd-progress-label"></div>
+        </div>
+
+        <div class="update-state-msg dim" id="upd-msg"></div>
+
+        <div style="display:flex;flex-direction:column;gap:0.35rem">
+          <button class="btn btn-secondary" id="btn-check-update" onclick="checkUpdate()">
+            Nach Updates suchen
+          </button>
+          <button class="btn btn-accent-outline" id="btn-do-update" onclick="doUpdate()" style="display:none">
+            Jetzt aktualisieren
+          </button>
+        </div>
       </div>
     </div>
 
   </aside>
 </main>
 
-<footer>BambuCam &mdash; Open Source Raspberry Pi Camera Streaming &mdash;
-  <a href="https://github.com/fgrfn/bambucam" style="color:#555">GitHub</a>
+<!-- Footer -->
+<footer>
+  <span>BambuCam — Open Source Raspberry Pi Camera Streaming</span>
+  <a href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener">GitHub ↗</a>
 </footer>
 
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- ── JavaScript ───────────────────────────────────────────────────────── -->
 <script>
-// ---------------------------------------------------------------------------
-// API helpers
-// ---------------------------------------------------------------------------
+'use strict';
+
+// ── API helpers ────────────────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
+  if (body !== undefined) opts.body = JSON.stringify(body);
   const r = await fetch('/api/v1' + path, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(err.error || r.statusText);
+  }
   return r.json();
 }
 
-// ---------------------------------------------------------------------------
-// Initialise & poll
-// ---------------------------------------------------------------------------
-let _camModel = {};
+// ── Toast ──────────────────────────────────────────────────────────────────
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = `<span class="toast-dot"></span><span>${msg}</span>`;
+  const container = document.getElementById('toast-container');
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 250);
+  }, 3000);
+}
 
+// ── Button loading state ───────────────────────────────────────────────────
+function btnLoading(id, loading, label) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.disabled = loading;
+  if (loading) {
+    btn.dataset.origLabel = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span> ${label || 'Bitte warten…'}`;
+  } else {
+    if (btn.dataset.origLabel) btn.innerHTML = btn.dataset.origLabel;
+  }
+}
+
+// ── Copy helpers ───────────────────────────────────────────────────────────
+function copyText(text, el) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (el) {
+      el.classList.add('copied');
+      setTimeout(() => el.classList.remove('copied'), 800);
+    }
+  });
+}
+
+function copyChip(el) {
+  const url = el.querySelector('.url-chip-url').textContent;
+  copyText(url, el);
+}
+
+function copyBox(el) {
+  const url = el.querySelector('.copy-box-url').textContent;
+  copyText(url, el);
+}
+
+// ── Format helpers ─────────────────────────────────────────────────────────
+function fmtUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+// ── Init & polling ─────────────────────────────────────────────────────────
 async function init() {
-  await loadCameraStatus();
-  await loadStreamStatus();
-  await loadSystemInfo();
-  await loadBambuBuddyUrls();
+  await Promise.allSettled([
+    loadCameraStatus(),
+    loadStreamStatus(),
+    loadSystemInfo(),
+    loadBambuBuddyUrls(),
+    loadSnapshotList(),
+  ]);
+  loadInitialUpdateStatus();
+
   setInterval(loadCameraStatus, 5000);
   setInterval(loadSystemInfo, 10000);
   setInterval(loadStreamStatus, 8000);
 }
 
+// ── Camera status ──────────────────────────────────────────────────────────
 async function loadCameraStatus() {
   try {
     const s = await api('GET', '/camera/status');
-    _camModel = s;
-    document.getElementById('cam-model').textContent = s.model || '—';
-    document.getElementById('cam-sensor').textContent = s.sensor || '—';
-    document.getElementById('cam-backend').textContent = s.backend || '—';
-    document.getElementById('cam-res').textContent = s.resolution || '—';
-    document.getElementById('cam-fps').textContent = s.framerate ? s.framerate + ' fps' : '—';
 
-    const dot = document.getElementById('status-dot');
-    const txt = document.getElementById('status-text');
+    setText('cam-model',   s.model   || '—');
+    setText('cam-sensor',  s.sensor  || '—');
+    setText('cam-backend', s.backend || '—');
+    setText('cam-res',     s.resolution || '—');
+    setText('cam-fps',     s.framerate ? s.framerate + ' fps' : '—');
+
+    const dot  = document.getElementById('status-dot');
+    const txt  = document.getElementById('status-text');
+    dot.classList.remove('pulse');
     if (s.running) {
       dot.className = 'status-dot ok';
       txt.textContent = 'Kamera aktiv';
@@ -406,157 +1306,229 @@ async function loadCameraStatus() {
       txt.textContent = 'Kamera gestoppt';
     }
 
-    // Show/hide model-specific controls
-    document.getElementById('row-autofocus').style.display = s.has_autofocus ? '' : 'none';
-    document.getElementById('row-hdr').style.display = s.has_hdr ? '' : 'none';
+    // Conditional controls
+    toggleRow('row-autofocus', s.has_autofocus);
+    toggleRow('row-hdr',       s.has_hdr);
 
-    // Populate resolution & framerate dropdowns from model capabilities
     await loadModelCapabilities(s);
   } catch(e) {
+    const dot = document.getElementById('status-dot');
+    dot.className = 'status-dot error';
     document.getElementById('status-text').textContent = 'Verbindungsfehler';
   }
 }
 
 async function loadModelCapabilities(status) {
   if (!status.model) return;
-  const models = await api('GET', '/camera/models');
-  const model = models.find(m => m.name === status.model);
-  if (!model) return;
+  try {
+    const models = await api('GET', '/camera/models');
+    const model = models.find(m => m.name === status.model);
+    if (!model) return;
 
-  const resSel = document.getElementById('sel-resolution');
-  const currentRes = status.resolution || '';
-  resSel.innerHTML = model.supported_resolutions.map(r =>
-    `<option value="${r}" ${r === currentRes ? 'selected' : ''}>${r}</option>`
-  ).join('');
+    const currentRes = status.resolution || '';
+    const resSel = document.getElementById('sel-resolution');
+    resSel.innerHTML = model.supported_resolutions.map(r =>
+      `<option value="${r}"${r === currentRes ? ' selected' : ''}>${r}</option>`
+    ).join('');
 
-  const fpsSel = document.getElementById('sel-framerate');
-  const currentFps = status.framerate || 15;
-  fpsSel.innerHTML = model.supported_framerates.map(f =>
-    `<option value="${f}" ${f == currentFps ? 'selected' : ''}>${f} fps</option>`
-  ).join('');
+    const currentFps = status.framerate || 15;
+    const fpsSel = document.getElementById('sel-framerate');
+    fpsSel.innerHTML = model.supported_framerates.map(f =>
+      `<option value="${f}"${f == currentFps ? ' selected' : ''}>${f} fps</option>`
+    ).join('');
+  } catch(e) { /* ignore */ }
 }
 
+// ── Stream status ──────────────────────────────────────────────────────────
 async function loadStreamStatus() {
-  const s = await api('GET', '/stream/status');
-  if (s.mjpeg) {
-    document.getElementById('mjpeg-url').href = s.mjpeg.url;
-    document.getElementById('mjpeg-url').textContent = s.mjpeg.url;
-    document.getElementById('snap-url').href = s.mjpeg.snapshot_url;
-  }
-  if (s.rtsp && s.rtsp.urls) {
-    const rtsp = s.rtsp.urls.rtsp || '';
-    document.getElementById('rtsp-url').textContent = rtsp;
-    const hls = s.rtsp.urls.hls || '';
-    document.getElementById('hls-url').textContent = hls;
-  }
+  try {
+    const s = await api('GET', '/stream/status');
+
+    if (s.mjpeg) {
+      setText('chip-mjpeg-url', s.mjpeg.url || 'http://…/stream');
+
+      const cnt = s.mjpeg.clients || 0;
+      const vb = document.getElementById('viewers-badge');
+      if (cnt > 0) {
+        vb.classList.remove('hidden');
+        setText('viewers-count', cnt);
+      } else {
+        vb.classList.add('hidden');
+      }
+    }
+
+    if (s.rtsp && s.rtsp.urls) {
+      const rtsp = s.rtsp.urls.rtsp || 'rtsp://…';
+      const hls  = s.rtsp.urls.hls  || 'http://…/index.m3u8';
+      setText('chip-rtsp-url', rtsp);
+      setText('chip-hls-url',  hls);
+    }
+  } catch(e) { /* ignore */ }
 }
 
+// ── BambuBuddy URLs ────────────────────────────────────────────────────────
 async function loadBambuBuddyUrls() {
   try {
     const d = await api('GET', '/bambubuddy');
-    if (d.rtsp_url) document.getElementById('rtsp-url').textContent = d.rtsp_url;
-    if (d.hls_url) document.getElementById('hls-url').textContent = d.hls_url;
-  } catch(e) {}
+    if (d.rtsp_url) setText('bb-rtsp-url', d.rtsp_url);
+    if (d.hls_url)  setText('bb-hls-url',  d.hls_url);
+  } catch(e) { /* ignore */ }
 }
 
+// ── System info ────────────────────────────────────────────────────────────
 async function loadSystemInfo() {
-  const s = await api('GET', '/system');
-  document.getElementById('sys-temp').textContent = s.cpu_temp_c != null ? s.cpu_temp_c.toFixed(1) + ' °C' : '—';
-  document.getElementById('sys-cpu').textContent = s.cpu_usage_pct != null ? s.cpu_usage_pct.toFixed(1) + ' %' : '—';
-  if (s.memory) {
-    document.getElementById('sys-ram').textContent =
-      s.memory.available_mb + ' MB frei / ' + s.memory.total_mb + ' MB';
-  }
-  if (s.disk) {
-    document.getElementById('sys-disk').textContent =
-      s.disk.free_gb + ' GB frei / ' + s.disk.total_gb + ' GB';
-  }
-  document.getElementById('sys-host').textContent = s.hostname || '—';
-  document.getElementById('sys-pi').textContent = s.pi_model || '—';
+  try {
+    const s = await api('GET', '/system');
+
+    // CPU temp with color coding
+    const tempEl = document.getElementById('sys-temp');
+    if (s.cpu_temp_c != null) {
+      tempEl.textContent = s.cpu_temp_c.toFixed(1) + ' °C';
+      tempEl.className = 'metric-val' + (s.cpu_temp_c > 75 ? ' crit' : s.cpu_temp_c > 60 ? ' warn' : ' ok');
+    }
+
+    // CPU load
+    const cpuEl = document.getElementById('sys-cpu');
+    if (s.cpu_usage_pct != null) {
+      cpuEl.textContent = s.cpu_usage_pct.toFixed(1) + ' %';
+      cpuEl.className = 'metric-val' + (s.cpu_usage_pct > 85 ? ' crit' : s.cpu_usage_pct > 65 ? ' warn' : '');
+    }
+
+    if (s.memory) {
+      setText('sys-ram-free',  s.memory.available_mb + ' MB');
+      setText('sys-ram-total', s.memory.total_mb + ' MB');
+    }
+
+    if (s.disk) {
+      setText('sys-disk-free',  s.disk.free_gb.toFixed(1) + ' GB');
+      setText('sys-disk-total', s.disk.total_gb.toFixed(1) + ' GB');
+    }
+
+    setText('sys-host',   s.hostname  || '—');
+    setText('sys-pi',     s.pi_model  || '—');
+    setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
+  } catch(e) { /* ignore */ }
 }
 
-// ---------------------------------------------------------------------------
-// Settings actions
-// ---------------------------------------------------------------------------
+// ── Snapshot ───────────────────────────────────────────────────────────────
+async function takeSnapshot() {
+  const save = document.getElementById('chk-snap-save').checked;
+  btnLoading('btn-snapshot', true, 'Aufnehmen…');
+  try {
+    const url = '/snapshot' + (save ? '?save=true' : '');
+    window.open(url, '_blank');
+    if (save) {
+      toast('Snapshot gespeichert');
+      await loadSnapshotList();
+    } else {
+      toast('Snapshot geöffnet');
+    }
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  } finally {
+    btnLoading('btn-snapshot', false);
+  }
+}
 
+async function loadSnapshotList() {
+  try {
+    const items = await api('GET', '/snapshot/list');
+    const list = document.getElementById('snapshot-list');
+    if (!items || items.length === 0) {
+      list.innerHTML = '<span style="font-size:0.72rem;color:var(--text-faint)">Keine gespeicherten Snapshots</span>';
+      return;
+    }
+    const last5 = items.slice(-5).reverse();
+    list.innerHTML = last5.map(item => `
+      <div class="snapshot-item">
+        <span class="snapshot-name">${item.filename || item.name || '—'}</span>
+        <span class="snapshot-meta">${item.size_kb ? item.size_kb + ' KB' : ''}</span>
+        <a class="snapshot-dl" href="/snapshots/${item.filename}" download title="Herunterladen">↓</a>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('snapshot-list').innerHTML = '';
+  }
+}
+
+// ── Stream settings ────────────────────────────────────────────────────────
 async function applyStreamSettings() {
-  const resolution = document.getElementById('sel-resolution').value;
-  const framerate = parseInt(document.getElementById('sel-framerate').value);
+  const resolution   = document.getElementById('sel-resolution').value;
+  const framerate    = parseInt(document.getElementById('sel-framerate').value);
   const bitrate_kbps = parseInt(document.getElementById('sl-bitrate').value);
 
-  await api('POST', '/camera/settings', { resolution, framerate });
-  await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
+  btnLoading('btn-stream-apply', true, 'Wird angewendet…');
+  try {
+    await api('POST', '/camera/settings', { resolution, framerate });
+    await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
 
-  // Reload stream image to pick up new resolution
-  const img = document.getElementById('stream-img');
-  img.src = '/stream?' + Date.now();
+    const img = document.getElementById('stream-img');
+    img.src = '/stream?' + Date.now();
+
+    toast('Streameinstellungen übernommen');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  } finally {
+    btnLoading('btn-stream-apply', false);
+  }
 }
 
+// ── Image settings ─────────────────────────────────────────────────────────
 async function applyImageSettings() {
-  const brightness = parseInt(document.getElementById('sl-brightness').value) / 100;
-  const contrast = parseInt(document.getElementById('sl-contrast').value) / 100 * 32;
-  const saturation = parseInt(document.getElementById('sl-saturation').value) / 100 * 32;
-  const sharpness = parseInt(document.getElementById('sl-sharpness').value) / 100 * 16;
+  const brightness    = parseInt(document.getElementById('sl-brightness').value) / 100;
+  const contrast      = parseInt(document.getElementById('sl-contrast').value) / 100;
+  const saturation    = parseInt(document.getElementById('sl-saturation').value) / 100;
+  const sharpness     = parseInt(document.getElementById('sl-sharpness').value) / 100;
   const exposure_mode = document.getElementById('sel-exposure').value;
-  const awb_mode = document.getElementById('sel-awb').value;
-  const vflip = document.getElementById('chk-vflip').checked;
-  const hflip = document.getElementById('chk-hflip').checked;
-  const autofocus = document.getElementById('chk-autofocus').checked;
-  const hdr = document.getElementById('chk-hdr').checked;
+  const awb_mode      = document.getElementById('sel-awb').value;
+  const vflip         = document.getElementById('chk-vflip').checked;
+  const hflip         = document.getElementById('chk-hflip').checked;
+  const autofocus     = document.getElementById('chk-autofocus').checked;
+  const hdr           = document.getElementById('chk-hdr').checked;
 
-  await api('POST', '/camera/settings', {
-    brightness, contrast, saturation, sharpness,
-    exposure_mode, awb_mode, vflip, hflip, autofocus, hdr,
-  });
+  btnLoading('btn-img-apply', true, 'Wird angewendet…');
+  try {
+    await api('POST', '/camera/settings', {
+      brightness, contrast, saturation, sharpness,
+      exposure_mode, awb_mode, vflip, hflip, autofocus, hdr,
+    });
+    toast('Bildeinstellungen übernommen');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  } finally {
+    btnLoading('btn-img-apply', false);
+  }
 }
 
-function copyUrl(elemId) {
-  const txt = document.getElementById(elemId).textContent;
-  navigator.clipboard.writeText(txt).then(() => {
-    const el = document.getElementById(elemId);
-    const orig = el.style.borderColor;
-    el.style.borderColor = '#00c896';
-    setTimeout(() => { el.style.borderColor = orig; }, 800);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Update
-// ---------------------------------------------------------------------------
+// ── Update ─────────────────────────────────────────────────────────────────
 let _updatePollTimer = null;
 
 async function checkUpdate() {
-  document.getElementById('btn-check-update').disabled = true;
-  document.getElementById('btn-check-update').textContent = 'Prüfe…';
-  document.getElementById('upd-message').textContent = 'Verbinde mit GitHub…';
+  btnLoading('btn-check-update', true, 'Suche…');
   try {
     const s = await api('POST', '/update/check');
     renderUpdateStatus(s);
   } catch(e) {
-    document.getElementById('upd-message').textContent = 'Fehler: ' + e;
+    setUpdateMsg('Fehler: ' + e.message, 'error');
   } finally {
-    document.getElementById('btn-check-update').disabled = false;
-    document.getElementById('btn-check-update').textContent = 'Nach Updates suchen';
+    btnLoading('btn-check-update', false);
   }
 }
 
 async function doUpdate() {
   if (!confirm('BambuCam wird aktualisiert und danach automatisch neu gestartet. Fortfahren?')) return;
-  document.getElementById('btn-do-update').disabled = true;
-  document.getElementById('btn-do-update').textContent = 'Update läuft…';
+  btnLoading('btn-do-update', true, 'Update läuft…');
   try {
     await api('POST', '/update/start');
     startUpdatePolling();
   } catch(e) {
-    document.getElementById('upd-message').textContent = 'Fehler beim Starten: ' + e;
-    document.getElementById('btn-do-update').disabled = false;
-    document.getElementById('btn-do-update').textContent = 'Jetzt aktualisieren';
+    toast('Fehler beim Update: ' + e.message, 'error');
+    btnLoading('btn-do-update', false);
   }
 }
 
 function startUpdatePolling() {
   if (_updatePollTimer) clearInterval(_updatePollTimer);
-  document.getElementById('upd-progress-wrap').style.display = '';
   _updatePollTimer = setInterval(async () => {
     try {
       const s = await api('GET', '/update/status');
@@ -565,10 +1537,13 @@ function startUpdatePolling() {
         clearInterval(_updatePollTimer);
         _updatePollTimer = null;
         if (s.state === 'success') {
-          // Reload page after 5s when restart is done
-          document.getElementById('upd-message').textContent =
-            'Update erfolgreich! Seite wird neu geladen…';
-          setTimeout(() => location.reload(), 5000);
+          let countdown = 5;
+          const tick = () => {
+            setUpdateMsg(`Update erfolgreich! Seite wird in ${countdown}s neu geladen…`, 'ok');
+            if (countdown-- > 0) setTimeout(tick, 1000);
+            else location.reload();
+          };
+          tick();
         }
       }
     } catch(e) { /* network lost during restart — expected */ }
@@ -576,71 +1551,124 @@ function startUpdatePolling() {
 }
 
 function renderUpdateStatus(s) {
-  // Version labels
-  document.getElementById('upd-current').textContent = s.current_version
-    ? 'v' + s.current_version : '—';
-  document.getElementById('upd-latest').textContent = s.latest_version
-    ? 'v' + s.latest_version : (s.state === 'up_to_date' ? 'aktuell' : '—');
+  setText('upd-current', s.current_version ? 'v' + s.current_version : '—');
 
-  // Release link
-  if (s.latest_release && s.latest_release.html_url) {
-    document.getElementById('upd-release-row').style.display = '';
-    document.getElementById('upd-release-link').href = s.latest_release.html_url;
-    document.getElementById('upd-release-link').textContent =
-      (s.latest_release.name || s.latest_release.tag) + ' — Changelog';
+  const latestEl = document.getElementById('upd-latest');
+  if (s.update_available) {
+    latestEl.textContent = 'v' + s.latest_version;
+    latestEl.className = 'info-val accent';
+  } else if (s.state === 'up_to_date') {
+    latestEl.textContent = 'Aktuell';
+    latestEl.className = 'info-val';
+  } else {
+    latestEl.textContent = s.latest_version ? 'v' + s.latest_version : '—';
+    latestEl.className = 'info-val';
   }
 
-  // Progress bar
-  const inProgress = ['downloading','installing','restarting'].includes(s.state);
-  document.getElementById('upd-progress-wrap').style.display = inProgress ? '' : 'none';
-  document.getElementById('upd-progress-bar').style.width = (s.progress || 0) + '%';
+  const releaseRow = document.getElementById('upd-release-row');
+  if (s.latest_release && s.latest_release.html_url) {
+    releaseRow.style.display = '';
+    const lnk = document.getElementById('upd-release-link');
+    lnk.href = s.latest_release.html_url;
+    lnk.textContent = (s.latest_release.name || 'v' + s.latest_version) + ' →';
+  } else {
+    releaseRow.style.display = 'none';
+  }
+
+  const inProgress = ['downloading', 'installing', 'restarting'].includes(s.state);
+  const pw = document.getElementById('upd-progress-wrap');
+  pw.style.display = inProgress ? '' : 'none';
+  document.getElementById('upd-progress-fill').style.width = (s.progress || 0) + '%';
   document.getElementById('upd-progress-label').textContent = s.message || '';
 
-  // Message
-  const msgEl = document.getElementById('upd-message');
-  if (s.error) {
-    msgEl.style.color = '#e05555';
-    msgEl.textContent = s.error;
+  if (s.state === 'error') {
+    setUpdateMsg(s.error || 'Unbekannter Fehler', 'error');
+  } else if (s.state === 'up_to_date') {
+    setUpdateMsg('✓ BambuCam ist aktuell', 'ok');
+  } else if (s.state === 'available') {
+    setUpdateMsg('Update verfügbar: v' + s.latest_version, 'ok');
+  } else if (!inProgress && s.message) {
+    setUpdateMsg(s.message, 'dim');
   } else if (!inProgress) {
-    msgEl.style.color = '#888';
-    msgEl.textContent = s.message || '';
+    setUpdateMsg('', 'dim');
   }
 
-  // Update button visibility
-  const btnUpdate = document.getElementById('btn-do-update');
+  const btnDo    = document.getElementById('btn-do-update');
+  const btnCheck = document.getElementById('btn-check-update');
+
   if (s.update_available && !inProgress) {
-    btnUpdate.style.display = '';
-    btnUpdate.disabled = false;
-    btnUpdate.textContent = `Auf v${s.latest_version} aktualisieren`;
+    btnDo.style.display = '';
+    btnDo.disabled = false;
+    btnDo.innerHTML = `Auf v${s.latest_version} aktualisieren`;
+    btnCheck.style.display = '';
+    btnCheck.disabled = false;
+    if (btnCheck.dataset.origLabel) btnCheck.innerHTML = btnCheck.dataset.origLabel;
   } else if (inProgress) {
-    btnUpdate.style.display = '';
-    btnUpdate.disabled = true;
-    btnUpdate.textContent = 'Update läuft…';
+    btnDo.style.display = '';
+    btnDo.disabled = true;
+    btnDo.innerHTML = `<span class="spinner"></span> Update läuft…`;
+    btnCheck.style.display = 'none';
+  } else if (s.state === 'error') {
+    btnDo.style.display = 'none';
+    btnCheck.style.display = '';
+    btnCheck.disabled = false;
+    btnCheck.innerHTML = 'Erneut versuchen';
+    btnCheck.className = 'btn btn-danger-outline';
   } else {
-    btnUpdate.style.display = 'none';
+    btnDo.style.display = 'none';
+    btnCheck.style.display = '';
+    btnCheck.disabled = false;
+    if (btnCheck.dataset.origLabel) btnCheck.innerHTML = btnCheck.dataset.origLabel;
+    btnCheck.className = 'btn btn-secondary';
   }
-
-  // Latest label color
-  const latestEl = document.getElementById('upd-latest');
-  if (s.update_available) latestEl.style.color = '#00c896';
-  else if (s.state === 'up_to_date') latestEl.style.color = '#888';
-  else latestEl.style.color = '';
 }
 
 async function loadInitialUpdateStatus() {
   try {
     const s = await api('GET', '/update/status');
     renderUpdateStatus(s);
-    // Resume polling if an update was already in progress
-    if (['downloading','installing','restarting'].includes(s.state)) {
+    if (s.current_version) {
+      document.getElementById('hdr-version').textContent = 'v' + s.current_version;
+    }
+    if (['downloading', 'installing', 'restarting'].includes(s.state)) {
       startUpdatePolling();
     }
-  } catch(e) {}
+  } catch(e) { /* ignore */ }
 }
 
-// ---------------------------------------------------------------------------
+// ── DOM helpers ────────────────────────────────────────────────────────────
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function setUpdateMsg(msg, type) {
+  const el = document.getElementById('upd-msg');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'update-state-msg ' + (type || 'dim');
+}
+
+function toggleRow(id, show) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (show) el.classList.remove('hidden');
+  else el.classList.add('hidden');
+}
+
+// ── Stream img — only attach MJPEG src when endpoint exists ───────────────
+(function initStreamImg() {
+  const img = document.getElementById('stream-img');
+  img.addEventListener('load', () => {
+    document.querySelector('.stream-view').classList.add('live');
+  });
+  fetch('/stream', { method: 'HEAD' }).then(r => {
+    if (r.ok) img.src = '/stream';
+  }).catch(() => {});
+})();
+
+// ── Boot ────────────────────────────────────────────────────────────────────
 init();
-loadInitialUpdateStatus();
 </script>
 </body>
 </html>
