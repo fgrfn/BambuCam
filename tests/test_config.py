@@ -3,10 +3,9 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 import yaml
 
-from bambucam.config import Config, DEFAULTS, _deep_merge
+from bambucam.config import DEFAULTS, Config, _deep_merge
 
 
 class TestDeepMerge:
@@ -29,10 +28,13 @@ class TestDeepMerge:
 class TestConfig:
     def test_defaults_loaded(self):
         from unittest.mock import patch
+
         cfg = Config()
         # Patch away system/user config paths so only pure defaults are loaded
-        with patch("bambucam.config._SYSTEM_CONFIG", Path("/nonexistent/sys.yaml")), \
-             patch("bambucam.config._USER_CONFIG", Path("/nonexistent/user.yaml")):
+        with (
+            patch("bambucam.config._SYSTEM_CONFIG", Path("/nonexistent/sys.yaml")),
+            patch("bambucam.config._USER_CONFIG", Path("/nonexistent/user.yaml")),
+        ):
             cfg.load(Path("/nonexistent/bambucam.yaml"))
         assert cfg.get("camera", "framerate") == DEFAULTS["camera"]["framerate"]
 

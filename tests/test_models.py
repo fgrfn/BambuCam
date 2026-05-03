@@ -1,6 +1,7 @@
 """Tests for camera model definitions."""
 
 import pytest
+
 from bambucam.camera.models import (
     CAMERA_HQ,
     CAMERA_USB_GENERIC,

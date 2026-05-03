@@ -1,7 +1,7 @@
 """Camera model definitions and capability matrices."""
 
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -33,14 +33,14 @@ class CameraModel:
     megapixels: float
     max_resolution: Resolution
     max_framerate: int
-    supported_resolutions: List[Resolution]
-    supported_framerates: List[int]
+    supported_resolutions: list[Resolution]
+    supported_framerates: list[int]
 
     # Feature flags
     has_autofocus: bool = False
     has_hdr: bool = False
     has_noise_reduction: bool = False
-    is_noir: bool = False                # No IR filter
+    is_noir: bool = False  # No IR filter
     has_global_shutter: bool = False
 
     # Sensor-specific tuning
@@ -48,7 +48,7 @@ class CameraModel:
     hflip_default: bool = False
 
     description: str = ""
-    libcamera_name: Optional[str] = None   # name reported by libcamera-hello
+    libcamera_name: Optional[str] = None  # name reported by libcamera-hello
 
     def supports_resolution(self, res: Resolution) -> bool:
         return res in self.supported_resolutions
@@ -217,7 +217,7 @@ CAMERA_USB_GENERIC = CameraModel(
 # Registry: libcamera sensor name → model
 # ---------------------------------------------------------------------------
 
-KNOWN_MODELS: List[CameraModel] = [
+KNOWN_MODELS: list[CameraModel] = [
     CAMERA_V1,
     CAMERA_V2,
     CAMERA_V2_NOIR,

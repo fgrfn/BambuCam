@@ -31,7 +31,9 @@ log = logging.getLogger(__name__)
 GITHUB_API = "https://api.github.com"
 GITHUB_REPO = "fgrfn/bambucam"
 VENV_PIP = Path("/opt/bambucam/venv/bin/pip")
-INSTALL_SCRIPT = Path("/opt/bambucam/venv/lib").glob("python*/site-packages/bambucam/../../../../../../scripts/install.sh")
+INSTALL_SCRIPT = Path("/opt/bambucam/venv/lib").glob(
+    "python*/site-packages/bambucam/../../../../../../scripts/install.sh"
+)
 
 
 class UpdateState(str, Enum):
@@ -65,7 +67,7 @@ class UpdateStatus:
     current_version: str = ""
     latest_version: str = ""
     latest_release: Optional[ReleaseInfo] = None
-    progress: int = 0          # 0-100
+    progress: int = 0  # 0-100
     message: str = ""
     error: str = ""
     update_available: bool = False
@@ -148,9 +150,7 @@ class Updater:
             if _version_gt(release.version, self._current):
                 self._status.state = UpdateState.AVAILABLE
                 self._status.update_available = True
-                self._status.message = (
-                    f"Update verfügbar: v{release.version}"
-                )
+                self._status.message = f"Update verfügbar: v{release.version}"
             else:
                 self._status.state = UpdateState.UP_TO_DATE
                 self._status.update_available = False
@@ -221,8 +221,7 @@ class Updater:
                 self._status.update_available = False
                 self._status.progress = 100
                 self._status.message = (
-                    f"Update auf v{release.version} erfolgreich! "
-                    "BambuCam wird neu gestartet…"
+                    f"Update auf v{release.version} erfolgreich! " "BambuCam wird neu gestartet…"
                 )
 
         except Exception as e:
@@ -264,9 +263,7 @@ class Updater:
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
-            raise RuntimeError(
-                f"pip install failed (exit {result.returncode}):\n{result.stderr}"
-            )
+            raise RuntimeError(f"pip install failed (exit {result.returncode}):\n{result.stderr}")
         log.info("pip install succeeded:\n%s", result.stdout)
         self._set_progress(85, "Installation abgeschlossen.")
 
@@ -278,7 +275,8 @@ class Updater:
         if shutil.which("systemctl"):
             result = subprocess.run(
                 ["systemctl", "restart", "bambucam"],
-                capture_output=True, timeout=10,
+                capture_output=True,
+                timeout=10,
             )
             if result.returncode == 0:
                 log.info("systemd restart triggered")
@@ -365,6 +363,7 @@ class Updater:
 # ---------------------------------------------------------------------------
 # Semantic version comparison (no external dependencies)
 # ---------------------------------------------------------------------------
+
 
 def _parse_version(v: str) -> tuple:
     """Parse 'x.y.z' or 'x.y.z-suffix' into comparable tuple."""

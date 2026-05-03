@@ -1,6 +1,5 @@
 """Tests for camera detection (mocked — no real hardware needed)."""
 
-import subprocess
 from unittest.mock import MagicMock, patch
 
 from bambucam.camera.detector import (
@@ -9,7 +8,6 @@ from bambucam.camera.detector import (
     detect_cameras,
 )
 from bambucam.camera.models import CAMERA_V2, Resolution
-
 
 LIBCAMERA_SAMPLE_OUTPUT = """\
 Available cameras

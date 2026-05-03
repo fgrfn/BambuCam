@@ -6,7 +6,8 @@ Clients (browsers, VLC, OBS) open the URL and receive continuous JPEG frames.
 import logging
 import threading
 import time
-from typing import Callable, Iterator, Optional
+from collections.abc import Iterator
+from typing import Callable, Optional
 
 log = logging.getLogger(__name__)
 
@@ -115,9 +116,13 @@ class MJPEGStreamer:
                 last_frame = frame
 
                 yield (
-                    _BOUNDARY + _CRLF
-                    + b"Content-Type: image/jpeg" + _CRLF
-                    + b"Content-Length: " + str(len(frame)).encode() + _CRLF
+                    _BOUNDARY
+                    + _CRLF
+                    + b"Content-Type: image/jpeg"
+                    + _CRLF
+                    + b"Content-Length: "
+                    + str(len(frame)).encode()
+                    + _CRLF
                     + _CRLF
                     + frame
                     + _CRLF

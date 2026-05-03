@@ -5,7 +5,6 @@ Creates the Flask app and registers all blueprints (API, stream, UI).
 """
 
 import logging
-import os
 import secrets
 from typing import TYPE_CHECKING
 
@@ -13,10 +12,10 @@ from flask import Flask
 
 if TYPE_CHECKING:
     from bambucam.camera.manager import CameraManager
+    from bambucam.config import Config
     from bambucam.streaming.mjpeg import MJPEGStreamer
     from bambucam.streaming.rtsp import RTSPStreamer
     from bambucam.streaming.snapshot import SnapshotService
-    from bambucam.config import Config
     from bambucam.updater import Updater
 
 log = logging.getLogger(__name__)

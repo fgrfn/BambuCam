@@ -27,27 +27,27 @@ log = logging.getLogger(__name__)
 
 DEFAULTS: dict = {
     "camera": {
-        "index": 0,                   # Which camera to use if multiple detected
-        "backend": "auto",            # "auto" | "picamera2" | "v4l2"
+        "index": 0,  # Which camera to use if multiple detected
+        "backend": "auto",  # "auto" | "picamera2" | "v4l2"
         "resolution": "1920x1080",
         "framerate": 15,
-        "brightness": 0.0,            # -1.0 … 1.0
-        "contrast": 1.0,              # 0.0 … 32.0
+        "brightness": 0.0,  # -1.0 … 1.0
+        "contrast": 1.0,  # 0.0 … 32.0
         "saturation": 1.0,
         "sharpness": 1.0,
-        "exposure_mode": "auto",      # auto | sport | night
-        "awb_mode": "auto",           # auto | sunlight | cloudy | …
+        "exposure_mode": "auto",  # auto | sport | night
+        "awb_mode": "auto",  # auto | sunlight | cloudy | …
         "vflip": False,
         "hflip": False,
-        "autofocus": True,            # if supported
-        "hdr": False,                 # if supported
+        "autofocus": True,  # if supported
+        "hdr": False,  # if supported
     },
     "streaming": {
         "mjpeg": {
             "enabled": True,
             "port": 8080,
             "path": "/stream",
-            "quality": 85,            # JPEG quality 1-100
+            "quality": 85,  # JPEG quality 1-100
             "fps": 15,
         },
         "rtsp": {
@@ -74,7 +74,7 @@ DEFAULTS: dict = {
     "web": {
         "host": "0.0.0.0",
         "port": 8080,
-        "secret_key": "",             # Auto-generated on first start if empty
+        "secret_key": "",  # Auto-generated on first start if empty
         "auth": {
             "enabled": False,
             "username": "admin",
@@ -183,6 +183,7 @@ class Config:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_yaml(path: Path) -> dict:
     try:
         data = yaml.safe_load(path.read_text())
@@ -204,6 +205,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 def _deep_copy(d: dict) -> dict:
     import copy
+
     return copy.deepcopy(d)
 
 

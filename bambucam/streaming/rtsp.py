@@ -12,8 +12,6 @@ publishes to MediaMTX via RTSP re-publish (rtsps://localhost/cam).
 """
 
 import logging
-import os
-import shutil
 import signal
 import subprocess
 import tempfile
@@ -105,7 +103,8 @@ class RTSPStreamer:
         self._monitor_thread.start()
         log.info(
             "RTSP stream available at rtsp://localhost:%d/%s",
-            RTSP_PORT, self._stream_name,
+            RTSP_PORT,
+            self._stream_name,
         )
 
     def stop(self) -> None:
@@ -190,24 +189,39 @@ class RTSPStreamer:
         width, height = self._resolution.split("x")
         cmd = [
             "ffmpeg",
-            "-loglevel", "warning",
+            "-loglevel",
+            "warning",
             # Input: V4L2 device
-            "-f", "v4l2",
-            "-input_format", "mjpeg",
-            "-video_size", self._resolution,
-            "-framerate", str(self._framerate),
-            "-i", self._device,
+            "-f",
+            "v4l2",
+            "-input_format",
+            "mjpeg",
+            "-video_size",
+            self._resolution,
+            "-framerate",
+            str(self._framerate),
+            "-i",
+            self._device,
             # Video encoding
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-            "-b:v", f"{self._bitrate}k",
-            "-maxrate", f"{self._bitrate}k",
-            "-bufsize", f"{self._bitrate * 2}k",
-            "-pix_fmt", "yuv420p",
-            "-g", str(self._framerate * 2),  # keyframe every 2s
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "zerolatency",
+            "-b:v",
+            f"{self._bitrate}k",
+            "-maxrate",
+            f"{self._bitrate}k",
+            "-bufsize",
+            f"{self._bitrate * 2}k",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            str(self._framerate * 2),  # keyframe every 2s
             # Output: RTSP to MediaMTX
-            "-f", "rtsp",
+            "-f",
+            "rtsp",
             f"rtsp://localhost:{RTSP_PORT}/{self._stream_name}",
         ]
         log.info("Starting ffmpeg: %s", " ".join(cmd))
@@ -259,14 +273,8 @@ class RTSPStreamer:
         return urls
 
     def status(self) -> dict:
-        mediamtx_ok = (
-            self._mediamtx_proc is not None
-            and self._mediamtx_proc.poll() is None
-        )
-        ffmpeg_ok = (
-            self._ffmpeg_proc is not None
-            and self._ffmpeg_proc.poll() is None
-        )
+        mediamtx_ok = self._mediamtx_proc is not None and self._mediamtx_proc.poll() is None
+        ffmpeg_ok = self._ffmpeg_proc is not None and self._ffmpeg_proc.poll() is None
         return {
             "running": self._running,
             "mediamtx_running": mediamtx_ok,

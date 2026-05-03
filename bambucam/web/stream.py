@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import Blueprint, Response, current_app, send_file
+from flask import Blueprint, Response, current_app
 
 log = logging.getLogger(__name__)
 stream_bp = Blueprint("stream", __name__)

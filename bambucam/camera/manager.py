@@ -1,7 +1,8 @@
 """High-level camera manager — wires together detection, backends, and settings."""
 
 import logging
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from typing import Optional
 
 from bambucam.camera.backends.base import CameraBackend
 from bambucam.camera.detector import DetectedCamera, detect_cameras
@@ -35,9 +36,7 @@ class CameraManager:
                 "'libcamera-hello --list-cameras' or 'v4l2-ctl --list-devices'."
             )
         if preferred_index >= len(cameras):
-            log.warning(
-                "Preferred camera index %d not found, using 0", preferred_index
-            )
+            log.warning("Preferred camera index %d not found, using 0", preferred_index)
             preferred_index = 0
         self._detected = cameras[preferred_index]
         log.info("Selected camera: %s", self._detected)
@@ -68,6 +67,7 @@ class CameraManager:
     def _create_backend(self, detected: DetectedCamera) -> CameraBackend:
         if detected.backend == "picamera2":
             from bambucam.camera.backends.picamera2_backend import Picamera2Backend
+
             return Picamera2Backend(
                 model=detected.model,
                 device=detected.device,
@@ -75,6 +75,7 @@ class CameraManager:
             )
         elif detected.backend == "v4l2":
             from bambucam.camera.backends.v4l2_backend import V4L2Backend
+
             return V4L2Backend(model=detected.model, device=detected.device)
         else:
             raise ValueError(f"Unknown backend: {detected.backend!r}")

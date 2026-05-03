@@ -1,11 +1,9 @@
 """System information helpers (CPU temp, memory, uptime, etc.)."""
 
-import os
 import platform
 import time
 from pathlib import Path
 from typing import Optional
-
 
 _BOOT_TIME = time.time()
 
@@ -27,6 +25,7 @@ def cpu_temperature() -> Optional[float]:
 def memory_info() -> dict:
     try:
         import psutil
+
         mem = psutil.virtual_memory()
         return {
             "total_mb": mem.total // (1024 * 1024),
@@ -41,6 +40,7 @@ def memory_info() -> dict:
 def cpu_usage() -> float:
     try:
         import psutil
+
         return psutil.cpu_percent(interval=0.2)
     except ImportError:
         return 0.0
@@ -49,11 +49,12 @@ def cpu_usage() -> float:
 def disk_info(path: str = "/") -> dict:
     try:
         import psutil
+
         disk = psutil.disk_usage(path)
         return {
-            "total_gb": round(disk.total / (1024 ** 3), 1),
-            "used_gb": round(disk.used / (1024 ** 3), 1),
-            "free_gb": round(disk.free / (1024 ** 3), 1),
+            "total_gb": round(disk.total / (1024**3), 1),
+            "used_gb": round(disk.used / (1024**3), 1),
+            "free_gb": round(disk.free / (1024**3), 1),
             "percent": disk.percent,
         }
     except ImportError:
@@ -63,6 +64,7 @@ def disk_info(path: str = "/") -> dict:
 def uptime_seconds() -> float:
     try:
         import psutil
+
         return time.time() - psutil.boot_time()
     except ImportError:
         return time.time() - _BOOT_TIME

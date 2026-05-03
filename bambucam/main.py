@@ -24,6 +24,7 @@ def _setup_logging(level: str) -> None:
 
 def _parse_args() -> argparse.Namespace:
     from bambucam import __version__
+
     p = argparse.ArgumentParser(
         prog="bambucam",
         description="BambuCam — Raspberry Pi camera streaming for BambuBuddy",
@@ -31,7 +32,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--config", type=Path, help="Path to config YAML file")
     p.add_argument(
-        "--list-cameras", action="store_true",
+        "--list-cameras",
+        action="store_true",
         help="Detect cameras, print results, and exit",
     )
     p.add_argument("--log-level", default="INFO", help="Log level (DEBUG/INFO/WARNING/ERROR)")
@@ -50,6 +52,7 @@ def main() -> None:
     log.info("BambuCam starting up…")
 
     from bambucam.config import get_config
+
     cfg = get_config()
     cfg.load(args.config)
 
@@ -59,6 +62,7 @@ def main() -> None:
     # -- List cameras and exit ------------------------------------------------
     if args.list_cameras:
         from bambucam.camera.detector import detect_cameras
+
         cameras = detect_cameras()
         if not cameras:
             print("No cameras detected.")
@@ -70,12 +74,16 @@ def main() -> None:
             print(f"      Backend : {cam.backend}")
             print(f"      Device  : {cam.device}")
             print(f"      Max res : {cam.model.max_resolution}")
-            print(f"      Features: ", end="")
+            print("      Features: ", end="")
             feats = []
-            if cam.model.has_autofocus: feats.append("Autofocus")
-            if cam.model.has_hdr:       feats.append("HDR")
-            if cam.model.is_noir:       feats.append("NoIR")
-            if cam.model.has_global_shutter: feats.append("Global Shutter")
+            if cam.model.has_autofocus:
+                feats.append("Autofocus")
+            if cam.model.has_hdr:
+                feats.append("HDR")
+            if cam.model.is_noir:
+                feats.append("NoIR")
+            if cam.model.has_global_shutter:
+                feats.append("Global Shutter")
             print(", ".join(feats) if feats else "—")
         sys.exit(0)
 
@@ -107,9 +115,18 @@ def main() -> None:
             framerate=cam_cfg.get("framerate", 15),
             settings={
                 k: cam_cfg[k]
-                for k in ("vflip", "hflip", "brightness", "contrast",
-                           "saturation", "sharpness", "exposure_mode", "awb_mode",
-                           "autofocus", "hdr")
+                for k in (
+                    "vflip",
+                    "hflip",
+                    "brightness",
+                    "contrast",
+                    "saturation",
+                    "sharpness",
+                    "exposure_mode",
+                    "awb_mode",
+                    "autofocus",
+                    "hdr",
+                )
                 if k in cam_cfg
             },
         )
@@ -154,12 +171,14 @@ def main() -> None:
     # Snapshot service
     snapshot = SnapshotService(
         capture_fn=camera.capture_jpeg,
-        snapshot_dir=Path(stream_cfg.get("snapshot", {}).get("save_dir",
-                                                              "/var/lib/bambucam/snapshots")),
+        snapshot_dir=Path(
+            stream_cfg.get("snapshot", {}).get("save_dir", "/var/lib/bambucam/snapshots")
+        ),
     )
 
     # Updater
     from bambucam import __version__
+
     updater = Updater(
         current_version=__version__,
         include_prerelease=cfg.get("system", "update_include_prerelease", default=False),
@@ -179,13 +198,12 @@ def main() -> None:
     )
 
     log.info("WebUI listening on http://%s:%d", host, port)
-    log.info(
-        "MJPEG stream: http://<pi-ip>:%d/stream", port
-    )
+    log.info("MJPEG stream: http://<pi-ip>:%d/stream", port)
     if rtsp.is_running:
         log.info(
             "RTSP stream: rtsp://<pi-ip>:%d/%s",
-            rtsp_cfg.get("port", 8554), rtsp_cfg.get("stream_name", "cam"),
+            rtsp_cfg.get("port", 8554),
+            rtsp_cfg.get("stream_name", "cam"),
         )
 
     try:

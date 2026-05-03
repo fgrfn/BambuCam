@@ -4,11 +4,9 @@ Uses subprocess calls to v4l2-ctl for configuration and
 OpenCV / subprocess ffmpeg for frame capture.
 """
 
-import io
 import logging
 import subprocess
 import threading
-import time
 from typing import Optional
 
 from bambucam.camera.backends.base import CameraBackend
@@ -25,7 +23,7 @@ class V4L2Backend(CameraBackend):
         self._resolution: Optional[Resolution] = None
         self._framerate: int = 30
         self._lock = threading.Lock()
-        self._cap = None   # OpenCV VideoCapture
+        self._cap = None  # OpenCV VideoCapture
 
     def configure(self, resolution: Resolution, framerate: int, **kwargs) -> None:
         self._resolution = resolution
@@ -34,6 +32,7 @@ class V4L2Backend(CameraBackend):
     def start(self) -> None:
         try:
             import cv2
+
             self._cv2 = cv2
         except ImportError:
             raise RuntimeError(
@@ -92,7 +91,9 @@ class V4L2Backend(CameraBackend):
         try:
             subprocess.run(
                 ["v4l2-ctl", "--device", self.device, "--set-ctrl", f"{control}={value}"],
-                check=False, timeout=3, capture_output=True,
+                check=False,
+                timeout=3,
+                capture_output=True,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             log.warning("v4l2-ctl failed for %s: %s", control, e)

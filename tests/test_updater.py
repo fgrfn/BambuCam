@@ -1,21 +1,19 @@
 """Tests for the updater service (mocked — no real network calls)."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from bambucam.updater import (
     ReleaseInfo,
-    UpdateState,
     Updater,
+    UpdateState,
     _parse_version,
     _version_gt,
 )
 
-
 # ---------------------------------------------------------------------------
 # Version helpers
 # ---------------------------------------------------------------------------
+
 
 class TestVersionParsing:
     def test_basic(self):
@@ -82,9 +80,7 @@ class TestUpdaterCheck:
 
     def test_network_error(self):
         updater = Updater(current_version="0.1.0")
-        with patch.object(
-            updater, "_fetch_latest_release", side_effect=ConnectionError("timeout")
-        ):
+        with patch.object(updater, "_fetch_latest_release", side_effect=ConnectionError("timeout")):
             status = updater.check()
 
         assert status.state == UpdateState.ERROR
@@ -101,6 +97,7 @@ class TestUpdaterCheck:
 # ---------------------------------------------------------------------------
 # Updater.start_update() guards
 # ---------------------------------------------------------------------------
+
 
 class TestUpdaterStartGuards:
     def test_cannot_start_without_check(self):
@@ -119,6 +116,7 @@ class TestUpdaterStartGuards:
 # ---------------------------------------------------------------------------
 # UpdateStatus.as_dict()
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateStatusAsDict:
     def test_idle_dict(self):

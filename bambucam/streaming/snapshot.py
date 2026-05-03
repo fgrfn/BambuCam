@@ -1,7 +1,6 @@
 """Snapshot service — captures single JPEG frames on demand."""
 
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Optional

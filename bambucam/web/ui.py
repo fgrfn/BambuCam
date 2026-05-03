@@ -13,4 +13,5 @@ def index():
 @ui_bp.get("/health")
 def health():
     from flask import jsonify
+
     return jsonify({"status": "ok"})

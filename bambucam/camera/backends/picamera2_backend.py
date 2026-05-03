@@ -6,7 +6,6 @@ Requires: sudo apt install python3-picamera2
 import io
 import logging
 import threading
-import time
 from typing import Optional
 
 from bambucam.camera.backends.base import CameraBackend
@@ -60,14 +59,15 @@ class Picamera2Backend(CameraBackend):
             from picamera2 import Picamera2
         except ImportError:
             raise RuntimeError(
-                "picamera2 is not installed. "
-                "Run: sudo apt install python3-picamera2"
+                "picamera2 is not installed. " "Run: sudo apt install python3-picamera2"
             )
 
         res = self._resolution or self.model.max_resolution
         log.info(
             "Starting picamera2 backend: %s @ %s %dfps",
-            self.model.name, res, self._framerate,
+            self.model.name,
+            res,
+            self._framerate,
         )
 
         self._picam = Picamera2(self._camera_index)
@@ -131,6 +131,7 @@ class Picamera2Backend(CameraBackend):
 
     def set_exposure_mode(self, mode: str) -> None:
         from libcamera import controls as lc
+
         mode_map = {
             "auto": lc.AeExposureModeEnum.Normal,
             "sport": lc.AeExposureModeEnum.Short,
@@ -142,6 +143,7 @@ class Picamera2Backend(CameraBackend):
 
     def set_awb_mode(self, mode: str) -> None:
         from libcamera import controls as lc
+
         mode_map = {
             "auto": lc.AwbModeEnum.Auto,
             "sunlight": lc.AwbModeEnum.Daylight,
@@ -165,6 +167,7 @@ class Picamera2Backend(CameraBackend):
         if not self.model.has_autofocus:
             return
         from libcamera import controls as lc
+
         mode = lc.AfModeEnum.Continuous if enabled else lc.AfModeEnum.Manual
         self._set_control(AfMode=mode)
 

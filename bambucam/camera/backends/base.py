@@ -1,7 +1,8 @@
 """Abstract base class for camera backends."""
 
 import abc
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from typing import Optional
 
 from bambucam.camera.models import CameraModel, Resolution
 
