@@ -117,14 +117,30 @@ fi
 # ---------------------------------------------------------------------------
 step "Installing system packages"
 apt-get update -qq
+
+# Core packages — required on all platforms
 apt-get install -y --no-install-recommends \
   python3 python3-pip python3-venv \
-  python3-picamera2 \
   ffmpeg \
-  libcamera-apps \
   v4l-utils \
   curl \
   git
+
+# Raspberry Pi OS specific — silently skip on other distros
+_RPI_PKGS=(python3-picamera2 libcamera-apps)
+_MISSING=()
+for _pkg in "${_RPI_PKGS[@]}"; do
+  if apt-cache show "$_pkg" &>/dev/null 2>&1; then
+    apt-get install -y --no-install-recommends "$_pkg" -qq || true
+  else
+    _MISSING+=("$_pkg")
+  fi
+done
+if [[ ${#_MISSING[@]} -gt 0 ]]; then
+  warn "RPi-specific packages not found in apt: ${_MISSING[*]}"
+  warn "  → CSI camera modules (picamera2) may not work on this system."
+  warn "  → USB webcams via V4L2 will still work."
+fi
 
 # ---------------------------------------------------------------------------
 # Download BambuCam source (if not running from local clone)
