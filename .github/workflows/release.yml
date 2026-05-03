@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write   # needed to create GitHub releases and upload assets
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1. Run tests before releasing
+  # -------------------------------------------------------------------------
+  test:
+    name: Pre-release tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install & test
+        run: |
+          pip install -e ".[dev]"
+          pytest tests/ -v
+
+  # -------------------------------------------------------------------------
+  # 2. Build Python wheel + sdist
+  # -------------------------------------------------------------------------
+  build:
+    name: Build distribution packages
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # -------------------------------------------------------------------------
+  # 3. Create GitHub Release with assets
+  # -------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for changelog generation
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Extract commits since last tag for release notes
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log "${PREV_TAG}..${GITHUB_REF_NAME}" --pretty=format:"- %s" --no-merges)
+          else
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges | head -20)
+          fi
+          echo "commits<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$COMMITS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "BambuCam v${{ steps.version.outputs.version }}"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}  # e.g. v1.0.0-beta is pre-release
+          body: |
+            ## BambuCam v${{ steps.version.outputs.version }}
+
+            ### Changes
+            ${{ steps.changelog.outputs.commits }}
+
+            ---
+
+            ### Installation / Update
+
+            **Fresh install:**
+            ```bash
+            git clone https://github.com/fgrfn/bambucam
+            cd bambucam
+            sudo bash scripts/install.sh
+            ```
+
+            **Update via WebUI:** Open the BambuCam WebUI → click **"Nach Updates suchen"** → **"Jetzt aktualisieren"**
+
+            **Update via CLI:**
+            ```bash
+            sudo bambucam-update
+            # or
+            curl -fsSL https://github.com/fgrfn/bambucam/releases/download/${{ github.ref_name }}/install.sh | sudo bash
+            ```
+
+            ### Download
+
+            | File | Description |
+            |---|---|
+            | `bambucam-${{ steps.version.outputs.version }}.tar.gz` | Source distribution |
+            | `bambucam-${{ steps.version.outputs.version }}-py3-none-any.whl` | Python wheel |
+            | `install.sh` | Standalone installer |
+
+          files: |
+            dist/*
+            scripts/install.sh
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # -------------------------------------------------------------------------
+  # 4. Notify on failure
+  # -------------------------------------------------------------------------
+  notify-failure:
+    name: Notify on failure
+    needs: [test, build, release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log failure
+        run: echo "Release pipeline failed for ${{ github.ref_name }}"

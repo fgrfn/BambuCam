@@ -1,0 +1,42 @@
+[Unit]
+Description=BambuCam - Raspberry Pi Camera Streaming
+Documentation=https://github.com/fgrfn/bambucam
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=bambucam
+Group=video
+
+# Use virtualenv if installed there
+ExecStart=/opt/bambucam/venv/bin/bambucam
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+# Allow camera and GPIO access
+SupplementaryGroups=video gpio i2c
+
+# Working directory
+WorkingDirectory=/opt/bambucam
+
+# Logging (use journalctl -u bambucam to view)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bambucam
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bambucam /etc/bambucam
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=-/etc/bambucam/environment
+
+[Install]
+WantedBy=multi-user.target

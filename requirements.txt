@@ -1,0 +1,14 @@
+# Core dependencies
+flask>=3.0
+pyyaml>=6.0
+psutil>=5.9
+requests>=2.31
+
+# Raspberry Pi camera (install separately on RPi)
+# picamera2>=0.3
+
+# Development
+pytest>=7.0
+pytest-cov
+black
+ruff
