@@ -1,48 +1,116 @@
 #!/usr/bin/env bash
+# ============================================================================
 # BambuCam Installer for Raspberry Pi OS (Bullseye / Bookworm)
-# Run as root: sudo bash install.sh
+#
+# CURL ONE-LINER (recommended):
+#   curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh | sudo bash
+#
+# SPECIFIC VERSION:
+#   curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash
+#
+# FROM LOCAL CLONE (development):
+#   sudo bash scripts/install.sh
+#
+# OPTIONS (env vars):
+#   BAMBUCAM_VERSION=0.2.0  — install a specific version (default: latest)
+#   BAMBUCAM_BRANCH=main    — install from a branch instead of a release
+#   BAMBUCAM_DIR=/opt/bambucam  — install directory (default: /opt/bambucam)
+# ============================================================================
 set -euo pipefail
 
-BAMBUCAM_VERSION="0.1.0"
-MEDIAMTX_VERSION="v1.9.3"
-INSTALL_DIR="/opt/bambucam"
-CONFIG_DIR="/etc/bambucam"
-DATA_DIR="/var/lib/bambucam"
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+BAMBUCAM_REPO="fgrfn/bambucam"
+BAMBUCAM_DIR="${BAMBUCAM_DIR:-/opt/bambucam}"
+BAMBUCAM_CONFIG_DIR="/etc/bambucam"
+BAMBUCAM_DATA_DIR="/var/lib/bambucam"
 SERVICE_USER="bambucam"
+MEDIAMTX_VERSION="v1.9.3"
 
-ARCH=$(dpkg --print-architecture)
+# Detect CPU architecture for MediaMTX
+ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
 case "$ARCH" in
-  armhf)   MEDIAMTX_ARCH="linux_armv7"  ;;
-  arm64)   MEDIAMTX_ARCH="linux_arm64"  ;;
-  amd64)   MEDIAMTX_ARCH="linux_amd64"  ;;
-  *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+  armhf|armv7*)  MEDIAMTX_ARCH="linux_armv7"  ;;
+  arm64|aarch64) MEDIAMTX_ARCH="linux_arm64"  ;;
+  amd64|x86_64)  MEDIAMTX_ARCH="linux_amd64"  ;;
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
 MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_${MEDIAMTX_ARCH}.tar.gz"
+GITHUB_RAW="https://raw.githubusercontent.com/${BAMBUCAM_REPO}"
+GITHUB_API="https://api.github.com/repos/${BAMBUCAM_REPO}"
 
 # ---------------------------------------------------------------------------
-# Colour output
+# Colour helpers
 # ---------------------------------------------------------------------------
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+if [ -t 1 ]; then
+  GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
+  CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+else
+  GREEN=''; YELLOW=''; RED=''; CYAN=''; BOLD=''; NC=''
+fi
+
 info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
-step()  { echo -e "\n${GREEN}▶ $*${NC}"; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+step()  { echo -e "\n${CYAN}${BOLD}▶ $*${NC}"; }
+banner() {
+  echo -e "${GREEN}"
+  echo "  ____                 _            ____"
+  echo " | __ )  __ _ _ __ ___ | |__  _   _/ ___|__ _ _ __ ___"
+  echo " |  _ \ / _\` | '_ \` _ \| '_ \| | | | |   / _\` | '_ \` _ \\"
+  echo " | |_) | (_| | | | | | | |_) | |_| | |__| (_| | | | | | |"
+  echo " |____/ \__,_|_| |_| |_|_.__/ \__,_|\____\__,_|_| |_| |_|"
+  echo -e "${NC}"
+  echo "  Raspberry Pi Camera Streaming for BambuBuddy"
+  echo "  https://github.com/${BAMBUCAM_REPO}"
+  echo ""
+}
 
 # ---------------------------------------------------------------------------
-# Preflight checks
+# Preflight
 # ---------------------------------------------------------------------------
-step "Checking system requirements"
-[[ $EUID -eq 0 ]] || error "This script must be run as root (sudo bash install.sh)"
+banner
+step "Checking requirements"
+[[ $EUID -eq 0 ]] || error "Run as root: curl -fsSL ... | sudo bash"
 command -v apt-get &>/dev/null || error "apt-get not found — Raspberry Pi OS required"
+command -v curl   &>/dev/null || { apt-get install -y curl -qq; }
 
-step "Updating package lists"
-apt-get update -qq
+# ---------------------------------------------------------------------------
+# Determine install source
+# ---------------------------------------------------------------------------
+# Mode 1: Running from a local git clone (development / CI)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd || echo "")"
+SOURCE_ROOT="$(dirname "$SCRIPT_DIR" 2>/dev/null || echo "")"
+LOCAL_SOURCE=false
+
+if [[ -f "$SOURCE_ROOT/pyproject.toml" ]]; then
+  LOCAL_SOURCE=true
+  info "Local source tree detected at $SOURCE_ROOT — installing from source"
+fi
+
+# Mode 2: Specific version requested via env var
+if [[ -n "${BAMBUCAM_VERSION:-}" ]]; then
+  INSTALL_TAG="v${BAMBUCAM_VERSION#v}"
+  info "Target version: $INSTALL_TAG"
+elif [[ -n "${BAMBUCAM_BRANCH:-}" ]]; then
+  INSTALL_TAG=""
+  INSTALL_BRANCH="$BAMBUCAM_BRANCH"
+  info "Target branch: $INSTALL_BRANCH"
+elif [[ "$LOCAL_SOURCE" == "false" ]]; then
+  step "Fetching latest release info from GitHub"
+  LATEST_JSON=$(curl -fsSL "${GITHUB_API}/releases/latest")
+  INSTALL_TAG=$(echo "$LATEST_JSON" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+  BAMBUCAM_VERSION="${INSTALL_TAG#v}"
+  info "Latest release: $INSTALL_TAG (v$BAMBUCAM_VERSION)"
+fi
 
 # ---------------------------------------------------------------------------
 # System packages
 # ---------------------------------------------------------------------------
 step "Installing system packages"
+apt-get update -qq
 apt-get install -y --no-install-recommends \
   python3 python3-pip python3-venv \
   python3-picamera2 \
@@ -53,111 +121,150 @@ apt-get install -y --no-install-recommends \
   git
 
 # ---------------------------------------------------------------------------
-# Create user & directories
+# Download BambuCam source (if not running from local clone)
+# ---------------------------------------------------------------------------
+SRC_DIR="$SOURCE_ROOT"
+
+if [[ "$LOCAL_SOURCE" == "false" ]]; then
+  step "Downloading BambuCam ${INSTALL_TAG}"
+  TMP_SRC=$(mktemp -d)
+  TARBALL_URL="https://api.github.com/repos/${BAMBUCAM_REPO}/tarball/${INSTALL_TAG:-${INSTALL_BRANCH:-main}}"
+  info "Downloading from $TARBALL_URL"
+  curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMP_SRC" --strip-components=1
+  SRC_DIR="$TMP_SRC"
+fi
+
+# ---------------------------------------------------------------------------
+# Create system user & directories
 # ---------------------------------------------------------------------------
 step "Creating system user and directories"
 if ! id "$SERVICE_USER" &>/dev/null; then
-  useradd --system --no-create-home --groups video,gpio,i2c \
-    --shell /usr/sbin/nologin "$SERVICE_USER"
+  useradd --system --no-create-home \
+    --shell /usr/sbin/nologin \
+    "$SERVICE_USER"
   info "Created user: $SERVICE_USER"
+else
+  info "User already exists: $SERVICE_USER"
 fi
 
-install -d -m 755 "$INSTALL_DIR"
-install -d -m 755 "$CONFIG_DIR"
-install -d -m 750 "$DATA_DIR"
-install -d -m 750 "$DATA_DIR/snapshots"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
+usermod -aG video "$SERVICE_USER" 2>/dev/null || true
+usermod -aG gpio  "$SERVICE_USER" 2>/dev/null || true
+usermod -aG i2c   "$SERVICE_USER" 2>/dev/null || true
+
+install -d -m 755 "$BAMBUCAM_DIR"
+install -d -m 755 "$BAMBUCAM_CONFIG_DIR"
+install -d -m 750 "$BAMBUCAM_DATA_DIR"
+install -d -m 750 "$BAMBUCAM_DATA_DIR/snapshots"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_DATA_DIR"
 
 # ---------------------------------------------------------------------------
 # MediaMTX
 # ---------------------------------------------------------------------------
-step "Downloading MediaMTX ${MEDIAMTX_VERSION}"
-TMPDIR=$(mktemp -d)
-curl -fsSL "$MEDIAMTX_URL" -o "$TMPDIR/mediamtx.tar.gz"
-tar -xzf "$TMPDIR/mediamtx.tar.gz" -C "$TMPDIR"
-install -m 755 "$TMPDIR/mediamtx" /usr/local/bin/mediamtx
-rm -rf "$TMPDIR"
-info "MediaMTX installed to /usr/local/bin/mediamtx"
+step "Installing MediaMTX ${MEDIAMTX_VERSION} (RTSP server)"
+MTMP=$(mktemp -d)
+curl -fsSL "$MEDIAMTX_URL" -o "$MTMP/mediamtx.tar.gz"
+tar -xzf "$MTMP/mediamtx.tar.gz" -C "$MTMP"
+install -m 755 "$MTMP/mediamtx" /usr/local/bin/mediamtx
+rm -rf "$MTMP"
+info "MediaMTX → /usr/local/bin/mediamtx"
 
 # ---------------------------------------------------------------------------
-# BambuCam Python package
+# Python virtual environment & BambuCam package
 # ---------------------------------------------------------------------------
-step "Installing BambuCam"
+step "Installing BambuCam Python package"
 
-# Copy source (or install from git if running from a temp location)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_ROOT="$(dirname "$SCRIPT_DIR")"
+# Re-use existing venv if present (keeps user data intact on update)
+if [[ ! -d "$BAMBUCAM_DIR/venv" ]]; then
+  python3 -m venv "$BAMBUCAM_DIR/venv"
+fi
 
-if [[ -f "$SOURCE_ROOT/pyproject.toml" ]]; then
-  info "Installing from local source: $SOURCE_ROOT"
-  python3 -m venv "$INSTALL_DIR/venv"
-  # Use system picamera2 (installed via apt above)
-  "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
-  "$INSTALL_DIR/venv/bin/pip" install --quiet \
-    --system-site-packages \
-    "$SOURCE_ROOT"
-else
-  warn "Source not found at $SOURCE_ROOT — installing from PyPI (when published)"
-  python3 -m venv "$INSTALL_DIR/venv"
-  "$INSTALL_DIR/venv/bin/pip" install --quiet bambucam
+PIP="$BAMBUCAM_DIR/venv/bin/pip"
+
+"$PIP" install --quiet --upgrade pip
+"$PIP" install --quiet \
+  --system-site-packages \
+  "$SRC_DIR"
+
+info "BambuCam $(${BAMBUCAM_DIR}/venv/bin/bambucam --version 2>/dev/null || echo installed)"
+
+# ---------------------------------------------------------------------------
+# Cleanup temp download dir
+# ---------------------------------------------------------------------------
+if [[ "$LOCAL_SOURCE" == "false" && -n "${TMP_SRC:-}" ]]; then
+  rm -rf "$TMP_SRC"
 fi
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-step "Installing configuration"
-if [[ ! -f "$CONFIG_DIR/bambucam.yaml" ]]; then
-  install -m 640 "$SOURCE_ROOT/config/bambucam.yaml" "$CONFIG_DIR/bambucam.yaml"
-  chown "root:$SERVICE_USER" "$CONFIG_DIR/bambucam.yaml"
-  info "Default config installed to $CONFIG_DIR/bambucam.yaml"
+step "Installing default configuration"
+if [[ ! -f "$BAMBUCAM_CONFIG_DIR/bambucam.yaml" ]]; then
+  install -m 640 "$SRC_DIR/config/bambucam.yaml" \
+    "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
+  chown "root:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
+  info "Config written to $BAMBUCAM_CONFIG_DIR/bambucam.yaml"
 else
-  info "Existing config kept: $CONFIG_DIR/bambucam.yaml"
+  info "Existing config preserved: $BAMBUCAM_CONFIG_DIR/bambucam.yaml"
 fi
 
-# Create empty environment file for systemd
-touch "$CONFIG_DIR/environment"
-chmod 640 "$CONFIG_DIR/environment"
-chown "root:$SERVICE_USER" "$CONFIG_DIR/environment"
+# Environment file for systemd overrides
+if [[ ! -f "$BAMBUCAM_CONFIG_DIR/environment" ]]; then
+  install -m 640 /dev/null "$BAMBUCAM_CONFIG_DIR/environment"
+  chown "root:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/environment"
+fi
 
 # ---------------------------------------------------------------------------
 # systemd service
 # ---------------------------------------------------------------------------
 step "Installing systemd service"
-install -m 644 "$SOURCE_ROOT/systemd/bambucam.service" /etc/systemd/system/bambucam.service
+install -m 644 "$SRC_DIR/systemd/bambucam.service" \
+  /etc/systemd/system/bambucam.service
+
 systemctl daemon-reload
 systemctl enable bambucam.service
-info "Service installed and enabled"
+info "Service enabled: bambucam.service"
 
 # ---------------------------------------------------------------------------
-# Camera permissions
+# Camera (raspi-config enable legacy camera interface if needed)
 # ---------------------------------------------------------------------------
-step "Configuring camera access"
-# Add service user to video group (already done at creation, but just in case)
-usermod -aG video "$SERVICE_USER" 2>/dev/null || true
-
-# Enable camera in raspi-config if not already done
+step "Configuring camera"
 if command -v raspi-config &>/dev/null; then
   raspi-config nonint do_camera 0 2>/dev/null || true
+  info "Camera interface enabled via raspi-config"
 fi
 
 # ---------------------------------------------------------------------------
-# Firewall hint
+# Firewall hints
 # ---------------------------------------------------------------------------
-warn "Make sure the following ports are accessible on your network:"
-warn "  8080 — WebUI + MJPEG stream"
-warn "  8554 — RTSP (for BambuBuddy)"
-warn "  8888 — HLS"
-warn "If you use ufw: sudo ufw allow 8080,8554,8888/tcp"
+if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+  step "Configuring firewall (ufw)"
+  ufw allow 8080/tcp comment "BambuCam WebUI+MJPEG" 2>/dev/null || true
+  ufw allow 8554/tcp comment "BambuCam RTSP"        2>/dev/null || true
+  ufw allow 8888/tcp comment "BambuCam HLS"         2>/dev/null || true
+  info "ufw rules added"
+else
+  warn "Remember to open ports if you use a firewall:"
+  warn "  sudo ufw allow 8080,8554,8888/tcp"
+fi
 
 # ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
-step "Installation complete!"
+LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<pi-ip>")
+
 echo ""
-echo -e "  Start now :  ${GREEN}sudo systemctl start bambucam${NC}"
-echo -e "  Logs      :  ${GREEN}journalctl -u bambucam -f${NC}"
-echo -e "  WebUI     :  ${GREEN}http://$(hostname -I | awk '{print $1}'):8080${NC}"
-echo -e "  RTSP URL  :  ${GREEN}rtsp://$(hostname -I | awk '{print $1}'):8554/cam${NC}"
+echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}${BOLD}  BambuCam installation complete!${NC}"
+echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  Edit config: ${YELLOW}sudo nano $CONFIG_DIR/bambucam.yaml${NC}"
+echo -e "  ${BOLD}Start:${NC}     sudo systemctl start bambucam"
+echo -e "  ${BOLD}Logs:${NC}      journalctl -u bambucam -f"
+echo ""
+echo -e "  ${BOLD}WebUI:${NC}     ${CYAN}http://${LOCAL_IP}:8080${NC}"
+echo -e "  ${BOLD}RTSP URL:${NC}  ${CYAN}rtsp://${LOCAL_IP}:8554/cam${NC}  ← BambuBuddy"
+echo -e "  ${BOLD}MJPEG:${NC}     ${CYAN}http://${LOCAL_IP}:8080/stream${NC}"
+echo ""
+echo -e "  ${BOLD}Config:${NC}    sudo nano ${BAMBUCAM_CONFIG_DIR}/bambucam.yaml"
+echo ""
+echo -e "  ${YELLOW}To update later: use the WebUI → Software-Update${NC}"
 echo ""

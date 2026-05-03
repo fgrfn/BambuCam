@@ -53,12 +53,21 @@ It streams the camera feed via **RTSP**, **MJPEG**, and **HLS**, and provides a 
 
 ### 1. Install (Raspberry Pi OS Bullseye / Bookworm)
 
+**One-liner (recommended):**
+
 ```bash
-git clone https://github.com/fgrfn/bambucam
-cd bambucam
-sudo bash scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh | sudo bash
+```
+
+The installer takes care of everything: system packages, MediaMTX, Python venv, config and systemd service. Start BambuCam after installation:
+
+```bash
 sudo systemctl start bambucam
 ```
+
+> **Specific version:** `curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash`
+>
+> **From source (development):** `git clone https://github.com/fgrfn/bambucam && sudo bash bambucam/scripts/install.sh`
 
 ### 2. Access WebUI
 

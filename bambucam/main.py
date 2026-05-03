@@ -23,10 +23,12 @@ def _setup_logging(level: str) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
+    from bambucam import __version__
     p = argparse.ArgumentParser(
         prog="bambucam",
         description="BambuCam — Raspberry Pi camera streaming for BambuBuddy",
     )
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--config", type=Path, help="Path to config YAML file")
     p.add_argument(
         "--list-cameras", action="store_true",

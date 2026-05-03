@@ -5,17 +5,37 @@
 - Raspberry Pi 2 / 3 / 4 / 5
 - Raspberry Pi OS Bullseye or Bookworm (64-bit or 32-bit)
 - Compatible camera module (see [README](../README.md))
-- Internet connection for the installer
+- Internet connection
 
 ---
 
-## Automatic installation (recommended)
+## One-liner installation (recommended)
 
 ```bash
-git clone https://github.com/fgrfn/bambucam
-cd bambucam
-sudo bash scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh | sudo bash
+```
+
+After installation, start BambuCam:
+
+```bash
 sudo systemctl start bambucam
+```
+
+### Variants
+
+```bash
+# Always install the latest stable release (attached to GitHub Release):
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash
+
+# Install a specific version:
+BAMBUCAM_VERSION=0.2.0 bash <(curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh)
+
+# Install from a specific branch (e.g. for testing):
+BAMBUCAM_BRANCH=feature/my-feature sudo bash <(curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh)
+
+# Install from a local clone (development):
+git clone https://github.com/fgrfn/bambucam
+sudo bash bambucam/scripts/install.sh
 ```
 
 The installer:
