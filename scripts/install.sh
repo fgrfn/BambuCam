@@ -148,14 +148,29 @@ fi
 # ---------------------------------------------------------------------------
 SRC_DIR="$SOURCE_ROOT"
 
+WHEEL_FILE=""
 if [[ "$LOCAL_SOURCE" == "false" ]]; then
   _INSTALL_REF="${INSTALL_TAG:-${INSTALL_BRANCH:-main}}"
   step "Downloading BambuCam ${_INSTALL_REF}"
   TMP_SRC=$(mktemp -d)
   TARBALL_URL="https://api.github.com/repos/${BAMBUCAM_REPO}/tarball/${_INSTALL_REF}"
-  info "Downloading from $TARBALL_URL"
+  info "Downloading source from $TARBALL_URL"
   curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMP_SRC" --strip-components=1
   SRC_DIR="$TMP_SRC"
+
+  # For tagged releases, prefer the pre-built wheel so the installed version
+  # metadata matches the release tag (the wheel is built with the tag version
+  # injected; the source tarball still has the base pyproject.toml version).
+  if [[ -n "${INSTALL_TAG:-}" && -n "${BAMBUCAM_VERSION:-}" ]]; then
+    WHEEL_URL="https://github.com/${BAMBUCAM_REPO}/releases/download/${INSTALL_TAG}/bambucam-${BAMBUCAM_VERSION}-py3-none-any.whl"
+    info "Downloading wheel from $WHEEL_URL"
+    if curl -fsSL "$WHEEL_URL" -o "$TMP_SRC/bambucam.whl" 2>/dev/null; then
+      WHEEL_FILE="$TMP_SRC/bambucam.whl"
+      info "Release wheel downloaded — version metadata will match ${INSTALL_TAG}"
+    else
+      warn "Release wheel not found — falling back to source install"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -206,7 +221,11 @@ fi
 PIP="$BAMBUCAM_DIR/venv/bin/pip"
 
 "$PIP" install --quiet --upgrade pip
-"$PIP" install --quiet "$SRC_DIR"
+if [[ -n "$WHEEL_FILE" ]]; then
+  "$PIP" install --quiet "$WHEEL_FILE"
+else
+  "$PIP" install --quiet "$SRC_DIR"
+fi
 
 # Service user needs write access to the venv for self-updates
 chown -R "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_DIR/venv"
