@@ -164,8 +164,8 @@ if [[ "$LOCAL_SOURCE" == "false" ]]; then
   if [[ -n "${INSTALL_TAG:-}" && -n "${BAMBUCAM_VERSION:-}" ]]; then
     WHEEL_URL="https://github.com/${BAMBUCAM_REPO}/releases/download/${INSTALL_TAG}/bambucam-${BAMBUCAM_VERSION}-py3-none-any.whl"
     info "Downloading wheel from $WHEEL_URL"
-    if curl -fsSL "$WHEEL_URL" -o "$TMP_SRC/bambucam.whl" 2>/dev/null; then
-      WHEEL_FILE="$TMP_SRC/bambucam.whl"
+    if curl -fsSL "$WHEEL_URL" -o "$TMP_SRC/bambucam-${BAMBUCAM_VERSION}-py3-none-any.whl" 2>/dev/null; then
+      WHEEL_FILE="$TMP_SRC/bambucam-${BAMBUCAM_VERSION}-py3-none-any.whl"
       info "Release wheel downloaded — version metadata will match ${INSTALL_TAG}"
     else
       warn "Release wheel not found — falling back to source install"
