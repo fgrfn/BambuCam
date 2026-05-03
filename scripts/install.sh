@@ -120,7 +120,8 @@ apt-get update -qq
 
 # Core packages — required on all platforms
 apt-get install -y --no-install-recommends \
-  python3 python3-pip python3-venv \
+  python3 python3-pip python3-venv python3-dev \
+  gcc \
   ffmpeg \
   v4l-utils \
   curl \
