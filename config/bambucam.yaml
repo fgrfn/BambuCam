@@ -1,0 +1,77 @@
+# BambuCam Configuration
+# Full reference: https://github.com/fgrfn/bambucam/blob/main/docs/configuration.md
+
+camera:
+  index: 0                   # Camera index (0 = first detected)
+  backend: auto              # auto | picamera2 | v4l2
+  resolution: 1920x1080      # Width x Height
+  framerate: 15              # Frames per second (1-120, camera-dependent)
+
+  # Image adjustments (-1.0 … 1.0 for brightness, 0 … 32 for others)
+  brightness: 0.0
+  contrast: 1.0
+  saturation: 1.0
+  sharpness: 1.0
+
+  # Exposure & white balance
+  exposure_mode: auto        # auto | sport | night
+  awb_mode: auto             # auto | sunlight | cloudy | shade | tungsten | fluorescent
+
+  # Orientation
+  vflip: false
+  hflip: false
+
+  # Camera Module 3 specific (ignored for other models)
+  autofocus: true
+  hdr: false
+
+streaming:
+  mjpeg:
+    enabled: true
+    port: 8080               # Same port as WebUI (/stream path)
+    quality: 85              # JPEG quality (1-100)
+    fps: 15                  # MJPEG stream framerate
+
+  rtsp:
+    enabled: true
+    port: 8554               # RTSP port (rtsp://<ip>:8554/cam)
+    stream_name: cam         # Stream path name
+    bitrate_kbps: 2000       # H.264 target bitrate
+
+    # HLS (HTTP Live Streaming) — playable in browsers, OBS
+    enable_hls: true
+    hls_port: 8888           # http://<ip>:8888/cam/index.m3u8
+
+    # WebRTC — lowest latency, experimental
+    enable_webrtc: false
+    webrtc_port: 8889
+
+    auth:
+      enabled: false
+      username: ""
+      password: ""
+
+  snapshot:
+    enabled: true
+    save_dir: /var/lib/bambucam/snapshots
+
+web:
+  host: 0.0.0.0              # Listen on all interfaces
+  port: 8080
+  secret_key: ""             # Auto-generated if empty
+
+  # Optional WebUI password protection
+  auth:
+    enabled: false
+    username: admin
+    password: ""             # Set a strong password here
+
+  https:
+    enabled: false
+    cert: ""                 # Path to SSL certificate
+    key: ""                  # Path to SSL private key
+
+system:
+  log_level: INFO            # DEBUG | INFO | WARNING | ERROR
+  mediamtx_path: /usr/local/bin/mediamtx
+  ffmpeg_path: ffmpeg

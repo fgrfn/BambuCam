@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BambuCam</title>
+  <style>
+    /* Minimal baseline — full design via Claude Design in a later step */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    header {
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #00c896; }
+    header .badge {
+      background: #00c896;
+      color: #000;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #555; display: inline-block;
+    }
+    .status-dot.ok { background: #00c896; }
+    .status-dot.error { background: #e05555; }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .stream-panel { display: flex; flex-direction: column; gap: 0.75rem; }
+    .stream-view {
+      background: #000;
+      border: 1px solid #333;
+      border-radius: 8px;
+      aspect-ratio: 16/9;
+      overflow: hidden;
+      position: relative;
+    }
+    .stream-view img {
+      width: 100%; height: 100%; object-fit: contain;
+    }
+    .stream-overlay {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(transparent, rgba(0,0,0,0.7));
+      padding: 0.5rem 0.75rem;
+      display: flex; justify-content: space-between; align-items: flex-end;
+    }
+    .stream-urls { font-size: 0.72rem; color: #aaa; }
+    .stream-urls a { color: #00c896; text-decoration: none; }
+
+    .controls { display: flex; flex-direction: column; gap: 0.75rem; }
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .card h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #888;
+      margin-bottom: 0.75rem;
+    }
+
+    .field { margin-bottom: 0.6rem; }
+    .field label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 0.25rem; }
+    .field select, .field input[type=range], .field input[type=number] {
+      width: 100%; background: #111; border: 1px solid #333;
+      color: #e0e0e0; border-radius: 4px; padding: 0.4rem 0.5rem;
+      font-size: 0.85rem;
+    }
+    .field input[type=range] { padding: 0; cursor: pointer; accent-color: #00c896; }
+    .range-row { display: flex; align-items: center; gap: 0.5rem; }
+    .range-row span { font-size: 0.8rem; color: #aaa; width: 2.5rem; text-align: right; }
+
+    .toggle-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .toggle-row label { font-size: 0.85rem; color: #ccc; }
+    .toggle {
+      position: relative; display: inline-block; width: 36px; height: 20px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #444; border-radius: 20px; transition: 0.2s;
+    }
+    .slider::before {
+      content: ""; position: absolute;
+      height: 14px; width: 14px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: 0.2s;
+    }
+    .toggle input:checked + .slider { background: #00c896; }
+    .toggle input:checked + .slider::before { transform: translateX(16px); }
+
+    button {
+      background: #00c896; color: #000; border: none;
+      border-radius: 6px; padding: 0.5rem 1rem; cursor: pointer;
+      font-weight: 600; font-size: 0.85rem; width: 100%; margin-top: 0.25rem;
+    }
+    button.secondary {
+      background: #2a2a2a; color: #ccc; border: 1px solid #444;
+    }
+    button:hover { opacity: 0.85; }
+
+    .info-row {
+      display: flex; justify-content: space-between;
+      font-size: 0.8rem; padding: 0.25rem 0;
+      border-bottom: 1px solid #222;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .key { color: #888; }
+    .info-row .val { color: #ccc; font-family: monospace; }
+
+    .url-box {
+      background: #111; border: 1px solid #333; border-radius: 4px;
+      padding: 0.4rem 0.5rem; font-family: monospace; font-size: 0.75rem;
+      color: #00c896; word-break: break-all; margin-bottom: 0.4rem;
+      cursor: pointer; user-select: all;
+    }
+    .url-box:hover { border-color: #00c896; }
+
+    footer {
+      background: #1a1a1a;
+      border-top: 1px solid #333;
+      padding: 0.5rem 1.5rem;
+      font-size: 0.72rem;
+      color: #555;
+      text-align: center;
+    }
+
+    @media (max-width: 768px) {
+      main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>BambuCam</h1>
+  <span class="badge">v0.1</span>
+  <span id="status-dot" class="status-dot" title="Camera status"></span>
+  <span id="status-text" style="font-size:0.8rem;color:#888">Verbinde…</span>
+</header>
+
+<main>
+  <!-- Live stream preview -->
+  <section class="stream-panel">
+    <div class="stream-view">
+      <img id="stream-img" src="/stream" alt="Live Stream" />
+      <div class="stream-overlay">
+        <div class="stream-urls">
+          MJPEG: <a id="mjpeg-url" href="/stream" target="_blank">/stream</a> &nbsp;|&nbsp;
+          Snapshot: <a id="snap-url" href="/snapshot" target="_blank">/snapshot</a>
+        </div>
+        <div id="fps-badge" style="font-size:0.72rem;color:#aaa"></div>
+      </div>
+    </div>
+
+    <!-- BambuBuddy Integration Card -->
+    <div class="card">
+      <h2>BambuBuddy / BambuStudio Integration</h2>
+      <p style="font-size:0.78rem;color:#888;margin-bottom:0.6rem">
+        RTSP-URL in BambuBuddy unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:
+      </p>
+      <div class="url-box" id="rtsp-url" title="Klicken zum Kopieren">rtsp://…</div>
+      <div class="url-box" id="hls-url" title="Klicken zum Kopieren" style="color:#6bb5ff">http://…/index.m3u8</div>
+      <button class="secondary" onclick="copyUrl('rtsp-url')">RTSP URL kopieren</button>
+    </div>
+  </section>
+
+  <!-- Right sidebar: controls -->
+  <aside class="controls">
+
+    <!-- Camera status -->
+    <div class="card">
+      <h2>Kamera</h2>
+      <div id="cam-info">
+        <div class="info-row"><span class="key">Modell</span><span class="val" id="cam-model">—</span></div>
+        <div class="info-row"><span class="key">Sensor</span><span class="val" id="cam-sensor">—</span></div>
+        <div class="info-row"><span class="key">Backend</span><span class="val" id="cam-backend">—</span></div>
+        <div class="info-row"><span class="key">Auflösung</span><span class="val" id="cam-res">—</span></div>
+        <div class="info-row"><span class="key">Framerate</span><span class="val" id="cam-fps">—</span></div>
+      </div>
+    </div>
+
+    <!-- Resolution & FPS -->
+    <div class="card">
+      <h2>Auflösung & Framerate</h2>
+      <div class="field">
+        <label>Auflösung</label>
+        <select id="sel-resolution"></select>
+      </div>
+      <div class="field">
+        <label>Framerate (fps)</label>
+        <select id="sel-framerate"></select>
+      </div>
+      <div class="field">
+        <label>RTSP Bitrate (kbps)</label>
+        <div class="range-row">
+          <input type="range" id="sl-bitrate" min="500" max="8000" step="500" value="2000" oninput="document.getElementById('val-bitrate').textContent=this.value" />
+          <span id="val-bitrate">2000</span>
+        </div>
+      </div>
+      <button onclick="applyStreamSettings()">Übernehmen</button>
+    </div>
+
+    <!-- Image settings -->
+    <div class="card">
+      <h2>Bild</h2>
+
+      <div class="field">
+        <label>Helligkeit</label>
+        <div class="range-row">
+          <input type="range" id="sl-brightness" min="-100" max="100" step="1" value="0"
+            oninput="document.getElementById('val-brightness').textContent=this.value" />
+          <span id="val-brightness">0</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Kontrast</label>
+        <div class="range-row">
+          <input type="range" id="sl-contrast" min="0" max="200" step="1" value="100"
+            oninput="document.getElementById('val-contrast').textContent=this.value" />
+          <span id="val-contrast">100</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Sättigung</label>
+        <div class="range-row">
+          <input type="range" id="sl-saturation" min="0" max="200" step="1" value="100"
+            oninput="document.getElementById('val-saturation').textContent=this.value" />
+          <span id="val-saturation">100</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Schärfe</label>
+        <div class="range-row">
+          <input type="range" id="sl-sharpness" min="0" max="160" step="1" value="100"
+            oninput="document.getElementById('val-sharpness').textContent=this.value" />
+          <span id="val-sharpness">100</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Belichtungsmodus</label>
+        <select id="sel-exposure">
+          <option value="auto">Auto</option>
+          <option value="sport">Sport (kurze Belichtung)</option>
+          <option value="night">Nacht (lange Belichtung)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Weißabgleich</label>
+        <select id="sel-awb">
+          <option value="auto">Auto</option>
+          <option value="sunlight">Sonnenlicht</option>
+          <option value="cloudy">Bewölkt</option>
+          <option value="shade">Schatten</option>
+          <option value="tungsten">Glühlampe</option>
+          <option value="fluorescent">Leuchtstoffröhre</option>
+        </select>
+      </div>
+
+      <div class="toggle-row">
+        <label>Vertikal spiegeln</label>
+        <label class="toggle"><input type="checkbox" id="chk-vflip" /><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>Horizontal spiegeln</label>
+        <label class="toggle"><input type="checkbox" id="chk-hflip" /><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" id="row-autofocus" style="display:none">
+        <label>Autofokus</label>
+        <label class="toggle"><input type="checkbox" id="chk-autofocus" checked /><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" id="row-hdr" style="display:none">
+        <label>HDR</label>
+        <label class="toggle"><input type="checkbox" id="chk-hdr" /><span class="slider"></span></label>
+      </div>
+
+      <button onclick="applyImageSettings()">Bild-Einstellungen anwenden</button>
+    </div>
+
+    <!-- System info -->
+    <div class="card">
+      <h2>System</h2>
+      <div class="info-row"><span class="key">CPU Temp</span><span class="val" id="sys-temp">—</span></div>
+      <div class="info-row"><span class="key">CPU Last</span><span class="val" id="sys-cpu">—</span></div>
+      <div class="info-row"><span class="key">RAM frei</span><span class="val" id="sys-ram">—</span></div>
+      <div class="info-row"><span class="key">Speicher</span><span class="val" id="sys-disk">—</span></div>
+      <div class="info-row"><span class="key">Hostname</span><span class="val" id="sys-host">—</span></div>
+      <div class="info-row"><span class="key">Pi-Modell</span><span class="val" id="sys-pi">—</span></div>
+    </div>
+
+  </aside>
+</main>
+
+<footer>BambuCam &mdash; Open Source Raspberry Pi Camera Streaming &mdash;
+  <a href="https://github.com/fgrfn/bambucam" style="color:#555">GitHub</a>
+</footer>
+
+<script>
+// ---------------------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------------------
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api/v1' + path, opts);
+  return r.json();
+}
+
+// ---------------------------------------------------------------------------
+// Initialise & poll
+// ---------------------------------------------------------------------------
+let _camModel = {};
+
+async function init() {
+  await loadCameraStatus();
+  await loadStreamStatus();
+  await loadSystemInfo();
+  await loadBambuBuddyUrls();
+  setInterval(loadCameraStatus, 5000);
+  setInterval(loadSystemInfo, 10000);
+  setInterval(loadStreamStatus, 8000);
+}
+
+async function loadCameraStatus() {
+  try {
+    const s = await api('GET', '/camera/status');
+    _camModel = s;
+    document.getElementById('cam-model').textContent = s.model || '—';
+    document.getElementById('cam-sensor').textContent = s.sensor || '—';
+    document.getElementById('cam-backend').textContent = s.backend || '—';
+    document.getElementById('cam-res').textContent = s.resolution || '—';
+    document.getElementById('cam-fps').textContent = s.framerate ? s.framerate + ' fps' : '—';
+
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (s.running) {
+      dot.className = 'status-dot ok';
+      txt.textContent = 'Kamera aktiv';
+    } else {
+      dot.className = 'status-dot error';
+      txt.textContent = 'Kamera gestoppt';
+    }
+
+    // Show/hide model-specific controls
+    document.getElementById('row-autofocus').style.display = s.has_autofocus ? '' : 'none';
+    document.getElementById('row-hdr').style.display = s.has_hdr ? '' : 'none';
+
+    // Populate resolution & framerate dropdowns from model capabilities
+    await loadModelCapabilities(s);
+  } catch(e) {
+    document.getElementById('status-text').textContent = 'Verbindungsfehler';
+  }
+}
+
+async function loadModelCapabilities(status) {
+  if (!status.model) return;
+  const models = await api('GET', '/camera/models');
+  const model = models.find(m => m.name === status.model);
+  if (!model) return;
+
+  const resSel = document.getElementById('sel-resolution');
+  const currentRes = status.resolution || '';
+  resSel.innerHTML = model.supported_resolutions.map(r =>
+    `<option value="${r}" ${r === currentRes ? 'selected' : ''}>${r}</option>`
+  ).join('');
+
+  const fpsSel = document.getElementById('sel-framerate');
+  const currentFps = status.framerate || 15;
+  fpsSel.innerHTML = model.supported_framerates.map(f =>
+    `<option value="${f}" ${f == currentFps ? 'selected' : ''}>${f} fps</option>`
+  ).join('');
+}
+
+async function loadStreamStatus() {
+  const s = await api('GET', '/stream/status');
+  if (s.mjpeg) {
+    document.getElementById('mjpeg-url').href = s.mjpeg.url;
+    document.getElementById('mjpeg-url').textContent = s.mjpeg.url;
+    document.getElementById('snap-url').href = s.mjpeg.snapshot_url;
+  }
+  if (s.rtsp && s.rtsp.urls) {
+    const rtsp = s.rtsp.urls.rtsp || '';
+    document.getElementById('rtsp-url').textContent = rtsp;
+    const hls = s.rtsp.urls.hls || '';
+    document.getElementById('hls-url').textContent = hls;
+  }
+}
+
+async function loadBambuBuddyUrls() {
+  try {
+    const d = await api('GET', '/bambubuddy');
+    if (d.rtsp_url) document.getElementById('rtsp-url').textContent = d.rtsp_url;
+    if (d.hls_url) document.getElementById('hls-url').textContent = d.hls_url;
+  } catch(e) {}
+}
+
+async function loadSystemInfo() {
+  const s = await api('GET', '/system');
+  document.getElementById('sys-temp').textContent = s.cpu_temp_c != null ? s.cpu_temp_c.toFixed(1) + ' °C' : '—';
+  document.getElementById('sys-cpu').textContent = s.cpu_usage_pct != null ? s.cpu_usage_pct.toFixed(1) + ' %' : '—';
+  if (s.memory) {
+    document.getElementById('sys-ram').textContent =
+      s.memory.available_mb + ' MB frei / ' + s.memory.total_mb + ' MB';
+  }
+  if (s.disk) {
+    document.getElementById('sys-disk').textContent =
+      s.disk.free_gb + ' GB frei / ' + s.disk.total_gb + ' GB';
+  }
+  document.getElementById('sys-host').textContent = s.hostname || '—';
+  document.getElementById('sys-pi').textContent = s.pi_model || '—';
+}
+
+// ---------------------------------------------------------------------------
+// Settings actions
+// ---------------------------------------------------------------------------
+
+async function applyStreamSettings() {
+  const resolution = document.getElementById('sel-resolution').value;
+  const framerate = parseInt(document.getElementById('sel-framerate').value);
+  const bitrate_kbps = parseInt(document.getElementById('sl-bitrate').value);
+
+  await api('POST', '/camera/settings', { resolution, framerate });
+  await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
+
+  // Reload stream image to pick up new resolution
+  const img = document.getElementById('stream-img');
+  img.src = '/stream?' + Date.now();
+}
+
+async function applyImageSettings() {
+  const brightness = parseInt(document.getElementById('sl-brightness').value) / 100;
+  const contrast = parseInt(document.getElementById('sl-contrast').value) / 100 * 32;
+  const saturation = parseInt(document.getElementById('sl-saturation').value) / 100 * 32;
+  const sharpness = parseInt(document.getElementById('sl-sharpness').value) / 100 * 16;
+  const exposure_mode = document.getElementById('sel-exposure').value;
+  const awb_mode = document.getElementById('sel-awb').value;
+  const vflip = document.getElementById('chk-vflip').checked;
+  const hflip = document.getElementById('chk-hflip').checked;
+  const autofocus = document.getElementById('chk-autofocus').checked;
+  const hdr = document.getElementById('chk-hdr').checked;
+
+  await api('POST', '/camera/settings', {
+    brightness, contrast, saturation, sharpness,
+    exposure_mode, awb_mode, vflip, hflip, autofocus, hdr,
+  });
+}
+
+function copyUrl(elemId) {
+  const txt = document.getElementById(elemId).textContent;
+  navigator.clipboard.writeText(txt).then(() => {
+    const el = document.getElementById(elemId);
+    const orig = el.style.borderColor;
+    el.style.borderColor = '#00c896';
+    setTimeout(() => { el.style.borderColor = orig; }, 800);
+  });
+}
+
+// ---------------------------------------------------------------------------
+init();
+</script>
+</body>
+</html>
