@@ -150,7 +150,7 @@ def main() -> None:
     rtsp_cfg = stream_cfg.get("rtsp", {})
     rtsp_auth = rtsp_cfg.get("auth", {})
     rtsp = RTSPStreamer(
-        v4l2_device=camera.v4l2_device or "/dev/video0",
+        v4l2_device=(camera.v4l2_device if _camera_ok else None) or "/dev/video0",
         resolution=cam_cfg.get("resolution", "1920x1080"),
         framerate=cam_cfg.get("framerate", 15),
         bitrate_kbps=rtsp_cfg.get("bitrate_kbps", 2000),

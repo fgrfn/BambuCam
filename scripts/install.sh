@@ -198,6 +198,7 @@ info "MediaMTX → /usr/local/bin/mediamtx"
 step "Installing BambuCam Python package"
 
 # Re-use existing venv if present (keeps user data intact on update)
+# --system-site-packages lets the venv see python3-picamera2 installed via apt
 if [[ ! -d "$BAMBUCAM_DIR/venv" ]]; then
   python3 -m venv --system-site-packages "$BAMBUCAM_DIR/venv"
 fi
@@ -278,6 +279,13 @@ if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
 else
   warn "Remember to open ports if you use a firewall:"
   warn "  sudo ufw allow 8080,8554,8888/tcp"
+fi
+
+# ---------------------------------------------------------------------------
+# Cleanup temp download dir (must happen after all $SRC_DIR files are used)
+# ---------------------------------------------------------------------------
+if [[ "$LOCAL_SOURCE" == "false" && -n "${TMP_SRC:-}" ]]; then
+  rm -rf "$TMP_SRC"
 fi
 
 # ---------------------------------------------------------------------------
