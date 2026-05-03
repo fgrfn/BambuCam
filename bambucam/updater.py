@@ -229,20 +229,32 @@ class Updater:
             self._set_error(str(e))
 
     def _download(self, release: ReleaseInfo) -> Path:
-        """Download the source tarball and return path to the local file."""
+        """Download the wheel (preferred) or source tarball; return path to local file."""
         tmp_dir = Path(tempfile.mkdtemp(prefix="bambucam_update_"))
-        tarball_path = tmp_dir / f"bambucam-{release.version}.tar.gz"
 
-        log.info("Downloading %s → %s", release.tarball_url, tarball_path)
+        # Prefer pre-built wheel: version metadata is injected by the release
+        # workflow, so the installed package will report the correct version.
+        wheel_url = next(
+            (a["url"] for a in release.assets if a["name"].endswith(".whl")),
+            None,
+        )
+        if wheel_url:
+            local_path = tmp_dir / f"bambucam-{release.version}-py3-none-any.whl"
+            download_url = wheel_url
+            log.info("Downloading wheel %s → %s", download_url, local_path)
+        else:
+            local_path = tmp_dir / f"bambucam-{release.version}.tar.gz"
+            download_url = release.tarball_url
+            log.info("Wheel not found in assets, falling back to tarball %s", download_url)
 
-        headers = {"Accept": "application/vnd.github+json"}
-        response = requests.get(release.tarball_url, headers=headers, stream=True, timeout=60)
+        headers = {"Accept": "application/octet-stream"}
+        response = requests.get(download_url, headers=headers, stream=True, timeout=60)
         response.raise_for_status()
 
         total = int(response.headers.get("content-length", 0))
         downloaded = 0
 
-        with tarball_path.open("wb") as f:
+        with local_path.open("wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
                 downloaded += len(chunk)
@@ -250,18 +262,24 @@ class Updater:
                     pct = 5 + int(40 * downloaded / total)
                     self._set_progress(pct, f"Lade herunter… {downloaded // 1024} KB")
 
-        log.info("Download complete: %s (%d bytes)", tarball_path, downloaded)
-        return tarball_path
+        log.info("Download complete: %s (%d bytes)", local_path, downloaded)
+        return local_path
 
-    def _install(self, tarball_path: Path) -> None:
-        """Install the downloaded tarball into the venv."""
+    def _install(self, package_path: Path) -> None:
+        """Install the downloaded wheel or tarball into the venv."""
         pip = self._pip_path if self._pip_path.exists() else Path(sys.executable).parent / "pip"
 
-        cmd = [str(pip), "install", "--upgrade", str(tarball_path)]
+        # --no-user: never fall back to user-site install (venv pip only)
+        # HOME=/tmp: service user has no home dir; avoids pip cache permission warning
+        cmd = [str(pip), "install", "--upgrade", "--no-user", str(package_path)]
+        env = os.environ.copy()
+        env["HOME"] = "/tmp"
+        env["PIP_NO_CACHE_DIR"] = "1"
+
         log.info("Running: %s", " ".join(cmd))
         self._set_progress(55, "Installiere Python-Paket…")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
         if result.returncode != 0:
             raise RuntimeError(f"pip install failed (exit {result.returncode}):\n{result.stderr}")
         log.info("pip install succeeded:\n%s", result.stdout)
