@@ -210,13 +210,6 @@ PIP="$BAMBUCAM_DIR/venv/bin/pip"
 info "BambuCam $(${BAMBUCAM_DIR}/venv/bin/bambucam --version 2>/dev/null || echo installed)"
 
 # ---------------------------------------------------------------------------
-# Cleanup temp download dir
-# ---------------------------------------------------------------------------
-if [[ "$LOCAL_SOURCE" == "false" && -n "${TMP_SRC:-}" ]]; then
-  rm -rf "$TMP_SRC"
-fi
-
-# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 step "Installing default configuration"
@@ -275,6 +268,13 @@ if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
 else
   warn "Remember to open ports if you use a firewall:"
   warn "  sudo ufw allow 8080,8554,8888/tcp"
+fi
+
+# ---------------------------------------------------------------------------
+# Cleanup temp download dir (must happen after all $SRC_DIR files are used)
+# ---------------------------------------------------------------------------
+if [[ "$LOCAL_SOURCE" == "false" && -n "${TMP_SRC:-}" ]]; then
+  rm -rf "$TMP_SRC"
 fi
 
 # ---------------------------------------------------------------------------
