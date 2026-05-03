@@ -208,6 +208,34 @@ def restart_camera():
 
 
 # ---------------------------------------------------------------------------
+# Update
+# ---------------------------------------------------------------------------
+
+def _updater():
+    return current_app.config["updater"]
+
+
+@api_bp.get("/update/status")
+def update_status():
+    return jsonify(_updater().status.as_dict())
+
+
+@api_bp.post("/update/check")
+def update_check():
+    status = _updater().check()
+    return jsonify(status.as_dict())
+
+
+@api_bp.post("/update/start")
+def update_start():
+    started = _updater().start_update()
+    if not started:
+        status = _updater().status
+        return jsonify({"error": "Update nicht gestartet — kein Update verfügbar oder bereits aktiv.", "status": status.as_dict()}), 409
+    return jsonify({"ok": True, "message": "Update gestartet."})
+
+
+# ---------------------------------------------------------------------------
 # BambuBuddy integration helper
 # ---------------------------------------------------------------------------
 

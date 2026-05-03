@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from bambucam.streaming.rtsp import RTSPStreamer
     from bambucam.streaming.snapshot import SnapshotService
     from bambucam.config import Config
+    from bambucam.updater import Updater
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def create_app(
     mjpeg_streamer: "MJPEGStreamer",
     rtsp_streamer: "RTSPStreamer",
     snapshot_service: "SnapshotService",
+    updater: "Updater",
 ) -> Flask:
     """Application factory — wire together all components."""
 
@@ -47,6 +49,7 @@ def create_app(
     app.config["mjpeg_streamer"] = mjpeg_streamer
     app.config["rtsp_streamer"] = rtsp_streamer
     app.config["snapshot_service"] = snapshot_service
+    app.config["updater"] = updater
 
     from bambucam.web.api import api_bp
     from bambucam.web.stream import stream_bp

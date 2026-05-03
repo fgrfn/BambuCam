@@ -83,6 +83,7 @@ def main() -> None:
     from bambucam.streaming.mjpeg import MJPEGStreamer
     from bambucam.streaming.rtsp import RTSPStreamer
     from bambucam.streaming.snapshot import SnapshotService
+    from bambucam.updater import Updater
     from bambucam.web.app import create_app
 
     cam_cfg = cfg.camera
@@ -155,6 +156,13 @@ def main() -> None:
                                                               "/var/lib/bambucam/snapshots")),
     )
 
+    # Updater
+    from bambucam import __version__
+    updater = Updater(
+        current_version=__version__,
+        include_prerelease=cfg.get("system", "update_include_prerelease", default=False),
+    )
+
     # Flask app
     host = args.host or web_cfg.get("host", "0.0.0.0")
     port = args.port or web_cfg.get("port", 8080)
@@ -165,6 +173,7 @@ def main() -> None:
         mjpeg_streamer=mjpeg,
         rtsp_streamer=rtsp,
         snapshot_service=snapshot,
+        updater=updater,
     )
 
     log.info("WebUI listening on http://%s:%d", host, port)

@@ -28,8 +28,12 @@ class TestDeepMerge:
 
 class TestConfig:
     def test_defaults_loaded(self):
+        from unittest.mock import patch
         cfg = Config()
-        cfg.load()
+        # Patch away system/user config paths so only pure defaults are loaded
+        with patch("bambucam.config._SYSTEM_CONFIG", Path("/nonexistent/sys.yaml")), \
+             patch("bambucam.config._USER_CONFIG", Path("/nonexistent/user.yaml")):
+            cfg.load(Path("/nonexistent/bambucam.yaml"))
         assert cfg.get("camera", "framerate") == DEFAULTS["camera"]["framerate"]
 
     def test_get_nested(self):

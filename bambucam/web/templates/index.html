@@ -318,6 +318,41 @@
       <div class="info-row"><span class="key">Pi-Modell</span><span class="val" id="sys-pi">—</span></div>
     </div>
 
+    <!-- Update -->
+    <div class="card" id="update-card">
+      <h2>Software-Update</h2>
+      <div class="info-row">
+        <span class="key">Installiert</span>
+        <span class="val" id="upd-current">—</span>
+      </div>
+      <div class="info-row">
+        <span class="key">Verfügbar</span>
+        <span class="val" id="upd-latest">—</span>
+      </div>
+      <div class="info-row" id="upd-release-row" style="display:none">
+        <span class="key">Release</span>
+        <span class="val"><a id="upd-release-link" href="#" target="_blank" style="color:#6bb5ff;font-size:0.78rem">Changelog anzeigen</a></span>
+      </div>
+
+      <!-- Progress bar (hidden when idle) -->
+      <div id="upd-progress-wrap" style="display:none; margin:0.6rem 0 0.3rem">
+        <div style="background:#222;border-radius:4px;height:6px;overflow:hidden">
+          <div id="upd-progress-bar" style="height:100%;background:#00c896;width:0%;transition:width 0.4s"></div>
+        </div>
+        <div id="upd-progress-label" style="font-size:0.72rem;color:#888;margin-top:0.25rem"></div>
+      </div>
+
+      <div id="upd-message" style="font-size:0.78rem;color:#888;margin:0.4rem 0 0.5rem;min-height:1em"></div>
+
+      <div style="display:flex;gap:0.4rem;flex-direction:column">
+        <button id="btn-check-update" onclick="checkUpdate()">Nach Updates suchen</button>
+        <button id="btn-do-update" class="secondary" onclick="doUpdate()"
+          style="display:none;background:#1a3a2a;color:#00c896;border-color:#00c896">
+          Jetzt aktualisieren
+        </button>
+      </div>
+    </div>
+
   </aside>
 </main>
 
@@ -486,7 +521,126 @@ function copyUrl(elemId) {
 }
 
 // ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+let _updatePollTimer = null;
+
+async function checkUpdate() {
+  document.getElementById('btn-check-update').disabled = true;
+  document.getElementById('btn-check-update').textContent = 'Prüfe…';
+  document.getElementById('upd-message').textContent = 'Verbinde mit GitHub…';
+  try {
+    const s = await api('POST', '/update/check');
+    renderUpdateStatus(s);
+  } catch(e) {
+    document.getElementById('upd-message').textContent = 'Fehler: ' + e;
+  } finally {
+    document.getElementById('btn-check-update').disabled = false;
+    document.getElementById('btn-check-update').textContent = 'Nach Updates suchen';
+  }
+}
+
+async function doUpdate() {
+  if (!confirm('BambuCam wird aktualisiert und danach automatisch neu gestartet. Fortfahren?')) return;
+  document.getElementById('btn-do-update').disabled = true;
+  document.getElementById('btn-do-update').textContent = 'Update läuft…';
+  try {
+    await api('POST', '/update/start');
+    startUpdatePolling();
+  } catch(e) {
+    document.getElementById('upd-message').textContent = 'Fehler beim Starten: ' + e;
+    document.getElementById('btn-do-update').disabled = false;
+    document.getElementById('btn-do-update').textContent = 'Jetzt aktualisieren';
+  }
+}
+
+function startUpdatePolling() {
+  if (_updatePollTimer) clearInterval(_updatePollTimer);
+  document.getElementById('upd-progress-wrap').style.display = '';
+  _updatePollTimer = setInterval(async () => {
+    try {
+      const s = await api('GET', '/update/status');
+      renderUpdateStatus(s);
+      if (['success', 'error', 'idle', 'up_to_date'].includes(s.state)) {
+        clearInterval(_updatePollTimer);
+        _updatePollTimer = null;
+        if (s.state === 'success') {
+          // Reload page after 5s when restart is done
+          document.getElementById('upd-message').textContent =
+            'Update erfolgreich! Seite wird neu geladen…';
+          setTimeout(() => location.reload(), 5000);
+        }
+      }
+    } catch(e) { /* network lost during restart — expected */ }
+  }, 1000);
+}
+
+function renderUpdateStatus(s) {
+  // Version labels
+  document.getElementById('upd-current').textContent = s.current_version
+    ? 'v' + s.current_version : '—';
+  document.getElementById('upd-latest').textContent = s.latest_version
+    ? 'v' + s.latest_version : (s.state === 'up_to_date' ? 'aktuell' : '—');
+
+  // Release link
+  if (s.latest_release && s.latest_release.html_url) {
+    document.getElementById('upd-release-row').style.display = '';
+    document.getElementById('upd-release-link').href = s.latest_release.html_url;
+    document.getElementById('upd-release-link').textContent =
+      (s.latest_release.name || s.latest_release.tag) + ' — Changelog';
+  }
+
+  // Progress bar
+  const inProgress = ['downloading','installing','restarting'].includes(s.state);
+  document.getElementById('upd-progress-wrap').style.display = inProgress ? '' : 'none';
+  document.getElementById('upd-progress-bar').style.width = (s.progress || 0) + '%';
+  document.getElementById('upd-progress-label').textContent = s.message || '';
+
+  // Message
+  const msgEl = document.getElementById('upd-message');
+  if (s.error) {
+    msgEl.style.color = '#e05555';
+    msgEl.textContent = s.error;
+  } else if (!inProgress) {
+    msgEl.style.color = '#888';
+    msgEl.textContent = s.message || '';
+  }
+
+  // Update button visibility
+  const btnUpdate = document.getElementById('btn-do-update');
+  if (s.update_available && !inProgress) {
+    btnUpdate.style.display = '';
+    btnUpdate.disabled = false;
+    btnUpdate.textContent = `Auf v${s.latest_version} aktualisieren`;
+  } else if (inProgress) {
+    btnUpdate.style.display = '';
+    btnUpdate.disabled = true;
+    btnUpdate.textContent = 'Update läuft…';
+  } else {
+    btnUpdate.style.display = 'none';
+  }
+
+  // Latest label color
+  const latestEl = document.getElementById('upd-latest');
+  if (s.update_available) latestEl.style.color = '#00c896';
+  else if (s.state === 'up_to_date') latestEl.style.color = '#888';
+  else latestEl.style.color = '';
+}
+
+async function loadInitialUpdateStatus() {
+  try {
+    const s = await api('GET', '/update/status');
+    renderUpdateStatus(s);
+    // Resume polling if an update was already in progress
+    if (['downloading','installing','restarting'].includes(s.state)) {
+      startUpdatePolling();
+    }
+  } catch(e) {}
+}
+
+// ---------------------------------------------------------------------------
 init();
+loadInitialUpdateStatus();
 </script>
 </body>
 </html>
