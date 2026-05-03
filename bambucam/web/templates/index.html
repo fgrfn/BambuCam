@@ -157,17 +157,24 @@
     /* ── Main layout ───────────────────────────────────────────────────── */
     main {
       display: grid;
-      grid-template-columns: 1fr 320px;
+      grid-template-columns: 280px 1fr 320px;
       gap: 1rem;
       padding: 1rem 1.25rem;
       flex: 1;
       align-items: start;
-      max-width: 1440px;
+      max-width: 1600px;
       width: 100%;
       margin: 0 auto;
     }
 
-    /* ── Stream panel (left) ───────────────────────────────────────────── */
+    /* ── Info panel (left) ─────────────────────────────────────────────── */
+    .info-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    /* ── Stream panel (centre) ─────────────────────────────────────────── */
     .stream-panel {
       display: flex;
       flex-direction: column;
@@ -771,13 +778,10 @@
     }
 
     /* ── Mobile ────────────────────────────────────────────────────────── */
-    @media (max-width: 768px) {
+    @media (max-width: 900px) {
       main {
         grid-template-columns: 1fr;
         padding: 0.75rem;
-      }
-      .stream-panel {
-        position: static;
       }
       .metrics-grid {
         grid-template-columns: 1fr 1fr;
@@ -821,51 +825,8 @@
 <!-- ── Main content ─────────────────────────────────────────────────────── -->
 <main>
 
-  <!-- LEFT: Stream panel -->
-  <section class="stream-panel">
-
-    <!-- 16:9 stream view -->
-    <div class="stream-view">
-      <img id="stream-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Live Stream" />
-      <div class="stream-placeholder" id="stream-placeholder">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/><circle cx="19" cy="5" r="2" fill="white" stroke="none"/>
-        </svg>
-        <span>Kein Stream</span>
-      </div>
-      <div class="stream-overlay">
-        <span class="stream-badge" id="stream-badge">MJPEG</span>
-        <span class="viewers-badge hidden" id="viewers-badge">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5a7 7 0 100 14A7 7 0 0012 5zm-9 7a9 9 0 1118 0 9 9 0 01-18 0z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span id="viewers-count">0</span> Zuschauer
-        </span>
-      </div>
-    </div>
-
-    <!-- URL chips -->
-    <div class="url-chips">
-      <div class="url-chip" id="chip-rtsp" onclick="copyChip(this)">
-        <span class="url-chip-label rtsp">RTSP</span>
-        <span class="url-chip-url" id="chip-rtsp-url">rtsp://…</span>
-        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-        </svg>
-      </div>
-      <div class="url-chip" id="chip-hls" onclick="copyChip(this)">
-        <span class="url-chip-label hls">HLS</span>
-        <span class="url-chip-url" id="chip-hls-url">http://…/index.m3u8</span>
-        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
-        </svg>
-      </div>
-      <div class="url-chip" id="chip-mjpeg" onclick="copyChip(this)">
-        <span class="url-chip-label mjpeg">MJPEG</span>
-        <span class="url-chip-url" id="chip-mjpeg-url">http://…/stream</span>
-        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
-        </svg>
-      </div>
-    </div>
+  <!-- LEFT: Info panel -->
+  <aside class="info-panel">
 
     <!-- ① Kamerastatus ──────────────────────────────────────────── -->
     <div class="card">
@@ -990,6 +951,54 @@
             Jetzt aktualisieren
           </button>
         </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- CENTRE: Stream panel -->
+  <section class="stream-panel">
+
+    <!-- 16:9 stream view -->
+    <div class="stream-view">
+      <img id="stream-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Live Stream" />
+      <div class="stream-placeholder" id="stream-placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/><circle cx="19" cy="5" r="2" fill="white" stroke="none"/>
+        </svg>
+        <span>Kein Stream</span>
+      </div>
+      <div class="stream-overlay">
+        <span class="stream-badge" id="stream-badge">MJPEG</span>
+        <span class="viewers-badge hidden" id="viewers-badge">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5a7 7 0 100 14A7 7 0 0012 5zm-9 7a9 9 0 1118 0 9 9 0 01-18 0z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span id="viewers-count">0</span> Zuschauer
+        </span>
+      </div>
+    </div>
+
+    <!-- URL chips -->
+    <div class="url-chips">
+      <div class="url-chip" id="chip-rtsp" onclick="copyChip(this)">
+        <span class="url-chip-label rtsp">RTSP</span>
+        <span class="url-chip-url" id="chip-rtsp-url">rtsp://…</span>
+        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+        </svg>
+      </div>
+      <div class="url-chip" id="chip-hls" onclick="copyChip(this)">
+        <span class="url-chip-label hls">HLS</span>
+        <span class="url-chip-url" id="chip-hls-url">http://…/index.m3u8</span>
+        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+        </svg>
+      </div>
+      <div class="url-chip" id="chip-mjpeg" onclick="copyChip(this)">
+        <span class="url-chip-label mjpeg">MJPEG</span>
+        <span class="url-chip-url" id="chip-mjpeg-url">http://…/stream</span>
+        <svg class="url-chip-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+        </svg>
       </div>
     </div>
 
