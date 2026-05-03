@@ -208,6 +208,9 @@ PIP="$BAMBUCAM_DIR/venv/bin/pip"
 "$PIP" install --quiet --upgrade pip
 "$PIP" install --quiet "$SRC_DIR"
 
+# Service user needs write access to the venv for self-updates
+chown -R "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_DIR/venv"
+
 info "BambuCam $(${BAMBUCAM_DIR}/venv/bin/bambucam --version 2>/dev/null || echo installed)"
 
 # ---------------------------------------------------------------------------
@@ -235,6 +238,13 @@ fi
 step "Installing systemd service"
 install -m 644 "$SRC_DIR/systemd/bambucam.service" \
   /etc/systemd/system/bambucam.service
+
+# ---------------------------------------------------------------------------
+# Cleanup temp download dir (must be after all $SRC_DIR uses above)
+# ---------------------------------------------------------------------------
+if [[ "$LOCAL_SOURCE" == "false" && -n "${TMP_SRC:-}" ]]; then
+  rm -rf "$TMP_SRC"
+fi
 
 SYSTEMD_OK=false
 if command -v systemctl &>/dev/null && systemctl --version &>/dev/null 2>&1; then

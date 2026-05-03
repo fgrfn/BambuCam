@@ -134,7 +134,7 @@ def main() -> None:
             )
             camera.start()
         except Exception as e:
-            log.error("Failed to start camera: %s", e)
+            log.error("Failed to start camera: %s — continuing in headless mode", e)
             _camera_ok = False
 
     # MJPEG streamer
