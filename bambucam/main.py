@@ -102,46 +102,48 @@ def main() -> None:
 
     # Camera
     camera = CameraManager()
+    _camera_ok = True
     try:
         detected = camera.detect_and_select(cam_cfg.get("index", 0))
     except RuntimeError as e:
-        log.error("Camera detection failed: %s", e)
-        sys.exit(1)
+        log.warning("No camera detected: %s — starting in headless mode (WebUI only)", e)
+        _camera_ok = False
 
-    try:
-        camera.setup(
-            detected=detected,
-            resolution=Resolution.from_string(cam_cfg.get("resolution", "1920x1080")),
-            framerate=cam_cfg.get("framerate", 15),
-            settings={
-                k: cam_cfg[k]
-                for k in (
-                    "vflip",
-                    "hflip",
-                    "brightness",
-                    "contrast",
-                    "saturation",
-                    "sharpness",
-                    "exposure_mode",
-                    "awb_mode",
-                    "autofocus",
-                    "hdr",
-                )
-                if k in cam_cfg
-            },
-        )
-        camera.start()
-    except Exception as e:
-        log.error("Failed to start camera: %s", e)
-        sys.exit(1)
+    if _camera_ok:
+        try:
+            camera.setup(
+                detected=detected,
+                resolution=Resolution.from_string(cam_cfg.get("resolution", "1920x1080")),
+                framerate=cam_cfg.get("framerate", 15),
+                settings={
+                    k: cam_cfg[k]
+                    for k in (
+                        "vflip",
+                        "hflip",
+                        "brightness",
+                        "contrast",
+                        "saturation",
+                        "sharpness",
+                        "exposure_mode",
+                        "awb_mode",
+                        "autofocus",
+                        "hdr",
+                    )
+                    if k in cam_cfg
+                },
+            )
+            camera.start()
+        except Exception as e:
+            log.error("Failed to start camera: %s — continuing in headless mode", e)
+            _camera_ok = False
 
     # MJPEG streamer
     mjpeg_cfg = stream_cfg.get("mjpeg", {})
     mjpeg = MJPEGStreamer(
-        capture_fn=camera.capture_jpeg,
+        capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
         target_fps=mjpeg_cfg.get("fps", 15),
     )
-    if not args.no_mjpeg and mjpeg_cfg.get("enabled", True):
+    if _camera_ok and not args.no_mjpeg and mjpeg_cfg.get("enabled", True):
         mjpeg.start()
 
     # RTSP streamer
@@ -159,7 +161,7 @@ def main() -> None:
         rtsp_auth_user=rtsp_auth.get("username") if rtsp_auth.get("enabled") else None,
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
     )
-    if not args.no_rtsp and rtsp_cfg.get("enabled", True):
+    if _camera_ok and not args.no_rtsp and rtsp_cfg.get("enabled", True):
         try:
             rtsp.start()
         except FileNotFoundError:
@@ -170,7 +172,7 @@ def main() -> None:
 
     # Snapshot service
     snapshot = SnapshotService(
-        capture_fn=camera.capture_jpeg,
+        capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
         snapshot_dir=Path(
             stream_cfg.get("snapshot", {}).get("save_dir", "/var/lib/bambucam/snapshots")
         ),

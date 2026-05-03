@@ -7,7 +7,6 @@ Wants=network.target
 [Service]
 Type=simple
 User=bambucam
-Group=video
 
 # Use virtualenv if installed there
 ExecStart=/opt/bambucam/venv/bin/bambucam
@@ -16,9 +15,6 @@ ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
-
-# Allow camera and GPIO access
-SupplementaryGroups=video gpio i2c
 
 # Working directory
 WorkingDirectory=/opt/bambucam
