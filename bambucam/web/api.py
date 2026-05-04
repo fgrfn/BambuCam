@@ -201,7 +201,11 @@ def set_config():
     for section, values in data.items():
         if isinstance(values, dict):
             _cfg().update_section(section, values)
-    _cfg().save()
+    try:
+        _cfg().save()
+    except Exception as e:
+        log.exception("Failed to persist config")
+        return jsonify({"error": f"Config updated in memory but not saved: {e}"}), 500
     return jsonify({"ok": True})
 
 

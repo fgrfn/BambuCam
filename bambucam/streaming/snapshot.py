@@ -33,7 +33,9 @@ class SnapshotService:
 
     def _save(self, frame: bytes) -> Path:
         self._snapshot_dir.mkdir(parents=True, exist_ok=True)
-        filename = time.strftime("snapshot_%Y%m%d_%H%M%S.jpg")
+        # Include milliseconds to avoid collision when saving rapidly
+        ms = int(time.time() * 1000) % 1000
+        filename = f"snapshot_{time.strftime('%Y%m%d_%H%M%S')}_{ms:03d}.jpg"
         path = self._snapshot_dir / filename
         path.write_bytes(frame)
         log.info("Snapshot saved: %s", path)
@@ -42,15 +44,11 @@ class SnapshotService:
     def list_snapshots(self) -> list:
         if not self._snapshot_dir.exists():
             return []
-        return sorted(
-            [
-                {
-                    "filename": f.name,
-                    "size": f.stat().st_size,
-                    "created": f.stat().st_mtime,
-                }
-                for f in self._snapshot_dir.glob("*.jpg")
-            ],
-            key=lambda x: x["created"],
-            reverse=True,
-        )
+        entries = []
+        for f in self._snapshot_dir.glob("*.jpg"):
+            try:
+                st = f.stat()
+                entries.append({"filename": f.name, "size": st.st_size, "created": st.st_mtime})
+            except OSError:
+                pass
+        return sorted(entries, key=lambda x: x["created"], reverse=True)
