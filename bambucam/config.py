@@ -94,7 +94,11 @@ DEFAULTS: dict = {
 }
 
 _SYSTEM_CONFIG = Path("/etc/bambucam/bambucam.yaml")
-_USER_CONFIG = Path.home() / ".config" / "bambucam" / "bambucam.yaml"
+
+try:
+    _USER_CONFIG = Path.home() / ".config" / "bambucam" / "bambucam.yaml"
+except RuntimeError:
+    _USER_CONFIG = Path("/var/lib/bambucam/bambucam.yaml")
 
 
 class Config:
@@ -122,6 +126,11 @@ class Config:
         if config_path and config_path.exists():
             result = _deep_merge(result, _load_yaml(config_path))
             self._user_config_path = config_path
+        elif _SYSTEM_CONFIG.exists():
+            # When running as the service, persist changes back to the system
+            # config rather than ~/.config (home dir may not exist for the
+            # service user).
+            self._user_config_path = _SYSTEM_CONFIG
         else:
             self._user_config_path = _USER_CONFIG
 
