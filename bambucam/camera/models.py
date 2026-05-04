@@ -66,7 +66,7 @@ class CameraModel:
 _RES = Resolution  # shorthand
 
 CAMERA_V1 = CameraModel(
-    id="imx219_v1",
+    id="ov5647_v1",
     name="Camera Module v1",
     sensor="OV5647",
     megapixels=5.0,
