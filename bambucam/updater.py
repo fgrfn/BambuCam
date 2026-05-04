@@ -269,9 +269,26 @@ class Updater:
         """Install the downloaded wheel or tarball into the venv."""
         pip = self._pip_path if self._pip_path.exists() else Path(sys.executable).parent / "pip"
 
+        install_target = package_path
+
+        # GitHub source tarballs wrap everything in a top-level directory
+        # (e.g. fgrfn-BambuCam-abc123/), so pip can't find pyproject.toml at
+        # the archive root.  Extract and point pip at the inner directory.
+        if package_path.name.endswith(".tar.gz"):
+            import tarfile
+
+            extract_dir = package_path.parent / "src"
+            extract_dir.mkdir(exist_ok=True)
+            with tarfile.open(package_path) as tf:
+                tf.extractall(extract_dir)
+            subdirs = [p for p in extract_dir.iterdir() if p.is_dir()]
+            if subdirs:
+                install_target = subdirs[0]
+                log.info("Tarball extracted to %s", install_target)
+
         # --no-user: never fall back to user-site install (venv pip only)
         # HOME=/tmp: service user has no home dir; avoids pip cache permission warning
-        cmd = [str(pip), "install", "--upgrade", "--no-user", str(package_path)]
+        cmd = [str(pip), "install", "--upgrade", "--no-user", str(install_target)]
         env = os.environ.copy()
         env["HOME"] = "/tmp"
         env["PIP_NO_CACHE_DIR"] = "1"
