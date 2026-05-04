@@ -57,7 +57,10 @@ class CameraManager:
                 )
                 log.info("Camera model overridden by config: %s", override.name)
             else:
-                log.warning("Unknown camera.module value %r — using auto-detected model", module_override)
+                log.warning(
+                    "Unknown camera.module value %r — using auto-detected model",
+                    module_override,
+                )
 
         self._detected = detected
         log.info("Selected camera: %s", self._detected)
