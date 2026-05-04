@@ -68,20 +68,23 @@ def detect_cameras() -> list[DetectedCamera]:
 
 
 def _detect_libcamera() -> list[DetectedCamera]:
-    """Use libcamera-hello --list-cameras to enumerate CSI cameras."""
-    try:
-        result = subprocess.run(
-            ["libcamera-hello", "--list-cameras"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        output = result.stdout + result.stderr
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        log.debug("libcamera-hello not available")
-        return []
-
-    return _parse_libcamera_output(output)
+    """Use rpicam-hello or libcamera-hello --list-cameras to enumerate CSI cameras."""
+    for cmd in ["rpicam-hello", "libcamera-hello"]:
+        try:
+            result = subprocess.run(
+                [cmd, "--list-cameras"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            output = result.stdout + result.stderr
+            if "Available cameras" in output or re.search(r"\d+\s*:\s*\w+\s*\[", output):
+                log.debug("libcamera detected via %s", cmd)
+                return _parse_libcamera_output(output)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    log.debug("Neither rpicam-hello nor libcamera-hello available")
+    return []
 
 
 def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
