@@ -240,7 +240,7 @@ step "Installing default configuration"
 if [[ ! -f "$BAMBUCAM_CONFIG_DIR/bambucam.yaml" ]]; then
   install -m 640 "$SRC_DIR/config/bambucam.yaml" \
     "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
-  chown "root:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
+  chown "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
   info "Config written to $BAMBUCAM_CONFIG_DIR/bambucam.yaml"
 else
   info "Existing config preserved: $BAMBUCAM_CONFIG_DIR/bambucam.yaml"

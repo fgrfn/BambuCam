@@ -182,11 +182,12 @@ class RTSPStreamer:
         self._mediamtx_proc = subprocess.Popen(
             [str(self._mediamtx_path), str(self._config_file)],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
 
     def _start_ffmpeg(self) -> None:
-        width, height = self._resolution.split("x")
+        if "x" not in self._resolution:
+            raise ValueError(f"Invalid resolution format: {self._resolution!r} (expected WxH)")
         cmd = [
             "ffmpeg",
             "-loglevel",
@@ -228,7 +229,7 @@ class RTSPStreamer:
         self._ffmpeg_proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
 
     def _kill(self, proc: Optional[subprocess.Popen], name: str) -> None:
@@ -252,7 +253,10 @@ class RTSPStreamer:
                 log.warning("ffmpeg exited with code %d, restarting…", rc)
                 time.sleep(2)
                 if self._running:
-                    self._start_ffmpeg()
+                    try:
+                        self._start_ffmpeg()
+                    except Exception as e:
+                        log.error("Failed to restart ffmpeg: %s", e)
 
     # ---------------------------------------------------------------------------
     # Introspection
