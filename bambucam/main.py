@@ -104,7 +104,10 @@ def main() -> None:
     camera = CameraManager()
     _camera_ok = True
     try:
-        detected = camera.detect_and_select(cam_cfg.get("index", 0))
+        detected = camera.detect_and_select(
+            cam_cfg.get("index", 0),
+            module_override=cam_cfg.get("module", "auto"),
+        )
     except RuntimeError as e:
         log.warning("No camera detected: %s — starting in headless mode (WebUI only)", e)
         _camera_ok = False

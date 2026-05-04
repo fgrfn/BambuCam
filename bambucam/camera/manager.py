@@ -28,17 +28,38 @@ class CameraManager:
     # Detection & initialisation
     # ---------------------------------------------------------------------------
 
-    def detect_and_select(self, preferred_index: int = 0) -> DetectedCamera:
+    def detect_and_select(
+        self, preferred_index: int = 0, module_override: str = "auto"
+    ) -> DetectedCamera:
         cameras = detect_cameras()
         if not cameras:
             raise RuntimeError(
                 "No cameras found. Check connections and run "
-                "'libcamera-hello --list-cameras' or 'v4l2-ctl --list-devices'."
+                "'rpicam-hello --list-cameras' or 'v4l2-ctl --list-devices'."
             )
         if preferred_index >= len(cameras):
             log.warning("Preferred camera index %d not found, using 0", preferred_index)
             preferred_index = 0
-        self._detected = cameras[preferred_index]
+        detected = cameras[preferred_index]
+
+        # Allow config to override the auto-detected model (e.g. v3_noir vs v3)
+        if module_override and module_override.lower() != "auto":
+            from bambucam.camera.models import get_model_by_alias
+
+            override = get_model_by_alias(module_override)
+            if override:
+                detected = DetectedCamera(
+                    device=detected.device,
+                    model=override,
+                    backend=detected.backend,
+                    index=detected.index,
+                    detected_resolutions=override.supported_resolutions,
+                )
+                log.info("Camera model overridden by config: %s", override.name)
+            else:
+                log.warning("Unknown camera.module value %r — using auto-detected model", module_override)
+
+        self._detected = detected
         log.info("Selected camera: %s", self._detected)
         return self._detected
 
