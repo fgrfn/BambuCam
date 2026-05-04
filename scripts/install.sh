@@ -124,6 +124,7 @@ apt-get install -y --no-install-recommends \
   gcc \
   ffmpeg \
   v4l-utils \
+  python3-opencv \
   curl \
   git
 

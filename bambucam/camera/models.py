@@ -66,7 +66,7 @@ class CameraModel:
 _RES = Resolution  # shorthand
 
 CAMERA_V1 = CameraModel(
-    id="imx219_v1",
+    id="ov5647_v1",
     name="Camera Module v1",
     sensor="OV5647",
     megapixels=5.0,
@@ -155,6 +155,38 @@ CAMERA_V3_WIDE = CameraModel(
     libcamera_name="imx708",
 )
 
+CAMERA_V3_NOIR = CameraModel(
+    id="imx708_v3_noir",
+    name="Camera Module 3 NoIR",
+    sensor="IMX708",
+    megapixels=11.9,
+    max_resolution=_RES(4608, 2592),
+    max_framerate=120,
+    supported_resolutions=CAMERA_V3.supported_resolutions,
+    supported_framerates=CAMERA_V3.supported_framerates,
+    has_autofocus=True,
+    has_hdr=True,
+    is_noir=True,
+    description="Raspberry Pi Camera Module 3 without IR filter (IMX708, 12MP)",
+    libcamera_name="imx708",
+)
+
+CAMERA_V3_WIDE_NOIR = CameraModel(
+    id="imx708_v3_wide_noir",
+    name="Camera Module 3 Wide NoIR",
+    sensor="IMX708",
+    megapixels=11.9,
+    max_resolution=_RES(4608, 2592),
+    max_framerate=120,
+    supported_resolutions=CAMERA_V3.supported_resolutions,
+    supported_framerates=CAMERA_V3.supported_framerates,
+    has_autofocus=True,
+    has_hdr=True,
+    is_noir=True,
+    description="Raspberry Pi Camera Module 3 Wide without IR filter (IMX708, 12MP)",
+    libcamera_name="imx708",
+)
+
 CAMERA_HQ = CameraModel(
     id="imx477_hq",
     name="HQ Camera",
@@ -223,6 +255,8 @@ KNOWN_MODELS: list[CameraModel] = [
     CAMERA_V2_NOIR,
     CAMERA_V3,
     CAMERA_V3_WIDE,
+    CAMERA_V3_NOIR,
+    CAMERA_V3_WIDE_NOIR,
     CAMERA_HQ,
     CAMERA_GS,
     CAMERA_USB_GENERIC,
@@ -246,3 +280,24 @@ def get_model_by_id(model_id: str) -> Optional[CameraModel]:
 
 def get_model_by_sensor(sensor_name: str) -> Optional[CameraModel]:
     return LIBCAMERA_MODEL_MAP.get(sensor_name.lower())
+
+
+# Human-friendly aliases used in bambucam.yaml  camera.module
+MODULE_ALIAS_MAP: dict = {
+    "v1": CAMERA_V1,
+    "v2": CAMERA_V2,
+    "v2_noir": CAMERA_V2_NOIR,
+    "v3": CAMERA_V3,
+    "v3_noir": CAMERA_V3_NOIR,
+    "v3_wide": CAMERA_V3_WIDE,
+    "v3_wide_noir": CAMERA_V3_WIDE_NOIR,
+    "hq": CAMERA_HQ,
+    "gs": CAMERA_GS,
+}
+
+
+def get_model_by_alias(alias: str) -> Optional[CameraModel]:
+    """Return model for a config alias (e.g. 'v3_noir'), or None for 'auto'."""
+    if not alias or alias.lower() == "auto":
+        return None
+    return MODULE_ALIAS_MAP.get(alias.lower())
