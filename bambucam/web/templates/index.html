@@ -1247,12 +1247,25 @@ function btnLoading(id, loading, label) {
 
 // ── Copy helpers ───────────────────────────────────────────────────────────
 function copyText(text, el) {
-  navigator.clipboard.writeText(text).then(() => {
+  function flash() {
     if (el) {
       el.classList.add('copied');
       setTimeout(() => el.classList.remove('copied'), 800);
     }
-  });
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(flash);
+  } else {
+    // Fallback for plain HTTP (clipboard API requires HTTPS/localhost)
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    document.body.removeChild(ta);
+    flash();
+  }
 }
 
 function copyChip(el) {
