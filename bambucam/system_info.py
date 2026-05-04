@@ -62,6 +62,12 @@ def disk_info(path: str = "/") -> dict:
 
 
 def uptime_seconds() -> float:
+    # /proc/uptime is properly namespaced in LXC containers; psutil.boot_time()
+    # reads /proc/stat which reflects the host boot time inside LXC.
+    try:
+        return float(Path("/proc/uptime").read_text().split()[0])
+    except (OSError, ValueError):
+        pass
     try:
         import psutil
 
