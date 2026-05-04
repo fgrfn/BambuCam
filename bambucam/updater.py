@@ -241,13 +241,16 @@ class Updater:
         if wheel_url:
             local_path = tmp_dir / f"bambucam-{release.version}-py3-none-any.whl"
             download_url = wheel_url
+            # GitHub release asset: must request as octet-stream
+            headers = {"Accept": "application/octet-stream"}
             log.info("Downloading wheel %s → %s", download_url, local_path)
         else:
             local_path = tmp_dir / f"bambucam-{release.version}.tar.gz"
             download_url = release.tarball_url
+            # GitHub tarball API endpoint: no Accept override (octet-stream → 415)
+            headers = {}
             log.info("Wheel not found in assets, falling back to tarball %s", download_url)
 
-        headers = {"Accept": "application/octet-stream"}
         response = requests.get(download_url, headers=headers, stream=True, timeout=60)
         response.raise_for_status()
 
