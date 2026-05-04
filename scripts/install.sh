@@ -31,9 +31,9 @@ MEDIAMTX_VERSION="v1.9.3"
 # Detect CPU architecture for MediaMTX
 ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
 case "$ARCH" in
-  armhf|armv7*)  MEDIAMTX_ARCH="linux_armv7"  ;;
-  arm64|aarch64) MEDIAMTX_ARCH="linux_arm64"  ;;
-  amd64|x86_64)  MEDIAMTX_ARCH="linux_amd64"  ;;
+  armhf|armv7*)  MEDIAMTX_ARCH="linux_armv7"   ;;
+  arm64|aarch64) MEDIAMTX_ARCH="linux_arm64v8" ;;
+  amd64|x86_64)  MEDIAMTX_ARCH="linux_amd64"   ;;
   *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
