@@ -100,10 +100,7 @@ class MJPEGStreamer:
         Yield multipart chunks suitable for a Flask streaming response.
         Called once per HTTP client connection.
         """
-        with self._client_lock:
-            self._client_count += 1
-        log.debug("MJPEG client connected (total: %d)", self._client_count)
-
+        counted = False
         last_frame: Optional[bytes] = None
         try:
             while self._running:
@@ -114,6 +111,14 @@ class MJPEGStreamer:
                 if frame is None or frame is last_frame:
                     continue
                 last_frame = frame
+
+                # Count only once the first real frame is about to be sent,
+                # so aborted HEAD probes and abandoned connections never inflate the counter.
+                if not counted:
+                    with self._client_lock:
+                        self._client_count += 1
+                    counted = True
+                    log.debug("MJPEG client connected (total: %d)", self._client_count)
 
                 yield (
                     _BOUNDARY
@@ -130,9 +135,10 @@ class MJPEGStreamer:
         except GeneratorExit:
             pass
         finally:
-            with self._client_lock:
-                self._client_count -= 1
-            log.debug("MJPEG client disconnected (total: %d)", self._client_count)
+            if counted:
+                with self._client_lock:
+                    self._client_count -= 1
+                log.debug("MJPEG client disconnected (total: %d)", self._client_count)
 
     @property
     def client_count(self) -> int:
