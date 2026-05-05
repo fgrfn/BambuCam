@@ -156,9 +156,16 @@ class CameraManager:
         if "framerate" in new_settings:
             self._framerate = int(new_settings["framerate"])
             restart_needed = True
+        # Flips require a full camera restart (applied via Transform at configure time)
+        if "vflip" in new_settings:
+            restart_needed = True
+        if "hflip" in new_settings:
+            restart_needed = True
+
+        # Merge settings before restart so configure() sees the updated values
+        self._settings.update(new_settings)
 
         if restart_needed and self._backend and self._backend.is_running:
-            self._backend.configure(self._resolution, self._framerate)
             self.restart()
             return
 
@@ -176,16 +183,10 @@ class CameraManager:
                 b.set_exposure_mode(new_settings["exposure_mode"])
             if "awb_mode" in new_settings:
                 b.set_awb_mode(new_settings["awb_mode"])
-            if "vflip" in new_settings:
-                b.set_vflip(bool(new_settings["vflip"]))
-            if "hflip" in new_settings:
-                b.set_hflip(bool(new_settings["hflip"]))
             if "autofocus" in new_settings:
                 b.set_autofocus(bool(new_settings["autofocus"]))
             if "hdr" in new_settings:
                 b.set_hdr(bool(new_settings["hdr"]))
-
-        self._settings.update(new_settings)
 
     # ---------------------------------------------------------------------------
     # Introspection

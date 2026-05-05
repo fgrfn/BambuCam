@@ -81,6 +81,9 @@ class V4L2Backend(CameraBackend):
     def set_saturation(self, value: float) -> None:
         self._v4l2_set("saturation", int(value * 128))
 
+    def set_sharpness(self, value: float) -> None:
+        self._v4l2_set("sharpness", int(value * 128))
+
     def set_vflip(self, enabled: bool) -> None:
         self._v4l2_set("vertical_flip", int(enabled))
 
