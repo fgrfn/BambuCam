@@ -1,6 +1,8 @@
 """High-level camera manager — wires together detection, backends, and settings."""
 
 import logging
+import threading
+import time
 from collections.abc import Iterator
 from typing import Optional
 
@@ -23,6 +25,8 @@ class CameraManager:
         self._resolution: Optional[Resolution] = None
         self._framerate: int = 30
         self._settings: dict = {}
+        self._watchdog_thread: Optional[threading.Thread] = None
+        self._watchdog_running = False
 
     # ---------------------------------------------------------------------------
     # Detection & initialisation
@@ -112,8 +116,10 @@ class CameraManager:
         if self._backend is None:
             raise RuntimeError("Camera not set up — call setup() first")
         self._backend.start()
+        self._start_watchdog()
 
     def stop(self) -> None:
+        self._stop_watchdog()
         if self._backend is not None:
             self._backend.stop()
 
@@ -121,7 +127,57 @@ class CameraManager:
         """Restart with current settings (e.g., after a resolution change)."""
         self.stop()
         self._backend.configure(self._resolution, self._framerate, **self._settings)
-        self._backend.start()
+        try:
+            self._backend.start()
+        except Exception:
+            # Watchdog will recover — re-raise so callers know restart failed
+            self._start_watchdog()
+            raise
+        self._start_watchdog()
+
+    # ---------------------------------------------------------------------------
+    # Camera watchdog — auto-restarts the camera if it dies unexpectedly
+    # ---------------------------------------------------------------------------
+
+    def _start_watchdog(self) -> None:
+        self._stop_watchdog()
+        self._watchdog_running = True
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop, daemon=True, name="camera-watchdog"
+        )
+        self._watchdog_thread.start()
+
+    def _stop_watchdog(self) -> None:
+        self._watchdog_running = False
+        if self._watchdog_thread is not None:
+            self._watchdog_thread.join(timeout=2)
+            self._watchdog_thread = None
+
+    def _watchdog_loop(self) -> None:
+        consecutive_failures = 0
+        while self._watchdog_running:
+            time.sleep(10)
+            if not self._watchdog_running:
+                break
+            if self._backend is None or self._backend.is_running:
+                consecutive_failures = 0
+                continue
+            consecutive_failures += 1
+            log.warning(
+                "Camera watchdog: camera not running (attempt %d), restarting…",
+                consecutive_failures,
+            )
+            backoff = min(5 * consecutive_failures, 60)
+            time.sleep(backoff)
+            if not self._watchdog_running:
+                break
+            try:
+                self._backend.configure(self._resolution, self._framerate, **self._settings)
+                self._backend.start()
+                consecutive_failures = 0
+                log.info("Camera watchdog: restart successful")
+            except Exception as e:
+                log.error("Camera watchdog: restart failed: %s", e)
 
     # ---------------------------------------------------------------------------
     # Frame access
@@ -165,8 +221,10 @@ class CameraManager:
         # Merge settings before restart so configure() sees the updated values
         self._settings.update(new_settings)
 
-        if restart_needed and self._backend and self._backend.is_running:
-            self.restart()
+        if restart_needed and self._backend:
+            if self._backend.is_running:
+                self.restart()
+            # If not running, watchdog will restart with updated settings
             return
 
         if self._backend and self._backend.is_running:

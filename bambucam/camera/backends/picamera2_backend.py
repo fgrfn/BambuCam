@@ -85,12 +85,16 @@ class Picamera2Backend(CameraBackend):
         )
 
         self._picam = Picamera2(self._camera_index)
+        # Cap lores stream at 1280×720 to reduce GPU memory/bandwidth pressure.
+        # H264Encoder encodes from lores (YUV420); 720p is sufficient for RTSP.
+        lores_w = min(res.width, 1280)
+        lores_h = min(res.height, 720)
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
             # lores stream in YUV420 is used by H264Encoder for RTSP.
             # Keeping it always present avoids a camera restart when RTSP
             # recording is started later (mode switch would break MJPEG).
-            lores={"size": res.as_tuple(), "format": "YUV420"},
+            lores={"size": (lores_w, lores_h), "format": "YUV420"},
             controls={"FrameRate": float(self._framerate)},
             transform=Transform(hflip=self._hflip, vflip=self._vflip),
         )
@@ -123,9 +127,18 @@ class Picamera2Backend(CameraBackend):
     def stop(self) -> None:
         self._running = False
         if self._picam is not None:
-            self.stop_rtsp_recording()
-            self._picam.stop()
-            self._picam.close()
+            try:
+                self.stop_rtsp_recording()
+            except Exception as e:
+                log.warning("Error stopping RTSP recording during shutdown: %s", e)
+            try:
+                self._picam.stop()
+            except Exception as e:
+                log.warning("Error stopping picamera2: %s", e)
+            try:
+                self._picam.close()
+            except Exception as e:
+                log.warning("Error closing picamera2: %s", e)
             self._picam = None
         log.info("picamera2 stopped")
 
