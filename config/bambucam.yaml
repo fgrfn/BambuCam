@@ -4,7 +4,7 @@
 camera:
   index: 0                   # Camera index (0 = first detected)
   backend: auto              # auto | picamera2 | v4l2
-  module: auto               # auto | v1 | v2 | v2_noir | v3 | v3_noir | v3_wide | v3_wide_noir | hq | gs
+  module: auto               # auto | v1 | v1_noir | v2 | v2_noir | v3 | v3_noir | v3_wide | v3_wide_noir | hq | ai | gs
                              # Use v3_noir / v3_wide_noir if auto-detection shows wrong model name
   resolution: 1920x1080      # Width x Height (RPi Zero 2W: recommend 1280x720)
   framerate: 15              # Frames per second (1-120, camera-dependent)
