@@ -105,6 +105,10 @@ class Updater:
     The install/restart flow runs in a dedicated background thread.
     """
 
+    # First check delay and interval for the background auto-check thread
+    _AUTO_CHECK_INITIAL_DELAY = 60  # seconds after startup
+    _AUTO_CHECK_INTERVAL = 24 * 3600  # seconds between subsequent checks
+
     def __init__(
         self,
         current_version: str,
@@ -119,6 +123,12 @@ class Updater:
         self._status = UpdateStatus(current_version=current_version)
         self._lock = threading.Lock()
         self._worker: Optional[threading.Thread] = None
+
+        # Background auto-check: runs once after startup delay, then every 24 h
+        self._auto_check_thread = threading.Thread(
+            target=self._auto_check_loop, daemon=True, name="bambucam-update-check"
+        )
+        self._auto_check_thread.start()
 
     # ---------------------------------------------------------------------------
     # Public API
@@ -324,6 +334,20 @@ class Updater:
         log.warning("systemctl not available — re-execing process")
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    # ---------------------------------------------------------------------------
+    # Background auto-check
+    # ---------------------------------------------------------------------------
+
+    def _auto_check_loop(self) -> None:
+        """Wait for startup delay, then check for updates every 24 h."""
+        time.sleep(self._AUTO_CHECK_INITIAL_DELAY)
+        while True:
+            try:
+                self.check()
+            except Exception as e:
+                log.debug("Auto update check failed: %s", e)
+            time.sleep(self._AUTO_CHECK_INTERVAL)
 
     # ---------------------------------------------------------------------------
     # GitHub API
