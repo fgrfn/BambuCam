@@ -268,9 +268,7 @@ def update_start():
             409,
         )
     msg = (
-        f"Installation von v{target_version} gestartet."
-        if target_version
-        else "Update gestartet."
+        f"Installation von v{target_version} gestartet." if target_version else "Update gestartet."
     )
     return jsonify({"ok": True, "message": msg})
 
