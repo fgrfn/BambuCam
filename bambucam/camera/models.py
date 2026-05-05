@@ -1,6 +1,6 @@
 """Camera model definitions and capability matrices."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -35,6 +35,11 @@ class CameraModel:
     max_framerate: int
     supported_resolutions: list[Resolution]
     supported_framerates: list[int]
+
+    # Per-resolution max framerate (Resolution → max fps for that mode).
+    # The UI uses this to filter the framerate dropdown so invalid combos
+    # (e.g. 90 fps @ 2592x1944 on OV5647) are never shown.
+    resolution_max_framerates: dict = field(default_factory=dict)
 
     # Feature flags
     has_autofocus: bool = False
@@ -80,6 +85,13 @@ CAMERA_V1 = CameraModel(
         _RES(640, 480),
     ],
     supported_framerates=[90, 60, 30, 25, 15, 10, 5],
+    resolution_max_framerates={
+        _RES(2592, 1944): 15,
+        _RES(1920, 1080): 30,
+        _RES(1296, 972): 42,
+        _RES(1296, 730): 49,
+        _RES(640, 480): 90,
+    },
     description="Original Raspberry Pi Camera Module (OV5647, 5MP)",
     libcamera_name="ov5647",
 )
@@ -100,6 +112,14 @@ CAMERA_V2 = CameraModel(
         _RES(640, 480),
     ],
     supported_framerates=[90, 60, 30, 25, 15, 10, 5],
+    resolution_max_framerates={
+        _RES(3280, 2464): 15,
+        _RES(1920, 1080): 30,
+        _RES(1640, 1232): 41,
+        _RES(1640, 922): 50,
+        _RES(1280, 720): 90,
+        _RES(640, 480): 90,
+    },
     description="Raspberry Pi Camera Module v2 (IMX219, 8MP)",
     libcamera_name="imx219",
 )
@@ -134,6 +154,14 @@ CAMERA_V3 = CameraModel(
         _RES(640, 480),
     ],
     supported_framerates=[120, 60, 30, 25, 15, 10, 5],
+    resolution_max_framerates={
+        _RES(4608, 2592): 14,
+        _RES(2304, 1296): 56,
+        _RES(1920, 1080): 56,
+        _RES(1536, 864): 120,
+        _RES(1280, 720): 120,
+        _RES(640, 480): 120,
+    },
     has_autofocus=True,
     has_hdr=True,
     description="Raspberry Pi Camera Module 3 (IMX708, 12MP, autofocus, HDR)",
@@ -193,7 +221,7 @@ CAMERA_HQ = CameraModel(
     sensor="IMX477",
     megapixels=12.3,
     max_resolution=_RES(4056, 3040),
-    max_framerate=120,
+    max_framerate=60,
     supported_resolutions=[
         _RES(4056, 3040),
         _RES(2028, 1520),
@@ -202,7 +230,15 @@ CAMERA_HQ = CameraModel(
         _RES(1280, 720),
         _RES(640, 480),
     ],
-    supported_framerates=[120, 60, 30, 25, 15, 10, 5],
+    supported_framerates=[60, 30, 25, 15, 10, 5],
+    resolution_max_framerates={
+        _RES(4056, 3040): 10,
+        _RES(2028, 1520): 40,
+        _RES(2028, 1080): 50,
+        _RES(1920, 1080): 50,
+        _RES(1280, 720): 60,
+        _RES(640, 480): 60,
+    },
     description="Raspberry Pi HQ Camera (IMX477, 12.3MP, interchangeable lens)",
     libcamera_name="imx477",
 )
@@ -221,6 +257,12 @@ CAMERA_GS = CameraModel(
         _RES(640, 480),
     ],
     supported_framerates=[60, 30, 25, 15, 10],
+    resolution_max_framerates={
+        _RES(1456, 1088): 60,
+        _RES(1280, 720): 60,
+        _RES(720, 540): 60,
+        _RES(640, 480): 60,
+    },
     has_global_shutter=True,
     description="Raspberry Pi Global Shutter Camera (IMX296, 1.6MP)",
     libcamera_name="imx296",
