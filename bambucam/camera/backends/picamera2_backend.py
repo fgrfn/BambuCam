@@ -47,6 +47,7 @@ class Picamera2Backend(CameraBackend):
         self._hflip: bool = False
         self._pending_controls: dict = {}
         self._initial_settings: dict = {}  # non-geometry settings, applied after start()
+        self._h264_encoder = None  # active H264Encoder when RTSP recording is running
 
     def configure(self, resolution: Resolution, framerate: int, **kwargs) -> None:
         self._resolution = resolution
@@ -213,6 +214,49 @@ class Picamera2Backend(CameraBackend):
             mode = getattr(_enum, "Off", None)
         if mode is not None:
             self._set_control(HdrMode=mode)
+
+    # ---------------------------------------------------------------------------
+    # RTSP via picamera2 H264Encoder (avoids V4L2 device conflict)
+    # ---------------------------------------------------------------------------
+
+    def start_rtsp_recording(self, rtsp_url: str, bitrate_kbps: int = 2000) -> None:
+        """
+        Encode H264 in-process and publish to MediaMTX via RTSP.
+        This avoids the V4L2 device conflict that arises when ffmpeg tries to
+        open /dev/videoN while picamera2 already holds it.
+        """
+        try:
+            from picamera2.encoders import H264Encoder
+            from picamera2.outputs import FfmpegOutput
+        except ImportError:
+            raise RuntimeError("picamera2 H264Encoder not available")
+
+        if not self._running or self._picam is None:
+            raise RuntimeError("Camera must be started before RTSP recording")
+
+        self._h264_encoder = H264Encoder(
+            bitrate=bitrate_kbps * 1000,
+            iperiod=self._framerate * 2,  # keyframe every 2 s
+        )
+        output = FfmpegOutput(f"-f rtsp {rtsp_url}")
+        self._picam.start_recording(self._h264_encoder, output)
+        log.info("H264 RTSP recording started → %s at %d kbps", rtsp_url, bitrate_kbps)
+
+    def stop_rtsp_recording(self) -> None:
+        if self._picam is not None and self._h264_encoder is not None:
+            try:
+                self._picam.stop_recording()
+            except Exception as e:
+                log.warning("Error stopping H264 recording: %s", e)
+        self._h264_encoder = None
+
+    @property
+    def is_rtsp_recording(self) -> bool:
+        return (
+            self._picam is not None
+            and self._h264_encoder is not None
+            and getattr(self._picam, "recording", False)
+        )
 
     def get_v4l2_device(self):
         # CSI cameras appear as /dev/videoN; index 0 → /dev/video0 typically

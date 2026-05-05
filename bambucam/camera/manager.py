@@ -193,6 +193,10 @@ class CameraManager:
     # ---------------------------------------------------------------------------
 
     @property
+    def backend(self) -> Optional[CameraBackend]:
+        return self._backend
+
+    @property
     def model(self) -> Optional[CameraModel]:
         return self._detected.model if self._detected else None
 
