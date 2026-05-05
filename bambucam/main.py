@@ -144,7 +144,7 @@ def main() -> None:
     mjpeg_cfg = stream_cfg.get("mjpeg", {})
     mjpeg = MJPEGStreamer(
         capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
-        target_fps=mjpeg_cfg.get("fps", 15),
+        target_fps=mjpeg_cfg.get("fps", cam_cfg.get("framerate", 15)),
     )
     if _camera_ok and not args.no_mjpeg and mjpeg_cfg.get("enabled", True):
         mjpeg.start()
