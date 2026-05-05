@@ -108,6 +108,7 @@ class Updater:
     # First check delay and interval for the background auto-check thread
     _AUTO_CHECK_INITIAL_DELAY = 60  # seconds after startup
     _AUTO_CHECK_INTERVAL = 24 * 3600  # seconds between subsequent checks
+    _RELEASES_CACHE_TTL = 3600  # seconds before releases list is re-fetched
 
     def __init__(
         self,
@@ -123,6 +124,8 @@ class Updater:
         self._status = UpdateStatus(current_version=current_version)
         self._lock = threading.Lock()
         self._worker: Optional[threading.Thread] = None
+        self._releases_cache: list = []
+        self._releases_cached_at: float = 0.0
 
         # Background auto-check: runs once after startup delay, then every 24 h
         self._auto_check_thread = threading.Thread(
@@ -168,10 +171,31 @@ class Updater:
 
         return self._status
 
-    def start_update(self) -> bool:
+    def list_releases(self) -> list:
+        """
+        Return all available releases as a list of dicts, newest first.
+        Results are cached for _RELEASES_CACHE_TTL seconds.
+        """
+        now = time.time()
+        if self._releases_cache and (now - self._releases_cached_at) < self._RELEASES_CACHE_TTL:
+            return self._releases_cache
+
+        try:
+            releases = self._fetch_all_releases()
+            self._releases_cache = releases
+            self._releases_cached_at = now
+            return releases
+        except Exception as e:
+            log.warning("Failed to fetch releases list: %s", e)
+            return self._releases_cache  # return stale cache on error
+
+    def start_update(self, target_version: Optional[str] = None) -> bool:
         """
         Start the download → install → restart pipeline in a background thread.
-        Returns False if an update is already running or no update is available.
+
+        target_version: if given (e.g. '1.0.5'), install that specific release
+        (allows downgrade). If None, install the latest available release.
+        Returns False if an update/install is already running.
         """
         with self._lock:
             if self._status.state in (
@@ -181,9 +205,20 @@ class Updater:
             ):
                 log.warning("Update already in progress")
                 return False
-            if not self._status.update_available or self._status.latest_release is None:
-                log.warning("No update available — call check() first")
+
+        if target_version:
+            release = self._find_release(target_version)
+            if release is None:
+                log.warning("Release v%s not found", target_version)
                 return False
+            with self._lock:
+                self._status.latest_release = release
+                self._status.update_available = True
+        else:
+            with self._lock:
+                if not self._status.update_available or self._status.latest_release is None:
+                    log.warning("No update available — call check() first")
+                    return False
 
         self._worker = threading.Thread(
             target=self._update_pipeline,
@@ -352,6 +387,71 @@ class Updater:
     # ---------------------------------------------------------------------------
     # GitHub API
     # ---------------------------------------------------------------------------
+
+    def _fetch_all_releases(self) -> list:
+        """Fetch all releases and return as a list of dicts (newest first)."""
+        url = f"{GITHUB_API}/repos/{self._repo}/releases"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        result = []
+        for rel in response.json():
+            if rel.get("draft"):
+                continue
+            if rel.get("prerelease") and not self._include_prerelease:
+                continue
+            tag = rel["tag_name"]
+            version = tag.lstrip("v")
+            result.append(
+                {
+                    "version": version,
+                    "tag": tag,
+                    "name": rel.get("name") or tag,
+                    "published_at": rel.get("published_at", ""),
+                    "html_url": rel["html_url"],
+                    "is_prerelease": rel.get("prerelease", False),
+                    "is_current": version == self._current,
+                }
+            )
+        return result
+
+    def _find_release(self, version: str) -> Optional[ReleaseInfo]:
+        """Fetch a specific release by version string."""
+        tag = f"v{version.lstrip('v')}"
+        url = f"{GITHUB_API}/repos/{self._repo}/releases/tags/{tag}"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            rel = response.json()
+        except Exception as e:
+            log.warning("Could not fetch release %s: %s", tag, e)
+            return None
+        version_clean = rel["tag_name"].lstrip("v")
+        return ReleaseInfo(
+            version=version_clean,
+            tag=rel["tag_name"],
+            name=rel.get("name") or rel["tag_name"],
+            body=rel.get("body") or "",
+            published_at=rel.get("published_at", ""),
+            tarball_url=rel["tarball_url"],
+            html_url=rel["html_url"],
+            is_prerelease=rel.get("prerelease", False),
+            assets=[
+                {
+                    "name": a["name"],
+                    "url": a["browser_download_url"],
+                    "size": a["size"],
+                }
+                for a in rel.get("assets", [])
+            ],
+        )
 
     def _fetch_latest_release(self) -> ReleaseInfo:
         url = f"{GITHUB_API}/repos/{self._repo}/releases"

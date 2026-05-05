@@ -950,6 +950,16 @@
           <button class="btn btn-accent-outline" id="btn-do-update" onclick="doUpdate()" style="display:none">
             Jetzt aktualisieren
           </button>
+          <button class="btn btn-ghost" id="btn-show-releases" onclick="toggleReleases()" style="font-size:0.78rem;padding:0.3rem 0.6rem">
+            Versionshistorie ▾
+          </button>
+        </div>
+
+        <!-- Version history / downgrade panel -->
+        <div id="releases-panel" style="display:none;margin-top:0.6rem">
+          <div id="releases-list" style="display:flex;flex-direction:column;gap:0.3rem;max-height:260px;overflow-y:auto">
+            <div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">Lade…</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1544,15 +1554,19 @@ async function checkUpdate() {
   }
 }
 
-async function doUpdate() {
-  if (!confirm('BambuCam wird aktualisiert und danach automatisch neu gestartet. Fortfahren?')) return;
-  btnLoading('btn-do-update', true, 'Update läuft…');
+async function doUpdate(version) {
+  const msg = version
+    ? `v${version} wird installiert. Danach startet BambuCam neu. Fortfahren?`
+    : 'BambuCam wird aktualisiert und danach automatisch neu gestartet. Fortfahren?';
+  if (!confirm(msg)) return;
+  const body = version ? {version} : null;
+  if (!version) btnLoading('btn-do-update', true, 'Update läuft…');
   try {
-    await api('POST', '/update/start');
+    await api('POST', '/update/start', body);
     startUpdatePolling();
   } catch(e) {
     toast('Fehler beim Update: ' + e.message, 'error');
-    btnLoading('btn-do-update', false);
+    if (!version) btnLoading('btn-do-update', false);
   }
 }
 
@@ -1650,6 +1664,59 @@ function renderUpdateStatus(s) {
     if (btnCheck.dataset.origLabel) btnCheck.innerHTML = btnCheck.dataset.origLabel;
     btnCheck.className = 'btn btn-secondary';
   }
+}
+
+// ── Version history / downgrade ────────────────────────────────────────────
+let _releasesLoaded = false;
+
+function toggleReleases() {
+  const panel = document.getElementById('releases-panel');
+  const btn   = document.getElementById('btn-show-releases');
+  const open  = panel.style.display === 'none';
+  panel.style.display = open ? '' : 'none';
+  btn.textContent = open ? 'Versionshistorie ▴' : 'Versionshistorie ▾';
+  if (open && !_releasesLoaded) loadReleases();
+}
+
+async function loadReleases() {
+  const list = document.getElementById('releases-list');
+  list.innerHTML = '<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">Lade…</div>';
+  try {
+    const releases = await api('GET', '/update/releases');
+    _releasesLoaded = true;
+    renderReleases(releases);
+  } catch(e) {
+    list.innerHTML = `<div style="color:var(--danger);font-size:0.78rem;padding:0.4rem">Fehler: ${e.message}</div>`;
+  }
+}
+
+function renderReleases(releases) {
+  const list = document.getElementById('releases-list');
+  if (!releases || releases.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">Keine Versionen gefunden</div>';
+    return;
+  }
+  const currentEl = document.getElementById('upd-current');
+  const currentVer = (currentEl ? currentEl.textContent : '').replace(/^v/, '');
+  list.innerHTML = '';
+  releases.forEach((r, i) => {
+    const ver = r.tag_name ? r.tag_name.replace(/^v/, '') : '';
+    const isCurrent = ver && ver === currentVer;
+    const isLatest  = i === 0;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;border-radius:6px;background:var(--card-bg2,rgba(255,255,255,0.04))';
+    const badges = [];
+    if (isCurrent) badges.push('<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--accent);color:#fff">Aktuell</span>');
+    if (isLatest && !isCurrent) badges.push('<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--success,#22c55e);color:#fff">Neueste</span>');
+    const date = r.published_at ? new Date(r.published_at).toLocaleDateString('de-DE') : '';
+    const installBtn = isCurrent ? '' : `<button onclick="installVersion('${ver}')" style="margin-left:auto;font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--text)'">Installieren</button>`;
+    row.innerHTML = `<span style="font-weight:600;font-size:0.82rem">v${ver}</span>${badges.join('')}<span style="font-size:0.75rem;color:var(--text-dim)">${date}</span>${installBtn}`;
+    list.appendChild(row);
+  });
+}
+
+async function installVersion(version) {
+  await doUpdate(version);
 }
 
 async function loadInitialUpdateStatus() {
