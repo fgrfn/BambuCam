@@ -128,7 +128,9 @@ class Picamera2Backend(CameraBackend):
         self._running = False
         if self._picam is not None:
             try:
-                self.stop_rtsp_recording()
+                # clear_url=True prevents a race: start() won't auto-restart H264 while
+                # the RTSPStreamer monitor is also trying to restart it concurrently.
+                self.stop_rtsp_recording(clear_url=True)
             except Exception as e:
                 log.warning("Error stopping RTSP recording during shutdown: %s", e)
             try:
@@ -264,6 +266,10 @@ class Picamera2Backend(CameraBackend):
 
         if not self._running or self._picam is None:
             raise RuntimeError("Camera must be started before RTSP recording")
+
+        if self._h264_encoder is not None:
+            log.warning("H264 recording already active — stopping before restart")
+            self.stop_rtsp_recording()
 
         self._rtsp_url = rtsp_url
         self._rtsp_bitrate = bitrate_kbps
