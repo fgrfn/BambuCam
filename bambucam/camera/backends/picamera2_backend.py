@@ -48,6 +48,8 @@ class Picamera2Backend(CameraBackend):
         self._pending_controls: dict = {}
         self._initial_settings: dict = {}  # non-geometry settings, applied after start()
         self._h264_encoder = None  # active H264Encoder when RTSP recording is running
+        self._rtsp_url: Optional[str] = None  # stored so restart() can re-start recording
+        self._rtsp_bitrate: int = 2000
 
     def configure(self, resolution: Resolution, framerate: int, **kwargs) -> None:
         self._resolution = resolution
@@ -81,6 +83,10 @@ class Picamera2Backend(CameraBackend):
         self._picam = Picamera2(self._camera_index)
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
+            # lores stream in YUV420 is used by H264Encoder for RTSP.
+            # Keeping it always present avoids a camera restart when RTSP
+            # recording is started later (mode switch would break MJPEG).
+            lores={"size": res.as_tuple(), "format": "YUV420"},
             controls={"FrameRate": float(self._framerate)},
             transform=Transform(hflip=self._hflip, vflip=self._vflip),
         )
@@ -101,11 +107,19 @@ class Picamera2Backend(CameraBackend):
                 except Exception as e:
                     log.warning("Failed to apply initial setting %s=%r: %s", key, value, e)
 
+        # Re-start H264 recording if it was active before a camera restart
+        if self._rtsp_url is not None:
+            try:
+                self.start_rtsp_recording(self._rtsp_url, self._rtsp_bitrate)
+            except Exception as e:
+                log.warning("Failed to restart H264 recording after camera restart: %s", e)
+
         log.info("picamera2 started")
 
     def stop(self) -> None:
         self._running = False
         if self._picam is not None:
+            self.stop_rtsp_recording()
             self._picam.stop()
             self._picam.close()
             self._picam = None
@@ -234,21 +248,32 @@ class Picamera2Backend(CameraBackend):
         if not self._running or self._picam is None:
             raise RuntimeError("Camera must be started before RTSP recording")
 
+        self._rtsp_url = rtsp_url
+        self._rtsp_bitrate = bitrate_kbps
+
         self._h264_encoder = H264Encoder(
             bitrate=bitrate_kbps * 1000,
             iperiod=self._framerate * 2,  # keyframe every 2 s
         )
         output = FfmpegOutput(f"-f rtsp {rtsp_url}")
-        self._picam.start_recording(self._h264_encoder, output)
+        # name="lores" encodes the YUV420 lores stream, leaving the RGB888
+        # main stream free for concurrent MJPEG capture_file() calls.
+        try:
+            self._picam.start_recording(self._h264_encoder, output, name="lores")
+        except Exception as e:
+            self._h264_encoder = None
+            raise RuntimeError(f"H264 recording failed to start: {e}") from e
         log.info("H264 RTSP recording started → %s at %d kbps", rtsp_url, bitrate_kbps)
 
-    def stop_rtsp_recording(self) -> None:
+    def stop_rtsp_recording(self, clear_url: bool = False) -> None:
         if self._picam is not None and self._h264_encoder is not None:
             try:
                 self._picam.stop_recording()
             except Exception as e:
                 log.warning("Error stopping H264 recording: %s", e)
         self._h264_encoder = None
+        if clear_url:
+            self._rtsp_url = None
 
     @property
     def is_rtsp_recording(self) -> bool:

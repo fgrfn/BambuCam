@@ -253,19 +253,29 @@ def update_check():
 
 @api_bp.post("/update/start")
 def update_start():
-    started = _updater().start_update()
+    data = request.get_json(silent=True) or {}
+    target_version = data.get("version")  # optional — None means "latest"
+    started = _updater().start_update(target_version=target_version)
     if not started:
         status = _updater().status
         return (
             jsonify(
                 {
-                    "error": "Update nicht gestartet — kein Update verfügbar oder bereits aktiv.",
+                    "error": "Update nicht gestartet — Version nicht gefunden oder bereits aktiv.",
                     "status": status.as_dict(),
                 }
-            ),  # noqa: E501
+            ),
             409,
         )
-    return jsonify({"ok": True, "message": "Update gestartet."})
+    msg = (
+        f"Installation von v{target_version} gestartet." if target_version else "Update gestartet."
+    )
+    return jsonify({"ok": True, "message": msg})
+
+
+@api_bp.get("/update/releases")
+def update_releases():
+    return jsonify(_updater().list_releases())
 
 
 # ---------------------------------------------------------------------------
