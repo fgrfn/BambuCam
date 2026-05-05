@@ -192,7 +192,9 @@ usermod -aG gpio  "$SERVICE_USER" 2>/dev/null || true
 usermod -aG i2c   "$SERVICE_USER" 2>/dev/null || true
 
 install -d -m 755 "$BAMBUCAM_DIR"
+chown root:root "$BAMBUCAM_DIR"
 install -d -m 755 "$BAMBUCAM_CONFIG_DIR"
+chown root:root "$BAMBUCAM_CONFIG_DIR"
 install -d -m 750 "$BAMBUCAM_DATA_DIR"
 install -d -m 750 "$BAMBUCAM_DATA_DIR/snapshots"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_DATA_DIR"
