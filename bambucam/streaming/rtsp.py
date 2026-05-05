@@ -104,9 +104,9 @@ class RTSPStreamer:
             log.info("RTSP publisher: ffmpeg V4L2 → %s", self._publish_url())
             self._start_ffmpeg()
 
-    def _stop_publisher(self) -> None:
+    def _stop_publisher(self, clear_url: bool = True) -> None:
         if self._uses_picamera2():
-            self._camera_backend.stop_rtsp_recording()
+            self._camera_backend.stop_rtsp_recording(clear_url=clear_url)
         else:
             self._kill(self._ffmpeg_proc, "ffmpeg")
             self._ffmpeg_proc = None
@@ -172,7 +172,7 @@ class RTSPStreamer:
         if bitrate_kbps:
             self._bitrate = bitrate_kbps
         if self._running:
-            self._stop_publisher()
+            self._stop_publisher(clear_url=False)
             time.sleep(0.5)
             self._start_publisher()
 

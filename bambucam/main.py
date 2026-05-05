@@ -184,6 +184,8 @@ def main() -> None:
                 "MediaMTX not found — RTSP streaming disabled. "
                 "Run the installer or: bambucam-install"
             )
+        except Exception as e:
+            log.warning("RTSP streaming disabled: %s", e)
 
     # Snapshot service
     snapshot = SnapshotService(
