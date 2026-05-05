@@ -103,22 +103,22 @@ CAMERA_V2 = CameraModel(
     megapixels=8.0,
     max_resolution=_RES(3280, 2464),
     max_framerate=90,
+    # Native libcamera modes: 3280x2464@21, 1920x1080@47, 1640x1232@41, 640x480@206
+    # 1280x720 and 640x480 are crops; picamera2 selects nearest native mode.
     supported_resolutions=[
         _RES(3280, 2464),
         _RES(1920, 1080),
         _RES(1640, 1232),
-        _RES(1640, 922),
         _RES(1280, 720),
         _RES(640, 480),
     ],
-    supported_framerates=[90, 60, 30, 25, 15, 10, 5],
+    supported_framerates=[90, 60, 47, 41, 30, 25, 15, 10, 5],
     resolution_max_framerates={
-        _RES(3280, 2464): 15,
-        _RES(1920, 1080): 30,
-        _RES(1640, 1232): 41,
-        _RES(1640, 922): 50,
-        _RES(1280, 720): 90,
-        _RES(640, 480): 90,
+        _RES(3280, 2464): 21,  # native mode
+        _RES(1920, 1080): 47,  # native mode
+        _RES(1640, 1232): 41,  # native mode
+        _RES(1280, 720): 41,  # crop of 1640x1232 mode
+        _RES(640, 480): 90,  # native 206fps mode, capped for practical encoding
     },
     description="Raspberry Pi Camera Module v2 (IMX219, 8MP)",
     libcamera_name="imx219",
@@ -133,6 +133,7 @@ CAMERA_V2_NOIR = CameraModel(
     max_framerate=90,
     supported_resolutions=CAMERA_V2.supported_resolutions,
     supported_framerates=CAMERA_V2.supported_framerates,
+    resolution_max_framerates=CAMERA_V2.resolution_max_framerates,
     is_noir=True,
     description="Raspberry Pi Camera Module v2 without IR filter (IMX219, 8MP)",
     libcamera_name="imx219",
@@ -221,23 +222,27 @@ CAMERA_HQ = CameraModel(
     sensor="IMX477",
     megapixels=12.3,
     max_resolution=_RES(4056, 3040),
-    max_framerate=60,
+    max_framerate=120,
+    # Native libcamera modes: 1332x990@120, 2028x1080@50, 2028x1520@40, 4056x3040@10
+    # Other resolutions are crops; picamera2 selects nearest native mode.
     supported_resolutions=[
         _RES(4056, 3040),
         _RES(2028, 1520),
         _RES(2028, 1080),
+        _RES(1332, 990),
         _RES(1920, 1080),
         _RES(1280, 720),
         _RES(640, 480),
     ],
-    supported_framerates=[60, 30, 25, 15, 10, 5],
+    supported_framerates=[120, 60, 50, 40, 30, 25, 15, 10, 5],
     resolution_max_framerates={
-        _RES(4056, 3040): 10,
-        _RES(2028, 1520): 40,
-        _RES(2028, 1080): 50,
-        _RES(1920, 1080): 50,
-        _RES(1280, 720): 60,
-        _RES(640, 480): 60,
+        _RES(4056, 3040): 10,  # native mode
+        _RES(2028, 1520): 40,  # native mode
+        _RES(2028, 1080): 50,  # native mode
+        _RES(1332, 990): 120,  # native mode (high-speed / slow-motion)
+        _RES(1920, 1080): 50,  # crop of 2028x1080 mode
+        _RES(1280, 720): 50,  # crop of 2028x1080 mode
+        _RES(640, 480): 50,  # crop of 2028x1080 mode
     },
     description="Raspberry Pi HQ Camera (IMX477, 12.3MP, interchangeable lens)",
     libcamera_name="imx477",
