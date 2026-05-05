@@ -150,8 +150,19 @@ def main() -> None:
         mjpeg.start()
 
     # RTSP streamer
+    # For CSI cameras (picamera2 backend), use the in-process H264Encoder to
+    # avoid the V4L2 device conflict (picamera2 holds /dev/videoN exclusively).
+    # For USB webcams (V4L2 backend), keep the existing ffmpeg-from-V4L2 path.
     rtsp_cfg = stream_cfg.get("rtsp", {})
     rtsp_auth = rtsp_cfg.get("auth", {})
+
+    _picamera2_backend = None
+    if _camera_ok and camera.backend is not None:
+        from bambucam.camera.backends.picamera2_backend import Picamera2Backend
+
+        if isinstance(camera.backend, Picamera2Backend):
+            _picamera2_backend = camera.backend
+
     rtsp = RTSPStreamer(
         v4l2_device=(camera.v4l2_device if _camera_ok else None) or "/dev/video0",
         resolution=cam_cfg.get("resolution", "1920x1080"),
@@ -163,6 +174,7 @@ def main() -> None:
         enable_webrtc=rtsp_cfg.get("enable_webrtc", False),
         rtsp_auth_user=rtsp_auth.get("username") if rtsp_auth.get("enabled") else None,
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
+        camera_backend=_picamera2_backend,
     )
     if _camera_ok and not args.no_rtsp and rtsp_cfg.get("enabled", True):
         try:

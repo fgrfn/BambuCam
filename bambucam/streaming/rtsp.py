@@ -38,13 +38,17 @@ _INTERNAL_RTSP_PORT = 8555
 
 class RTSPStreamer:
     """
-    Manages MediaMTX + ffmpeg subprocesses for RTSP/HLS streaming.
+    Manages MediaMTX + stream publisher for RTSP/HLS streaming.
 
-    Typical flow:
-      1. start() launches MediaMTX
-      2. start() launches ffmpeg which reads from the camera and publishes
-         an RTSP stream to MediaMTX
-      3. BambuBuddy connects to rtsp://<pi-ip>:8554/cam
+    Two publisher modes (selected automatically):
+      - picamera2 backend: uses H264Encoder + FfmpegOutput inside picamera2
+        to avoid the V4L2 device conflict (picamera2 holds /dev/videoN
+        exclusively; ffmpeg cannot open it concurrently).
+      - V4L2 backend / USB webcam: ffmpeg reads directly from the V4L2
+        device and publishes to MediaMTX via RTSP.
+
+    Both modes publish to rtsp://localhost:{RTSP_PORT}/{stream_name}.
+    MediaMTX distributes the stream to RTSP/HLS/WebRTC clients.
     """
 
     def __init__(
@@ -59,6 +63,7 @@ class RTSPStreamer:
         enable_webrtc: bool = False,
         rtsp_auth_user: Optional[str] = None,
         rtsp_auth_pass: Optional[str] = None,
+        camera_backend=None,  # Picamera2Backend instance → use H264Encoder mode
     ):
         self._device = v4l2_device
         self._resolution = resolution
@@ -70,12 +75,46 @@ class RTSPStreamer:
         self._enable_webrtc = enable_webrtc
         self._auth_user = rtsp_auth_user
         self._auth_pass = rtsp_auth_pass
+        self._camera_backend = camera_backend
 
         self._mediamtx_proc: Optional[subprocess.Popen] = None
         self._ffmpeg_proc: Optional[subprocess.Popen] = None
         self._config_file: Optional[Path] = None
         self._running = False
         self._monitor_thread: Optional[threading.Thread] = None
+
+    # ---------------------------------------------------------------------------
+    # Publisher mode helpers
+    # ---------------------------------------------------------------------------
+
+    def _uses_picamera2(self) -> bool:
+        """True when using picamera2 H264Encoder instead of ffmpeg + V4L2."""
+        return self._camera_backend is not None and hasattr(
+            self._camera_backend, "start_rtsp_recording"
+        )
+
+    def _publish_url(self) -> str:
+        return f"rtsp://localhost:{RTSP_PORT}/{self._stream_name}"
+
+    def _start_publisher(self) -> None:
+        if self._uses_picamera2():
+            log.info("RTSP publisher: picamera2 H264Encoder → %s", self._publish_url())
+            self._camera_backend.start_rtsp_recording(self._publish_url(), self._bitrate)
+        else:
+            log.info("RTSP publisher: ffmpeg V4L2 → %s", self._publish_url())
+            self._start_ffmpeg()
+
+    def _stop_publisher(self) -> None:
+        if self._uses_picamera2():
+            self._camera_backend.stop_rtsp_recording()
+        else:
+            self._kill(self._ffmpeg_proc, "ffmpeg")
+            self._ffmpeg_proc = None
+
+    def _publisher_alive(self) -> bool:
+        if self._uses_picamera2():
+            return self._camera_backend.is_rtsp_recording
+        return self._ffmpeg_proc is not None and self._ffmpeg_proc.poll() is None
 
     # ---------------------------------------------------------------------------
     # Lifecycle
@@ -94,7 +133,7 @@ class RTSPStreamer:
         self._config_file = self._write_mediamtx_config()
         self._start_mediamtx()
         time.sleep(1.0)  # Give MediaMTX time to bind ports
-        self._start_ffmpeg()
+        self._start_publisher()
         self._running = True
 
         self._monitor_thread = threading.Thread(
@@ -109,9 +148,8 @@ class RTSPStreamer:
 
     def stop(self) -> None:
         self._running = False
-        self._kill(self._ffmpeg_proc, "ffmpeg")
+        self._stop_publisher()
         self._kill(self._mediamtx_proc, "mediamtx")
-        self._ffmpeg_proc = None
         self._mediamtx_proc = None
         if self._config_file and self._config_file.exists():
             try:
@@ -126,7 +164,7 @@ class RTSPStreamer:
         framerate: Optional[int] = None,
         bitrate_kbps: Optional[int] = None,
     ) -> None:
-        """Restart ffmpeg with new parameters."""
+        """Restart the stream publisher with new parameters."""
         if resolution:
             self._resolution = resolution
         if framerate:
@@ -134,9 +172,9 @@ class RTSPStreamer:
         if bitrate_kbps:
             self._bitrate = bitrate_kbps
         if self._running:
-            self._kill(self._ffmpeg_proc, "ffmpeg")
+            self._stop_publisher()
             time.sleep(0.5)
-            self._start_ffmpeg()
+            self._start_publisher()
 
     # ---------------------------------------------------------------------------
     # MediaMTX configuration
@@ -245,18 +283,17 @@ class RTSPStreamer:
         log.debug("%s terminated", name)
 
     def _monitor_loop(self) -> None:
-        """Restart ffmpeg if it crashes unexpectedly."""
+        """Restart the stream publisher if it crashes unexpectedly."""
         while self._running:
             time.sleep(3)
-            if self._ffmpeg_proc and self._ffmpeg_proc.poll() is not None:
-                rc = self._ffmpeg_proc.returncode
-                log.warning("ffmpeg exited with code %d, restarting…", rc)
+            if not self._publisher_alive():
+                log.warning("RTSP publisher stopped unexpectedly, restarting…")
                 time.sleep(2)
                 if self._running:
                     try:
-                        self._start_ffmpeg()
+                        self._start_publisher()
                     except Exception as e:
-                        log.error("Failed to restart ffmpeg: %s", e)
+                        log.error("Failed to restart RTSP publisher: %s", e)
 
     # ---------------------------------------------------------------------------
     # Introspection
