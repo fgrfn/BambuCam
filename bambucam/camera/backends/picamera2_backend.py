@@ -85,14 +85,18 @@ class Picamera2Backend(CameraBackend):
         )
 
         self._picam = Picamera2(self._camera_index)
-        # Cap lores stream at 1280×720 to reduce GPU memory/bandwidth pressure.
-        # H264Encoder encodes from lores (YUV420); 720p is sufficient for RTSP.
+        # lores stream (YUV420) is used by H264Encoder for RTSP.
+        # It must be strictly smaller than main; cap at 1280×720 and subtract
+        # 2px when lores would otherwise equal main (YUV420 requires even dims).
         lores_w = min(res.width, 1280)
         lores_h = min(res.height, 720)
+        if lores_w >= res.width:
+            lores_w = max(2, res.width - 2) & ~1
+        if lores_h >= res.height:
+            lores_h = max(2, res.height - 2) & ~1
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
-            # lores stream in YUV420 is used by H264Encoder for RTSP.
-            # Keeping it always present avoids a camera restart when RTSP
+            # Keeping lores always present avoids a camera restart when RTSP
             # recording is started later (mode switch would break MJPEG).
             lores={"size": (lores_w, lores_h), "format": "YUV420"},
             controls={"FrameRate": float(self._framerate)},

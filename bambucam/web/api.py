@@ -82,6 +82,12 @@ def camera_settings():
         _camera().apply_settings(data)
         _cfg().update_section("camera", data)
         _cfg().save()
+        # Keep RTSPStreamer in sync when resolution or framerate change
+        if "resolution" in data or "framerate" in data:
+            _rtsp().update_settings(
+                resolution=data.get("resolution"),
+                framerate=data.get("framerate"),
+            )
     except Exception as e:
         log.exception("Failed to apply camera settings")
         return jsonify({"error": str(e)}), 400
