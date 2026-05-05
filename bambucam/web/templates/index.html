@@ -1708,9 +1708,11 @@ function renderReleases(releases) {
     const badges = [];
     if (isCurrent) badges.push('<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--accent);color:#fff">Aktuell</span>');
     if (isLatest && !isCurrent) badges.push('<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--success,#22c55e);color:#fff">Neueste</span>');
-    const date = r.published_at ? new Date(r.published_at).toLocaleDateString('de-DE') : '';
-    const installBtn = isCurrent ? '' : `<button onclick="installVersion('${ver}')" style="margin-left:auto;font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--text)'">Installieren</button>`;
-    row.innerHTML = `<span style="font-weight:600;font-size:0.82rem">v${ver}</span>${badges.join('')}<span style="font-size:0.75rem;color:var(--text-dim)">${date}</span>${installBtn}`;
+    const relName = (r.name || '').replace(/^v[\d.]+\s*[-–]?\s*/,'').trim();
+    const desc = relName || (r.body ? r.body.split('\n').find(l => l.trim()) || '' : '');
+    const descHtml = desc ? `<span style="font-size:0.75rem;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${desc.replace(/"/g,'&quot;')}">${desc}</span>` : '';
+    const installBtn = isCurrent ? '' : `<button onclick="installVersion('${ver}')" style="margin-left:auto;flex-shrink:0;font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--text)'">Installieren</button>`;
+    row.innerHTML = `<span style="font-weight:600;font-size:0.82rem;flex-shrink:0">v${ver}</span>${badges.join('')}${descHtml}${installBtn}`;
     list.appendChild(row);
   });
 }
