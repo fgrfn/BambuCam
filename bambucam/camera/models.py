@@ -96,6 +96,21 @@ CAMERA_V1 = CameraModel(
     libcamera_name="ov5647",
 )
 
+CAMERA_V1_NOIR = CameraModel(
+    id="ov5647_v1_noir",
+    name="Camera Module v1 NoIR",
+    sensor="OV5647",
+    megapixels=5.0,
+    max_resolution=_RES(2592, 1944),
+    max_framerate=90,
+    supported_resolutions=CAMERA_V1.supported_resolutions,
+    supported_framerates=CAMERA_V1.supported_framerates,
+    resolution_max_framerates=CAMERA_V1.resolution_max_framerates,
+    is_noir=True,
+    description="Raspberry Pi Camera Module v1 without IR filter (OV5647, 5MP)",
+    libcamera_name="ov5647",
+)
+
 CAMERA_V2 = CameraModel(
     id="imx219_v2",
     name="Camera Module v2",
@@ -273,6 +288,34 @@ CAMERA_GS = CameraModel(
     libcamera_name="imx296",
 )
 
+CAMERA_AI = CameraModel(
+    id="imx500_ai",
+    name="AI Camera",
+    sensor="IMX500",
+    megapixels=12.3,
+    max_resolution=_RES(4056, 3040),
+    max_framerate=30,
+    # Native libcamera modes: 2028x1520@30, 4056x3040@10
+    supported_resolutions=[
+        _RES(4056, 3040),
+        _RES(2028, 1520),
+        _RES(1920, 1080),
+        _RES(1280, 720),
+        _RES(640, 480),
+    ],
+    supported_framerates=[30, 25, 15, 10, 5],
+    resolution_max_framerates={
+        _RES(4056, 3040): 10,
+        _RES(2028, 1520): 30,
+        _RES(1920, 1080): 30,
+        _RES(1280, 720): 30,
+        _RES(640, 480): 30,
+    },
+    has_autofocus=True,
+    description="Raspberry Pi AI Camera (IMX500, 12.3MP, on-sensor ML accelerator)",
+    libcamera_name="imx500",
+)
+
 CAMERA_USB_GENERIC = CameraModel(
     id="usb_generic",
     name="USB Webcam",
@@ -298,6 +341,7 @@ CAMERA_USB_GENERIC = CameraModel(
 
 KNOWN_MODELS: list[CameraModel] = [
     CAMERA_V1,
+    CAMERA_V1_NOIR,
     CAMERA_V2,
     CAMERA_V2_NOIR,
     CAMERA_V3,
@@ -305,6 +349,7 @@ KNOWN_MODELS: list[CameraModel] = [
     CAMERA_V3_NOIR,
     CAMERA_V3_WIDE_NOIR,
     CAMERA_HQ,
+    CAMERA_AI,
     CAMERA_GS,
     CAMERA_USB_GENERIC,
 ]
@@ -314,6 +359,7 @@ LIBCAMERA_MODEL_MAP: dict = {
     "imx219": CAMERA_V2,
     "imx708": CAMERA_V3,
     "imx477": CAMERA_HQ,
+    "imx500": CAMERA_AI,
     "imx296": CAMERA_GS,
 }
 
@@ -332,6 +378,7 @@ def get_model_by_sensor(sensor_name: str) -> Optional[CameraModel]:
 # Human-friendly aliases used in bambucam.yaml  camera.module
 MODULE_ALIAS_MAP: dict = {
     "v1": CAMERA_V1,
+    "v1_noir": CAMERA_V1_NOIR,
     "v2": CAMERA_V2,
     "v2_noir": CAMERA_V2_NOIR,
     "v3": CAMERA_V3,
@@ -339,6 +386,7 @@ MODULE_ALIAS_MAP: dict = {
     "v3_wide": CAMERA_V3_WIDE,
     "v3_wide_noir": CAMERA_V3_WIDE_NOIR,
     "hq": CAMERA_HQ,
+    "ai": CAMERA_AI,
     "gs": CAMERA_GS,
 }
 
