@@ -192,7 +192,9 @@ usermod -aG gpio  "$SERVICE_USER" 2>/dev/null || true
 usermod -aG i2c   "$SERVICE_USER" 2>/dev/null || true
 
 install -d -m 755 "$BAMBUCAM_DIR"
+chown root:root "$BAMBUCAM_DIR"
 install -d -m 755 "$BAMBUCAM_CONFIG_DIR"
+chown root:root "$BAMBUCAM_CONFIG_DIR"
 install -d -m 750 "$BAMBUCAM_DATA_DIR"
 install -d -m 750 "$BAMBUCAM_DATA_DIR/snapshots"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_DATA_DIR"
@@ -240,13 +242,15 @@ step "Installing default configuration"
 if [[ ! -f "$BAMBUCAM_CONFIG_DIR/bambucam.yaml" ]]; then
   install -m 640 "$SRC_DIR/config/bambucam.yaml" \
     "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
-  chown "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
   info "Config written to $BAMBUCAM_CONFIG_DIR/bambucam.yaml"
 else
   info "Existing config preserved: $BAMBUCAM_CONFIG_DIR/bambucam.yaml"
 fi
+# Always ensure bambucam owns the config so the service can write settings
+chown "$SERVICE_USER:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
+chmod 640 "$BAMBUCAM_CONFIG_DIR/bambucam.yaml"
 
-# Environment file for systemd overrides
+# Environment file for systemd overrides (admin-managed, read-only for service)
 if [[ ! -f "$BAMBUCAM_CONFIG_DIR/environment" ]]; then
   install -m 640 /dev/null "$BAMBUCAM_CONFIG_DIR/environment"
   chown "root:$SERVICE_USER" "$BAMBUCAM_CONFIG_DIR/environment"

@@ -1346,16 +1346,25 @@ async function loadModelCapabilities(status) {
     if (!model) return;
 
     const currentRes = status.resolution || '';
+    const currentFps = status.framerate || 15;
     const resSel = document.getElementById('sel-resolution');
+    const fpsSel = document.getElementById('sel-framerate');
+
+    function buildFpsOptions(res, selectedFps) {
+      const maxFps = (model.resolution_max_framerates || {})[res] ?? model.max_framerate;
+      fpsSel.innerHTML = model.supported_framerates
+        .filter(f => f <= maxFps)
+        .map(f => `<option value="${f}"${f == selectedFps ? ' selected' : ''}>${f} fps</option>`)
+        .join('');
+    }
+
     resSel.innerHTML = model.supported_resolutions.map(r =>
       `<option value="${r}"${r === currentRes ? ' selected' : ''}>${r}</option>`
     ).join('');
 
-    const currentFps = status.framerate || 15;
-    const fpsSel = document.getElementById('sel-framerate');
-    fpsSel.innerHTML = model.supported_framerates.map(f =>
-      `<option value="${f}"${f == currentFps ? ' selected' : ''}>${f} fps</option>`
-    ).join('');
+    buildFpsOptions(currentRes, currentFps);
+
+    resSel.addEventListener('change', () => buildFpsOptions(resSel.value, currentFps));
   } catch(e) { /* ignore */ }
 }
 

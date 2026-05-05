@@ -61,6 +61,9 @@ def camera_models():
                 "max_framerate": m.max_framerate,
                 "supported_resolutions": [str(r) for r in m.supported_resolutions],
                 "supported_framerates": m.supported_framerates,
+                "resolution_max_framerates": {
+                    str(r): fps for r, fps in m.resolution_max_framerates.items()
+                },
                 "has_autofocus": m.has_autofocus,
                 "has_hdr": m.has_hdr,
                 "is_noir": m.is_noir,
