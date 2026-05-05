@@ -44,19 +44,22 @@ class Picamera2Backend(CameraBackend):
         self._lock = threading.Lock()
         self._resolution: Optional[Resolution] = None
         self._framerate: int = 30
+        self._vflip: bool = False
+        self._hflip: bool = False
         self._pending_controls: dict = {}
 
     def configure(self, resolution: Resolution, framerate: int, **kwargs) -> None:
         self._resolution = resolution
         self._framerate = framerate
-        if kwargs.get("vflip"):
-            self._pending_controls["vflip"] = kwargs["vflip"]
-        if kwargs.get("hflip"):
-            self._pending_controls["hflip"] = kwargs["hflip"]
+        # Flips are geometry transforms — stored separately, applied via Transform at start()
+        if "vflip" in kwargs:
+            self._vflip = bool(kwargs["vflip"])
+        if "hflip" in kwargs:
+            self._hflip = bool(kwargs["hflip"])
 
     def start(self) -> None:
         try:
-            from picamera2 import Picamera2
+            from picamera2 import Picamera2, Transform
         except ImportError:
             raise RuntimeError(
                 "picamera2 is not installed. " "Run: sudo apt install python3-picamera2"
@@ -64,20 +67,22 @@ class Picamera2Backend(CameraBackend):
 
         res = self._resolution or self.model.max_resolution
         log.info(
-            "Starting picamera2 backend: %s @ %s %dfps",
+            "Starting picamera2 backend: %s @ %s %dfps (vflip=%s hflip=%s)",
             self.model.name,
             res,
             self._framerate,
+            self._vflip,
+            self._hflip,
         )
 
         self._picam = Picamera2(self._camera_index)
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
             controls={"FrameRate": float(self._framerate)},
+            transform=Transform(hflip=self._hflip, vflip=self._vflip),
         )
         self._picam.configure(config)
 
-        # Apply pending controls (flip, etc.)
         if self._pending_controls:
             self._picam.set_controls(self._pending_controls)
 
@@ -144,24 +149,31 @@ class Picamera2Backend(CameraBackend):
     def set_awb_mode(self, mode: str) -> None:
         from libcamera import controls as lc
 
+        # libcamera AwbModeEnum: Auto, Tungsten, Fluorescent, Indoor, Daylight, Cloudy, Custom
+        # "shade" and "incandescent" are not in the enum; map to nearest equivalent.
+        _enum = lc.AwbModeEnum
         mode_map = {
-            "auto": lc.AwbModeEnum.Auto,
-            "sunlight": lc.AwbModeEnum.Daylight,
-            "cloudy": lc.AwbModeEnum.Cloudy,
-            "shade": lc.AwbModeEnum.Shade,
-            "tungsten": lc.AwbModeEnum.Tungsten,
-            "fluorescent": lc.AwbModeEnum.Fluorescent,
-            "incandescent": lc.AwbModeEnum.Incandescent,
+            "auto": getattr(_enum, "Auto", None),
+            "sunlight": getattr(_enum, "Daylight", None),
+            "cloudy": getattr(_enum, "Cloudy", None),
+            "shade": getattr(_enum, "Cloudy", None),  # no Shade in libcamera
+            "tungsten": getattr(_enum, "Tungsten", None),
+            "fluorescent": getattr(_enum, "Fluorescent", None),
+            "incandescent": getattr(_enum, "Tungsten", None),  # no Incandescent
+            "indoor": getattr(_enum, "Indoor", None),
         }
         lc_mode = mode_map.get(mode)
         if lc_mode is not None:
             self._set_control(AwbMode=lc_mode)
+        else:
+            log.warning("AWB mode %r not supported by this libcamera version", mode)
 
     def set_vflip(self, enabled: bool) -> None:
-        self._set_control(vflip=enabled)
+        # Flips require Transform at configure time — update state for next restart.
+        self._vflip = enabled
 
     def set_hflip(self, enabled: bool) -> None:
-        self._set_control(hflip=enabled)
+        self._hflip = enabled
 
     def set_autofocus(self, enabled: bool) -> None:
         if not self.model.has_autofocus:
