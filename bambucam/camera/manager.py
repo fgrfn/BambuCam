@@ -126,7 +126,7 @@ class CameraManager:
     def restart(self) -> None:
         """Restart with current settings (e.g., after a resolution change)."""
         self.stop()
-        self._backend.configure(self._resolution, self._framerate, **self._settings)
+        self._backend.configure(self._resolution, self._framerate, **self._extra_settings())
         try:
             self._backend.start()
         except Exception:
@@ -138,6 +138,10 @@ class CameraManager:
     # ---------------------------------------------------------------------------
     # Camera watchdog — auto-restarts the camera if it dies unexpectedly
     # ---------------------------------------------------------------------------
+
+    def _extra_settings(self) -> dict:
+        """Return self._settings without keys already passed as positional args to configure()."""
+        return {k: v for k, v in self._settings.items() if k not in ("resolution", "framerate")}
 
     def _start_watchdog(self) -> None:
         self._stop_watchdog()
@@ -172,7 +176,7 @@ class CameraManager:
             if not self._watchdog_running:
                 break
             try:
-                self._backend.configure(self._resolution, self._framerate, **self._settings)
+                self._backend.configure(self._resolution, self._framerate, **self._extra_settings())
                 self._backend.start()
                 consecutive_failures = 0
                 log.info("Camera watchdog: restart successful")
