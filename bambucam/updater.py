@@ -266,7 +266,7 @@ class Updater:
                 self._status.update_available = False
                 self._status.progress = 100
                 self._status.message = (
-                    f"Update auf v{release.version} erfolgreich! " "BambuCam wird neu gestartet…"
+                    f"Update auf v{release.version} erfolgreich! BambuCam wird neu gestartet…"
                 )
 
         except Exception as e:

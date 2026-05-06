@@ -70,7 +70,7 @@ class Picamera2Backend(CameraBackend):
             from picamera2 import Picamera2
         except ImportError:
             raise RuntimeError(
-                "picamera2 is not installed. " "Run: sudo apt install python3-picamera2"
+                "picamera2 is not installed. Run: sudo apt install python3-picamera2"
             )
         try:
             from libcamera import Transform

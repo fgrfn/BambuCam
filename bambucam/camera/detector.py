@@ -34,7 +34,9 @@ class DetectedCamera:
         self.detected_resolutions = detected_resolutions or model.supported_resolutions
 
     def __repr__(self) -> str:
-        return f"<DetectedCamera {self.model.name!r} backend={self.backend!r} device={self.device!r}>"  # noqa: E501
+        return (
+            f"<DetectedCamera {self.model.name!r} backend={self.backend!r} device={self.device!r}>"  # noqa: E501
+        )
 
 
 def detect_cameras() -> list[DetectedCamera]:

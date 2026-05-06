@@ -134,9 +134,7 @@ def main() -> None:
     # whether to allocate the lores stream in picamera2.
     rtsp_cfg = stream_cfg.get("rtsp", {})
     _will_use_rtsp = (
-        _camera_ok
-        and not args.no_rtsp
-        and rtsp_cfg.get("enabled", _rtsp_default_enabled)
+        _camera_ok and not args.no_rtsp and rtsp_cfg.get("enabled", _rtsp_default_enabled)
     )
 
     if _camera_ok:
@@ -171,9 +169,7 @@ def main() -> None:
     # MJPEG streamer
     mjpeg_cfg = stream_cfg.get("mjpeg", {})
     _camera_fps = cam_cfg.get("framerate", 15)
-    _mjpeg_default_fps = (
-        _camera_fps if _mjpeg_fps_cap is None else min(_camera_fps, _mjpeg_fps_cap)
-    )
+    _mjpeg_default_fps = _camera_fps if _mjpeg_fps_cap is None else min(_camera_fps, _mjpeg_fps_cap)
     mjpeg = MJPEGStreamer(
         capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
         target_fps=mjpeg_cfg.get("fps", _mjpeg_default_fps),
