@@ -36,9 +36,10 @@ class Picamera2Backend(CameraBackend):
         "indoor": "Indoor",
     }
 
-    def __init__(self, model: CameraModel, device: str, camera_index: int = 0):
+    def __init__(self, model: CameraModel, device: str, camera_index: int = 0, enable_lores: bool = True):
         super().__init__(model, device)
         self._camera_index = camera_index
+        self._enable_lores = enable_lores  # False → skip lores stream (no RTSP H264 possible)
         self._picam = None
         self._lock = threading.Lock()
         self._resolution: Optional[Resolution] = None
@@ -85,21 +86,24 @@ class Picamera2Backend(CameraBackend):
         )
 
         self._picam = Picamera2(self._camera_index)
-        # lores stream (YUV420) is used by H264Encoder for RTSP.
-        # Use half the main resolution (preserves aspect ratio, reduces ISP
-        # and GPU load significantly on slower Pi models), capped at 640×360.
+
+        # lores stream (YUV420) — only when RTSP/H264 is needed.
+        # Use half the main resolution (preserves aspect ratio, reduces ISP/GPU
+        # load significantly on slower Pi models), capped at 640×360.
         # Must be strictly smaller than main; YUV420 requires even dimensions.
-        lores_w = min((res.width // 2) & ~1, 640)
-        lores_h = min((res.height // 2) & ~1, 360)
-        if lores_w >= res.width:
-            lores_w = max(2, res.width - 2) & ~1
-        if lores_h >= res.height:
-            lores_h = max(2, res.height - 2) & ~1
+        lores_stream = None
+        if self._enable_lores:
+            lores_w = min((res.width // 2) & ~1, 640)
+            lores_h = min((res.height // 2) & ~1, 360)
+            if lores_w >= res.width:
+                lores_w = max(2, res.width - 2) & ~1
+            if lores_h >= res.height:
+                lores_h = max(2, res.height - 2) & ~1
+            lores_stream = {"size": (lores_w, lores_h), "format": "YUV420"}
+
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
-            # Keeping lores always present avoids a camera restart when RTSP
-            # recording is started later (mode switch would break MJPEG).
-            lores={"size": (lores_w, lores_h), "format": "YUV420"},
+            lores=lores_stream,
             controls={"FrameRate": float(self._framerate)},
             transform=Transform(hflip=self._hflip, vflip=self._vflip),
         )
