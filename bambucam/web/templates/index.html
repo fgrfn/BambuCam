@@ -1107,6 +1107,15 @@
             <option value="fluorescent">Leuchtstoffröhre</option>
           </select>
         </div>
+        <div class="field">
+          <div class="field-label"><span>Rauschunterdrückung</span></div>
+          <select id="sel-noise-reduction">
+            <option value="off">Aus</option>
+            <option value="minimal">Minimal</option>
+            <option value="fast" selected>Schnell</option>
+            <option value="high_quality">Hohe Qualität</option>
+          </select>
+        </div>
 
         <div class="divider"></div>
 
@@ -1551,18 +1560,19 @@ async function applyImageSettings() {
   const contrast      = parseInt(document.getElementById('sl-contrast').value) / 100;
   const saturation    = parseInt(document.getElementById('sl-saturation').value) / 100;
   const sharpness     = parseInt(document.getElementById('sl-sharpness').value) / 100;
-  const exposure_mode = document.getElementById('sel-exposure').value;
-  const awb_mode      = document.getElementById('sel-awb').value;
-  const vflip         = document.getElementById('chk-vflip').checked;
-  const hflip         = document.getElementById('chk-hflip').checked;
-  const autofocus     = document.getElementById('chk-autofocus').checked;
-  const hdr           = document.getElementById('chk-hdr').checked;
+  const exposure_mode    = document.getElementById('sel-exposure').value;
+  const awb_mode         = document.getElementById('sel-awb').value;
+  const noise_reduction  = document.getElementById('sel-noise-reduction').value;
+  const vflip            = document.getElementById('chk-vflip').checked;
+  const hflip            = document.getElementById('chk-hflip').checked;
+  const autofocus        = document.getElementById('chk-autofocus').checked;
+  const hdr              = document.getElementById('chk-hdr').checked;
 
   btnLoading('btn-img-apply', true, 'Wird angewendet…');
   try {
     await api('POST', '/camera/settings', {
       brightness, contrast, saturation, sharpness,
-      exposure_mode, awb_mode, vflip, hflip, autofocus, hdr,
+      exposure_mode, awb_mode, noise_reduction, vflip, hflip, autofocus, hdr,
     });
     toast('Bildeinstellungen übernommen');
   } catch(e) {

@@ -260,6 +260,8 @@ class CameraManager:
                 b.set_autofocus(bool(new_settings["autofocus"]))
             if "hdr" in new_settings:
                 b.set_hdr(bool(new_settings["hdr"]))
+            if "noise_reduction" in new_settings:
+                b.set_noise_reduction(new_settings["noise_reduction"])
 
     # ---------------------------------------------------------------------------
     # Introspection
