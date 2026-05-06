@@ -86,10 +86,11 @@ class Picamera2Backend(CameraBackend):
 
         self._picam = Picamera2(self._camera_index)
         # lores stream (YUV420) is used by H264Encoder for RTSP.
-        # It must be strictly smaller than main; cap at 1280×720 and subtract
-        # 2px when lores would otherwise equal main (YUV420 requires even dims).
-        lores_w = min(res.width, 1280)
-        lores_h = min(res.height, 720)
+        # Use half the main resolution (preserves aspect ratio, reduces ISP
+        # and GPU load significantly on slower Pi models), capped at 640×360.
+        # Must be strictly smaller than main; YUV420 requires even dimensions.
+        lores_w = min((res.width // 2) & ~1, 640)
+        lores_h = min((res.height // 2) & ~1, 360)
         if lores_w >= res.width:
             lores_w = max(2, res.width - 2) & ~1
         if lores_h >= res.height:
