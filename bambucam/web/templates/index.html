@@ -1031,7 +1031,7 @@
           <div class="field-label"><span>Framerate</span></div>
           <select id="sel-framerate"></select>
         </div>
-        <div class="field">
+        <div class="field" id="row-rtsp-bitrate">
           <div class="field-label">
             <span>RTSP Bitrate</span>
             <span class="field-label-val"><span id="val-bitrate">2000</span> kbps</span>
@@ -1157,7 +1157,7 @@
         <span class="card-title">BambuBuddy Integration</span>
       </div>
       <div class="card-body">
-        <p class="hint">
+        <p class="hint" id="bb-hint">
           RTSP-URL unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:
         </p>
         <div class="copy-box" id="bb-rtsp-box" onclick="copyBox(this)" title="Klicken zum Kopieren">
@@ -1170,6 +1170,12 @@
           <span class="copy-box-url" id="bb-hls-url">http://…/index.m3u8</span>
           <svg class="copy-box-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+          </svg>
+        </div>
+        <div class="copy-box" id="bb-mjpeg-box" style="display:none" onclick="copyBox(this)" title="Klicken zum Kopieren">
+          <span class="copy-box-url" id="bb-mjpeg-url">http://…/stream</span>
+          <svg class="copy-box-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
           </svg>
         </div>
       </div>
@@ -1396,6 +1402,32 @@ async function loadStreamStatus() {
       }
     }
 
+    const rtspRunning = !!(s.rtsp && s.rtsp.running);
+
+    // Show/hide RTSP + HLS chips
+    const chipRtsp = document.getElementById('chip-rtsp');
+    const chipHls  = document.getElementById('chip-hls');
+    if (chipRtsp) chipRtsp.style.display = rtspRunning ? '' : 'none';
+    if (chipHls)  chipHls.style.display  = rtspRunning ? '' : 'none';
+
+    // Show/hide RTSP bitrate slider in stream settings
+    const bitrateRow = document.getElementById('row-rtsp-bitrate');
+    if (bitrateRow) bitrateRow.style.display = rtspRunning ? '' : 'none';
+
+    // BambuBuddy card: RTSP/HLS when running, MJPEG-only otherwise
+    const bbRtsp  = document.getElementById('bb-rtsp-box');
+    const bbHls   = document.getElementById('bb-hls-box');
+    const bbMjpeg = document.getElementById('bb-mjpeg-box');
+    const bbHint  = document.getElementById('bb-hint');
+    if (bbRtsp)  bbRtsp.style.display  = rtspRunning ? '' : 'none';
+    if (bbHls)   bbHls.style.display   = rtspRunning ? '' : 'none';
+    if (bbMjpeg) bbMjpeg.style.display = rtspRunning ? 'none' : '';
+    if (bbHint) {
+      bbHint.innerHTML = rtspRunning
+        ? 'RTSP-URL unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:'
+        : 'MJPEG-URL für BambuBuddy, Browser und OBS:';
+    }
+
     if (s.rtsp && s.rtsp.urls) {
       const rtsp = s.rtsp.urls.rtsp || 'rtsp://…';
       const hls  = s.rtsp.urls.hls  || 'http://…/index.m3u8';
@@ -1409,8 +1441,9 @@ async function loadStreamStatus() {
 async function loadBambuBuddyUrls() {
   try {
     const d = await api('GET', '/bambubuddy');
-    if (d.rtsp_url) setText('bb-rtsp-url', d.rtsp_url);
-    if (d.hls_url)  setText('bb-hls-url',  d.hls_url);
+    if (d.rtsp_url)  setText('bb-rtsp-url',  d.rtsp_url);
+    if (d.hls_url)   setText('bb-hls-url',   d.hls_url);
+    if (d.mjpeg_url) setText('bb-mjpeg-url', d.mjpeg_url);
   } catch(e) { /* ignore */ }
 }
 
