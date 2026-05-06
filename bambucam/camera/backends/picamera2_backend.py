@@ -259,6 +259,22 @@ class Picamera2Backend(CameraBackend):
         if mode is not None:
             self._set_control(HdrMode=mode)
 
+    def set_noise_reduction(self, mode: str) -> None:
+        from libcamera import controls as lc
+
+        _enum = lc.NoiseReductionModeEnum
+        mode_map = {
+            "off": getattr(_enum, "Off", None),
+            "minimal": getattr(_enum, "Minimal", None),
+            "fast": getattr(_enum, "Fast", None),
+            "high_quality": getattr(_enum, "HighQuality", None),
+        }
+        lc_mode = mode_map.get(mode)
+        if lc_mode is not None:
+            self._set_control(NoiseReductionMode=lc_mode)
+        else:
+            log.warning("Noise reduction mode %r not recognised", mode)
+
     # ---------------------------------------------------------------------------
     # RTSP via picamera2 H264Encoder (avoids V4L2 device conflict)
     # ---------------------------------------------------------------------------
