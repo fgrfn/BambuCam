@@ -100,6 +100,24 @@ def main() -> None:
     stream_cfg = cfg.streaming
     web_cfg = cfg.web
 
+    # Detect hardware capability and derive adaptive defaults
+    from bambucam.system_info import pi_capability_tier
+
+    _tier = pi_capability_tier()
+    _tier_label = {
+        1: "low (Pi Zero/1/2) — MJPEG-only",
+        2: "mid (Pi 3) — RTSP + MJPEG≤30fps",
+        3: "high (Pi 4/5+) — full stack",
+    }.get(_tier, str(_tier))
+    log.info("Hardware capability tier %d: %s", _tier, _tier_label)
+
+    # Tier-based adaptive defaults (all overridable via config)
+    # Tier 1: RTSP disabled (no lores stream, no H264, less ISP load)
+    # Tier 2: RTSP enabled, MJPEG capped at 30fps
+    # Tier 3: No caps
+    _rtsp_default_enabled = _tier >= 2
+    _mjpeg_fps_cap = {1: 15, 2: 30}.get(_tier)  # None = no cap
+
     # Camera
     camera = CameraManager()
     _camera_ok = True
@@ -111,6 +129,13 @@ def main() -> None:
     except RuntimeError as e:
         log.warning("No camera detected: %s — starting in headless mode (WebUI only)", e)
         _camera_ok = False
+
+    # Determine whether RTSP will run — needed before camera setup so we know
+    # whether to allocate the lores stream in picamera2.
+    rtsp_cfg = stream_cfg.get("rtsp", {})
+    _will_use_rtsp = (
+        _camera_ok and not args.no_rtsp and rtsp_cfg.get("enabled", _rtsp_default_enabled)
+    )
 
     if _camera_ok:
         try:
@@ -134,6 +159,7 @@ def main() -> None:
                     )
                     if k in cam_cfg
                 },
+                enable_lores=_will_use_rtsp,
             )
             camera.start()
         except Exception as e:
@@ -142,9 +168,11 @@ def main() -> None:
 
     # MJPEG streamer
     mjpeg_cfg = stream_cfg.get("mjpeg", {})
+    _camera_fps = cam_cfg.get("framerate", 15)
+    _mjpeg_default_fps = _camera_fps if _mjpeg_fps_cap is None else min(_camera_fps, _mjpeg_fps_cap)
     mjpeg = MJPEGStreamer(
         capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
-        target_fps=mjpeg_cfg.get("fps", cam_cfg.get("framerate", 15)),
+        target_fps=mjpeg_cfg.get("fps", _mjpeg_default_fps),
     )
     if _camera_ok and not args.no_mjpeg and mjpeg_cfg.get("enabled", True):
         mjpeg.start()
@@ -153,11 +181,10 @@ def main() -> None:
     # For CSI cameras (picamera2 backend), use the in-process H264Encoder to
     # avoid the V4L2 device conflict (picamera2 holds /dev/videoN exclusively).
     # For USB webcams (V4L2 backend), keep the existing ffmpeg-from-V4L2 path.
-    rtsp_cfg = stream_cfg.get("rtsp", {})
     rtsp_auth = rtsp_cfg.get("auth", {})
 
     _picamera2_backend = None
-    if _camera_ok and camera.backend is not None:
+    if _will_use_rtsp and _camera_ok and camera.backend is not None:
         from bambucam.camera.backends.picamera2_backend import Picamera2Backend
 
         if isinstance(camera.backend, Picamera2Backend):
@@ -176,7 +203,7 @@ def main() -> None:
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
         camera_backend=_picamera2_backend,
     )
-    if _camera_ok and not args.no_rtsp and rtsp_cfg.get("enabled", True):
+    if _will_use_rtsp:
         try:
             rtsp.start()
         except FileNotFoundError:

@@ -309,7 +309,9 @@ def bambubuddy_info():
             "rtsp_url": f"rtsp://{host}:{rtsp_port}/{stream_name}",
             "mjpeg_url": f"http://{host}:{mjpeg_port}/stream",
             "snapshot_url": f"http://{host}:{mjpeg_port}/snapshot",
-            "hls_url": f"http://{host}:{cfg.get('streaming','rtsp','hls_port')}/{stream_name}/index.m3u8",
+            "hls_url": (
+                f"http://{host}:{cfg.get('streaming', 'rtsp', 'hls_port')}/{stream_name}/index.m3u8"
+            ),
             "host": host,
         }
     )

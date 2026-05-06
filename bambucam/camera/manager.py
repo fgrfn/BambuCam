@@ -76,6 +76,7 @@ class CameraManager:
         resolution: Optional[Resolution] = None,
         framerate: int = 30,
         settings: Optional[dict] = None,
+        enable_lores: bool = True,
     ) -> None:
         """Create and configure the backend for the given camera."""
         if detected is None:
@@ -88,11 +89,11 @@ class CameraManager:
         self._framerate = framerate
         self._settings = settings or {}
 
-        backend = self._create_backend(detected)
+        backend = self._create_backend(detected, enable_lores=enable_lores)
         backend.configure(self._resolution, self._framerate, **self._settings)
         self._backend = backend
 
-    def _create_backend(self, detected: DetectedCamera) -> CameraBackend:
+    def _create_backend(self, detected: DetectedCamera, enable_lores: bool = True) -> CameraBackend:
         if detected.backend == "picamera2":
             from bambucam.camera.backends.picamera2_backend import Picamera2Backend
 
@@ -100,6 +101,7 @@ class CameraManager:
                 model=detected.model,
                 device=detected.device,
                 camera_index=detected.index,
+                enable_lores=enable_lores,
             )
         elif detected.backend == "v4l2":
             from bambucam.camera.backends.v4l2_backend import V4L2Backend
@@ -211,15 +213,24 @@ class CameraManager:
         restart_needed = False
 
         if "resolution" in new_settings:
-            self._resolution = Resolution.from_string(new_settings["resolution"])
-            restart_needed = True
+            new_res = Resolution.from_string(new_settings["resolution"])
+            if new_res != self._resolution:
+                self._resolution = new_res
+                restart_needed = True
         if "framerate" in new_settings:
-            self._framerate = int(new_settings["framerate"])
+            new_fps = int(new_settings["framerate"])
+            if new_fps != self._framerate:
+                self._framerate = new_fps
+                restart_needed = True
+        # Flips require a full camera restart (applied via Transform at configure time),
+        # but only when the value actually changes — not just because the key is present.
+        if "vflip" in new_settings and bool(new_settings["vflip"]) != bool(
+            self._settings.get("vflip", False)
+        ):
             restart_needed = True
-        # Flips require a full camera restart (applied via Transform at configure time)
-        if "vflip" in new_settings:
-            restart_needed = True
-        if "hflip" in new_settings:
+        if "hflip" in new_settings and bool(new_settings["hflip"]) != bool(
+            self._settings.get("hflip", False)
+        ):
             restart_needed = True
 
         # Merge settings before restart so configure() sees the updated values
