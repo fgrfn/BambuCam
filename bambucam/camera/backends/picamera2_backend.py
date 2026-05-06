@@ -36,7 +36,9 @@ class Picamera2Backend(CameraBackend):
         "indoor": "Indoor",
     }
 
-    def __init__(self, model: CameraModel, device: str, camera_index: int = 0, enable_lores: bool = True):
+    def __init__(
+        self, model: CameraModel, device: str, camera_index: int = 0, enable_lores: bool = True
+    ):
         super().__init__(model, device)
         self._camera_index = camera_index
         self._enable_lores = enable_lores  # False → skip lores stream (no RTSP H264 possible)
