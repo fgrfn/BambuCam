@@ -256,6 +256,8 @@ class CameraManager:
                 b.set_exposure_mode(new_settings["exposure_mode"])
             if "awb_mode" in new_settings:
                 b.set_awb_mode(new_settings["awb_mode"])
+            if "iso" in new_settings:
+                b.set_iso(int(new_settings["iso"]))
             if "autofocus" in new_settings:
                 b.set_autofocus(bool(new_settings["autofocus"]))
             if "hdr" in new_settings:
