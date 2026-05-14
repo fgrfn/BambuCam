@@ -156,6 +156,7 @@ def main() -> None:
                         "awb_mode",
                         "autofocus",
                         "hdr",
+                        "noise_reduction",
                     )
                     if k in cam_cfg
                 },
