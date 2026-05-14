@@ -218,6 +218,14 @@ def set_config():
     except Exception as e:
         log.exception("Failed to persist config")
         return jsonify({"error": f"Config updated in memory but not saved: {e}"}), 500
+    # Apply MJPEG fps change to running streamer immediately
+    streaming_data = data.get("streaming", {})
+    mjpeg_data = streaming_data.get("mjpeg", {})
+    if "fps" in mjpeg_data:
+        try:
+            _mjpeg().update_fps(int(mjpeg_data["fps"]))
+        except Exception as e:
+            log.warning("Failed to update MJPEG fps: %s", e)
     return jsonify({"ok": True})
 
 
