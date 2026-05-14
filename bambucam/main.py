@@ -175,9 +175,15 @@ def main() -> None:
         _mjpeg_quality = mjpeg_cfg.get("quality", 85)
         camera.set_jpeg_quality(_mjpeg_quality)
 
+    _mjpeg_requested_fps = mjpeg_cfg.get("fps", _mjpeg_default_fps)
+    _mjpeg_fps = (
+        _mjpeg_requested_fps
+        if _mjpeg_fps_cap is None
+        else min(_mjpeg_requested_fps, _mjpeg_fps_cap)
+    )
     mjpeg = MJPEGStreamer(
         capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
-        target_fps=mjpeg_cfg.get("fps", _mjpeg_default_fps),
+        target_fps=_mjpeg_fps,
     )
     if _camera_ok and not args.no_mjpeg and mjpeg_cfg.get("enabled", True):
         mjpeg.start()
