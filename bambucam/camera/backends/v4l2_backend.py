@@ -22,6 +22,7 @@ class V4L2Backend(CameraBackend):
         super().__init__(model, device)
         self._resolution: Optional[Resolution] = None
         self._framerate: int = 30
+        self._jpeg_quality: int = 85
         self._lock = threading.Lock()
         self._cap = None  # OpenCV VideoCapture
 
@@ -67,10 +68,15 @@ class V4L2Backend(CameraBackend):
             ret, frame = self._cap.read()
         if not ret:
             raise RuntimeError("Failed to capture frame from V4L2 device")
-        ok, buf = self._cv2.imencode(".jpg", frame, [self._cv2.IMWRITE_JPEG_QUALITY, 85])
+        ok, buf = self._cv2.imencode(
+            ".jpg", frame, [self._cv2.IMWRITE_JPEG_QUALITY, self._jpeg_quality]
+        )
         if not ok:
             raise RuntimeError("Failed to encode JPEG")
         return buf.tobytes()
+
+    def set_jpeg_quality(self, value: int) -> None:
+        self._jpeg_quality = max(1, min(100, int(value)))
 
     def set_brightness(self, value: float) -> None:
         self._v4l2_set("brightness", int(value * 128 + 128))

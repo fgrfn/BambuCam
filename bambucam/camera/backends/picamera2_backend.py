@@ -50,6 +50,7 @@ class Picamera2Backend(CameraBackend):
         self._hflip: bool = False
         self._pending_controls: dict = {}
         self._initial_settings: dict = {}  # non-geometry settings, applied after start()
+        self._jpeg_quality: int = 85
         self._h264_encoder = None  # active H264Encoder when RTSP recording is running
         self._rtsp_url: Optional[str] = None  # stored so restart() can re-start recording
         self._rtsp_bitrate: int = 2000
@@ -160,9 +161,12 @@ class Picamera2Backend(CameraBackend):
             raise RuntimeError("Camera not started")
         buf = io.BytesIO()
         with self._lock:
-            self._picam.capture_file(buf, format="jpeg")
+            self._picam.capture_file(buf, format="jpeg", quality=self._jpeg_quality)
         buf.seek(0)
         return buf.read()
+
+    def set_jpeg_quality(self, value: int) -> None:
+        self._jpeg_quality = max(1, min(100, int(value)))
 
     # ---------------------------------------------------------------------------
     # Image controls
