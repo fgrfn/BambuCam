@@ -93,7 +93,9 @@ def camera_settings():
     except Exception as e:
         log.exception("Failed to apply camera settings")
         return jsonify({"error": str(e)}), 400
-    return jsonify({"ok": True, "applied": data})
+    restart_keys = {"resolution", "framerate", "vflip", "hflip"}
+    restarted = bool(restart_keys & data.keys())
+    return jsonify({"ok": True, "applied": data, "restarted": restarted})
 
 
 @api_bp.get("/camera/detect")

@@ -1798,13 +1798,14 @@ async function applyStreamSettings() {
 
   btnLoading('btn-stream-apply', true, 'Wird angewendet…');
   try {
-    await api('POST', '/camera/settings', { resolution, framerate });
+    const result = await api('POST', '/camera/settings', { resolution, framerate });
     await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
 
     const img = document.getElementById('stream-img');
     img.src = '/stream?' + Date.now();
 
     toast('Streameinstellungen übernommen');
+    if (result.restarted) toast('Kamera wurde neu gestartet');
   } catch(e) {
     toast('Fehler: ' + e.message, 'error');
   } finally {
@@ -1828,11 +1829,12 @@ async function applyImageSettings() {
 
   btnLoading('btn-img-apply', true, 'Wird angewendet…');
   try {
-    await api('POST', '/camera/settings', {
+    const result = await api('POST', '/camera/settings', {
       brightness, contrast, saturation, sharpness,
       exposure_mode, awb_mode, noise_reduction, vflip, hflip, autofocus, hdr,
     });
     toast('Bildeinstellungen übernommen');
+    if (result.restarted) toast('Kamera wurde neu gestartet');
   } catch(e) {
     toast('Fehler: ' + e.message, 'error');
   } finally {
