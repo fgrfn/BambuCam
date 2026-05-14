@@ -1571,7 +1571,7 @@ async function loadStreamStatus() {
       // Actual measured fps
       const actualFps = s.mjpeg.actual_fps;
       const fpsEl = document.getElementById('cam-fps-actual');
-      if (fpsEl) fpsEl.textContent = actualFps > 0 ? ' (' + actualFps + ' real)' : '';
+      if (fpsEl) fpsEl.textContent = actualFps != null ? ' (' + actualFps + ' real)' : '';
 
       const cnt = s.mjpeg.clients || 0;
       const vb = document.getElementById('viewers-badge');

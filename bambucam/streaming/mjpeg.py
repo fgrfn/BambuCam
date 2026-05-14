@@ -146,11 +146,11 @@ class MJPEGStreamer:
                 log.debug("MJPEG client disconnected (total: %d)", self._client_count)
 
     @property
-    def actual_fps(self) -> float:
+    def actual_fps(self) -> Optional[float]:
         """Measured capture rate based on the last up-to-30 frame timestamps."""
         times = list(self._frame_times)
         if len(times) < 2:
-            return 0.0
+            return None
         return round((len(times) - 1) / (times[-1] - times[0]), 1)
 
     @property
