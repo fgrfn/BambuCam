@@ -61,16 +61,15 @@ class V4L2Backend(CameraBackend):
             self._cap = None
         log.info("V4L2 backend stopped: %s", self.device)
 
-    def capture_jpeg(self) -> bytes:
+    def capture_jpeg(self, quality: Optional[int] = None) -> bytes:
         if self._cap is None:
             raise RuntimeError("Camera not started")
+        q = quality if quality is not None else self._jpeg_quality
         with self._lock:
             ret, frame = self._cap.read()
         if not ret:
             raise RuntimeError("Failed to capture frame from V4L2 device")
-        ok, buf = self._cv2.imencode(
-            ".jpg", frame, [self._cv2.IMWRITE_JPEG_QUALITY, self._jpeg_quality]
-        )
+        ok, buf = self._cv2.imencode(".jpg", frame, [self._cv2.IMWRITE_JPEG_QUALITY, q])
         if not ok:
             raise RuntimeError("Failed to encode JPEG")
         return buf.tobytes()

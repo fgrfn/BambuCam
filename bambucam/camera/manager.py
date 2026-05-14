@@ -189,10 +189,10 @@ class CameraManager:
     # Frame access
     # ---------------------------------------------------------------------------
 
-    def capture_jpeg(self) -> bytes:
+    def capture_jpeg(self, quality: Optional[int] = None) -> bytes:
         if self._backend is None or not self._backend.is_running:
             raise RuntimeError("Camera is not running")
-        return self._backend.capture_jpeg()
+        return self._backend.capture_jpeg(quality=quality)
 
     def frame_iterator(self) -> Iterator[bytes]:
         if self._backend is None or not self._backend.is_running:

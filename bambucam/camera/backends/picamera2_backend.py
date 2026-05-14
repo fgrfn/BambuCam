@@ -156,12 +156,19 @@ class Picamera2Backend(CameraBackend):
             self._picam = None
         log.info("picamera2 stopped")
 
-    def capture_jpeg(self) -> bytes:
+    def capture_jpeg(self, quality: Optional[int] = None) -> bytes:
         if self._picam is None:
             raise RuntimeError("Camera not started")
         buf = io.BytesIO()
         with self._lock:
-            self._picam.capture_file(buf, format="jpeg", quality=self._jpeg_quality)
+            if quality is not None:
+                # Temporarily set quality for this capture only
+                prev = self._picam.options.get("quality", self._jpeg_quality)
+                self._picam.options["quality"] = quality
+                self._picam.capture_file(buf, format="jpeg")
+                self._picam.options["quality"] = prev
+            else:
+                self._picam.capture_file(buf, format="jpeg")
         buf.seek(0)
         return buf.read()
 

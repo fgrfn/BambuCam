@@ -221,7 +221,7 @@ def main() -> None:
 
     # Snapshot service
     snapshot = SnapshotService(
-        capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
+        capture_fn=(lambda: camera.capture_jpeg(quality=95)) if _camera_ok else lambda: None,
         snapshot_dir=Path(
             stream_cfg.get("snapshot", {}).get("save_dir", "/var/lib/bambucam/snapshots")
         ),
