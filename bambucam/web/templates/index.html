@@ -856,6 +856,14 @@
             <span class="info-val" id="cam-fps">—<span id="cam-fps-actual" style="opacity:0.55;font-size:0.85em"></span></span>
           </div>
         </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btn-restart-cam" onclick="restartCamera()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Kamera neu starten
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1451,6 +1459,20 @@ async function loadSystemInfo() {
     setText('sys-pi',     s.pi_model  || '—');
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
   } catch(e) { /* ignore */ }
+}
+
+// ── Camera restart ─────────────────────────────────────────────────────────
+async function restartCamera() {
+  btnLoading('btn-restart-cam', true, 'Neustart…');
+  try {
+    await api('POST', '/system/restart-camera');
+    toast('Kamera wird neu gestartet…');
+    setTimeout(loadCameraStatus, 3000);
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  } finally {
+    btnLoading('btn-restart-cam', false);
+  }
 }
 
 // ── Snapshot ───────────────────────────────────────────────────────────────
