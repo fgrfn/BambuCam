@@ -1160,19 +1160,7 @@
       </div>
     </div>
 
-    <!-- ④ BambuBuddy Integration ────────────────────────────────── -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">BambuBuddy Integration</span>
-      </div>
-      <div class="card-body">
-        <p class="hint" id="bb-hint">
-          RTSP-URL unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:
-        </p>
-      </div>
-    </div>
-
-    <!-- ⑤ Snapshot ──────────────────────────────────────────────── -->
+    <!-- ④ Snapshot ──────────────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">Snapshot</span>
@@ -1403,14 +1391,6 @@ async function loadStreamStatus() {
     // Show/hide RTSP bitrate slider in stream settings
     const bitrateRow = document.getElementById('row-rtsp-bitrate');
     if (bitrateRow) bitrateRow.style.display = rtspRunning ? '' : 'none';
-
-    // BambuBuddy hint: adapt to RTSP availability
-    const bbHint = document.getElementById('bb-hint');
-    if (bbHint) {
-      bbHint.innerHTML = rtspRunning
-        ? 'RTSP-URL (oben) unter <em>Einstellungen → Kamera → Custom RTSP URL</em> eintragen:'
-        : 'MJPEG-URL (oben) für BambuBuddy, Browser und OBS verwenden.';
-    }
 
     if (s.rtsp && s.rtsp.urls) {
       const rtsp = s.rtsp.urls.rtsp || 'rtsp://…';
