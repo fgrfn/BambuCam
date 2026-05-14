@@ -1031,6 +1031,14 @@
           <div class="field-label"><span>Framerate</span></div>
           <select id="sel-framerate"></select>
         </div>
+        <div class="toggle-row">
+          <span class="toggle-label">RTSP aktivieren</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-rtsp" onchange="toggleRtsp(this.checked)" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
         <div class="field" id="row-rtsp-bitrate">
           <div class="field-label">
             <span>RTSP Bitrate</span>
@@ -1382,6 +1390,10 @@ async function loadStreamStatus() {
 
     const rtspRunning = !!(s.rtsp && s.rtsp.running);
 
+    // Sync RTSP toggle (only when not mid-toggle)
+    const rtspToggle = document.getElementById('chk-rtsp');
+    if (rtspToggle && !rtspToggle._busy) rtspToggle.checked = rtspRunning;
+
     // Show/hide RTSP + HLS chips
     const chipRtsp = document.getElementById('chip-rtsp');
     const chipHls  = document.getElementById('chip-hls');
@@ -1478,6 +1490,24 @@ async function loadSnapshotList() {
 }
 
 // ── Stream settings ────────────────────────────────────────────────────────
+async function toggleRtsp(enabled) {
+  const toggle = document.getElementById('chk-rtsp');
+  const bitrateRow = document.getElementById('row-rtsp-bitrate');
+  toggle._busy = true;
+  try {
+    await api('POST', enabled ? '/stream/rtsp/start' : '/stream/rtsp/stop');
+    await api('POST', '/config', { streaming: { rtsp: { enabled } } });
+    if (bitrateRow) bitrateRow.style.display = enabled ? '' : 'none';
+    toast(enabled ? 'RTSP gestartet' : 'RTSP gestoppt');
+    loadStreamStatus();
+  } catch(e) {
+    toggle.checked = !enabled;  // revert on error
+    toast('Fehler: ' + e.message, 'error');
+  } finally {
+    toggle._busy = false;
+  }
+}
+
 async function applyStreamSettings() {
   const resolution   = document.getElementById('sel-resolution').value;
   const framerate    = parseInt(document.getElementById('sel-framerate').value);
