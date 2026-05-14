@@ -264,6 +264,7 @@ class CameraManager:
                 b.set_noise_reduction(new_settings["noise_reduction"])
 
     def set_jpeg_quality(self, value: int) -> None:
+        self._settings["jpeg_quality"] = value
         if self._backend is not None:
             self._backend.set_jpeg_quality(value)
 
