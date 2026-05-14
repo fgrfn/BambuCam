@@ -763,6 +763,25 @@
       margin-bottom: 0.5rem;
     }
     .hint em { color: var(--text); font-style: normal; }
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin: 0.5rem 0 0.4rem;
+    }
+    .text-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+      padding: 5px 8px;
+      box-sizing: border-box;
+    }
+    .text-input:focus { outline: none; border-color: var(--accent); }
 
     /* ── Footer ────────────────────────────────────────────────────────── */
     footer {
@@ -1176,7 +1195,95 @@
       </div>
     </div>
 
-    <!-- ④ Snapshot ──────────────────────────────────────────────── -->
+    <!-- ④ Netzwerk & Dienste ───────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Netzwerk &amp; Dienste</span>
+      </div>
+      <div class="card-body">
+
+        <div class="section-label">MJPEG</div>
+        <div class="field">
+          <div class="field-label"><span>Port</span></div>
+          <input type="number" id="cfg-mjpeg-port" class="text-input" min="1024" max="65535" value="8080" />
+        </div>
+        <div class="field">
+          <div class="field-label">
+            <span>Qualität</span>
+            <span class="field-label-val"><span id="cfg-mjpeg-quality-val">85</span> %</span>
+          </div>
+          <input type="range" id="cfg-mjpeg-quality" min="50" max="100" step="5" value="85"
+            oninput="document.getElementById('cfg-mjpeg-quality-val').textContent=this.value" />
+        </div>
+        <div class="field">
+          <div class="field-label"><span>Ziel-fps</span></div>
+          <input type="number" id="cfg-mjpeg-fps" class="text-input" min="1" max="120" value="15" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btn-cfg-mjpeg" onclick="saveMjpegConfig()">Speichern</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-label">RTSP</div>
+        <div class="field">
+          <div class="field-label"><span>Port</span></div>
+          <input type="number" id="cfg-rtsp-port" class="text-input" min="1024" max="65535" value="8554" />
+        </div>
+        <div class="field">
+          <div class="field-label"><span>Stream-Name</span></div>
+          <input type="text" id="cfg-rtsp-name" class="text-input" value="cam" />
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">HLS aktivieren</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="cfg-hls-enabled" checked />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-label"><span>HLS-Port</span></div>
+          <input type="number" id="cfg-hls-port" class="text-input" min="1024" max="65535" value="8888" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btn-cfg-rtsp" onclick="saveRtspConfig()">Speichern</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-label">Web-Oberfläche</div>
+        <div class="field">
+          <div class="field-label"><span>Port</span></div>
+          <input type="number" id="cfg-web-port" class="text-input" min="1024" max="65535" value="8080" />
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Passwortschutz</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="cfg-auth-enabled" onchange="toggleAuthFields(this.checked)" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div id="cfg-auth-fields" style="display:none">
+          <div class="field">
+            <div class="field-label"><span>Benutzername</span></div>
+            <input type="text" id="cfg-auth-user" class="text-input" value="admin" autocomplete="username" />
+          </div>
+          <div class="field">
+            <div class="field-label"><span>Passwort</span></div>
+            <input type="password" id="cfg-auth-pass" class="text-input" placeholder="Unverändert lassen" autocomplete="new-password" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btn-cfg-web" onclick="saveWebConfig()">Speichern</button>
+        </div>
+        <p class="hint" style="margin-top:6px">Port- und Auth-Änderungen erfordern einen Neustart von BambuCam.</p>
+
+      </div>
+    </div>
+
+    <!-- ⑤ Snapshot ──────────────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">Snapshot</span>
@@ -1305,6 +1412,7 @@ async function init() {
     loadCameraStatus(),
     loadStreamStatus(),
     loadSystemInfo(),
+    loadNetworkConfig(),
     loadSnapshotList(),
   ]);
   loadInitialUpdateStatus();
@@ -1459,6 +1567,80 @@ async function loadSystemInfo() {
     setText('sys-pi',     s.pi_model  || '—');
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
   } catch(e) { /* ignore */ }
+}
+
+// ── Network & services config ──────────────────────────────────────────────
+function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
+function setChk(id, v) { const el = document.getElementById(id); if (el) el.checked = !!v; }
+
+async function loadNetworkConfig() {
+  try {
+    const cfg = await api('GET', '/config');
+    const m = (cfg.streaming || {}).mjpeg || {};
+    const r = (cfg.streaming || {}).rtsp  || {};
+    const w = cfg.web || {};
+    const auth = w.auth || {};
+
+    setVal('cfg-mjpeg-port',    m.port    ?? 8080);
+    setVal('cfg-mjpeg-quality', m.quality ?? 85);
+    document.getElementById('cfg-mjpeg-quality-val').textContent = m.quality ?? 85;
+    setVal('cfg-mjpeg-fps',     m.fps     ?? 15);
+
+    setVal('cfg-rtsp-port',  r.port        ?? 8554);
+    setVal('cfg-rtsp-name',  r.stream_name ?? 'cam');
+    setChk('cfg-hls-enabled', r.enable_hls ?? true);
+    setVal('cfg-hls-port',   r.hls_port    ?? 8888);
+
+    setVal('cfg-web-port',   w.port ?? 8080);
+    setChk('cfg-auth-enabled', auth.enabled ?? false);
+    setVal('cfg-auth-user',  auth.username ?? 'admin');
+    toggleAuthFields(auth.enabled ?? false);
+  } catch(e) { /* ignore on load */ }
+}
+
+function toggleAuthFields(enabled) {
+  const el = document.getElementById('cfg-auth-fields');
+  if (el) el.style.display = enabled ? '' : 'none';
+}
+
+async function saveMjpegConfig() {
+  btnLoading('btn-cfg-mjpeg', true, 'Speichern…');
+  try {
+    const port    = parseInt(document.getElementById('cfg-mjpeg-port').value);
+    const quality = parseInt(document.getElementById('cfg-mjpeg-quality').value);
+    const fps     = parseInt(document.getElementById('cfg-mjpeg-fps').value);
+    await api('POST', '/config', { streaming: { mjpeg: { port, quality, fps } } });
+    toast('MJPEG-Einstellungen gespeichert');
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+  finally { btnLoading('btn-cfg-mjpeg', false); }
+}
+
+async function saveRtspConfig() {
+  btnLoading('btn-cfg-rtsp', true, 'Speichern…');
+  try {
+    const port        = parseInt(document.getElementById('cfg-rtsp-port').value);
+    const stream_name = document.getElementById('cfg-rtsp-name').value.trim();
+    const enable_hls  = document.getElementById('cfg-hls-enabled').checked;
+    const hls_port    = parseInt(document.getElementById('cfg-hls-port').value);
+    await api('POST', '/config', { streaming: { rtsp: { port, stream_name, enable_hls, hls_port } } });
+    toast('RTSP-Einstellungen gespeichert');
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+  finally { btnLoading('btn-cfg-rtsp', false); }
+}
+
+async function saveWebConfig() {
+  btnLoading('btn-cfg-web', true, 'Speichern…');
+  try {
+    const port    = parseInt(document.getElementById('cfg-web-port').value);
+    const enabled = document.getElementById('cfg-auth-enabled').checked;
+    const username = document.getElementById('cfg-auth-user').value.trim();
+    const passRaw  = document.getElementById('cfg-auth-pass').value;
+    const auth = { enabled, username };
+    if (passRaw) auth.password = passRaw;  // only send if not blank
+    await api('POST', '/config', { web: { port, auth } });
+    toast('Web-Einstellungen gespeichert — Neustart erforderlich');
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+  finally { btnLoading('btn-cfg-web', false); }
 }
 
 // ── Camera restart ─────────────────────────────────────────────────────────
