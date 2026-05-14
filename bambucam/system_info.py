@@ -87,18 +87,19 @@ def raspberry_pi_model() -> Optional[str]:
 def pi_capability_tier() -> int:
     """
     Return a hardware capability tier for adaptive defaults:
-      1 — Pi Zero, Pi 1, Pi 2  → MJPEG-only, no lores stream
-      2 — Pi 3                  → RTSP + MJPEG capped at 30 fps
-      3 — Pi 4, Pi 5, non-Pi   → full stack, no caps
+      1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
+      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps
+      3 — Pi 4, Pi 5, non-Pi          → full stack, no caps
     """
     model = raspberry_pi_model()
     if model is None:
         return 3  # non-Pi hardware, assume capable
     m = model.lower()
+    # Zero 2 W has 4× Cortex-A53 cores (same die as Pi 3) — check before "pi zero"
+    if any(x in m for x in ("pi zero 2", "pi 3 ", "pi 3b", "pi 3a")):
+        return 2
     if any(x in m for x in ("pi zero", "pi 1 ", "pi 2 ")):
         return 1
-    if any(x in m for x in ("pi 3 ", "pi 3b", "pi 3a")):
-        return 2
     return 3
 
 
