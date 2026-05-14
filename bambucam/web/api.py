@@ -137,6 +137,7 @@ def stream_status():
                 "url": f"http://{host}:{mjpeg_port}/stream",
                 "snapshot_url": f"http://{host}:{mjpeg_port}/snapshot",
                 "clients": mjpeg.client_count,
+                "actual_fps": mjpeg.actual_fps,
             },
             "rtsp": rtsp.status() | {"urls": rtsp.stream_urls(host)},
         }
