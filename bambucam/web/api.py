@@ -296,37 +296,6 @@ def update_releases():
 
 
 # ---------------------------------------------------------------------------
-# BambuBuddy integration helper
-# ---------------------------------------------------------------------------
-
-
-@api_bp.get("/bambubuddy")
-def bambubuddy_info():
-    """Return everything BambuBuddy / BambuStudio need to configure the stream."""
-    host = _local_ip()
-    cfg = _cfg()
-    rtsp_port = cfg.get("streaming", "rtsp", "port")
-    stream_name = cfg.get("streaming", "rtsp", "stream_name")
-    mjpeg_port = cfg.get("streaming", "mjpeg", "port")
-
-    return jsonify(
-        {
-            "instructions": (
-                "In BambuBuddy / BambuStudio go to Settings → Camera → "
-                "Custom RTSP URL and enter the rtsp_url below."
-            ),
-            "rtsp_url": f"rtsp://{host}:{rtsp_port}/{stream_name}",
-            "mjpeg_url": f"http://{host}:{mjpeg_port}/stream",
-            "snapshot_url": f"http://{host}:{mjpeg_port}/snapshot",
-            "hls_url": (
-                f"http://{host}:{cfg.get('streaming', 'rtsp', 'hls_port')}/{stream_name}/index.m3u8"
-            ),
-            "host": host,
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
