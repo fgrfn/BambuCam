@@ -853,7 +853,7 @@
           </div>
           <div class="info-row">
             <span class="info-key">Framerate</span>
-            <span class="info-val" id="cam-fps">—</span>
+            <span class="info-val" id="cam-fps">—<span id="cam-fps-actual" style="opacity:0.55;font-size:0.85em"></span></span>
           </div>
         </div>
       </div>
@@ -1377,6 +1377,11 @@ async function loadStreamStatus() {
 
     if (s.mjpeg) {
       setText('chip-mjpeg-url', s.mjpeg.url || 'http://…/stream');
+
+      // Actual measured fps
+      const actualFps = s.mjpeg.actual_fps;
+      const fpsEl = document.getElementById('cam-fps-actual');
+      if (fpsEl) fpsEl.textContent = actualFps > 0 ? ' (' + actualFps + ' real)' : '';
 
       const cnt = s.mjpeg.clients || 0;
       const vb = document.getElementById('viewers-badge');

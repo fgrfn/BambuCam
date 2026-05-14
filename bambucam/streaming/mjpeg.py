@@ -3,6 +3,7 @@ MJPEG streamer — serves a multipart/x-mixed-replace HTTP stream.
 Clients (browsers, VLC, OBS) open the URL and receive continuous JPEG frames.
 """
 
+import collections
 import logging
 import threading
 import time
@@ -13,6 +14,7 @@ log = logging.getLogger(__name__)
 
 _BOUNDARY = b"--bambucam_frame"
 _CRLF = b"\r\n"
+_FPS_WINDOW = 30  # number of recent frame timestamps to keep for fps measurement
 
 
 class MJPEGStreamer:
@@ -42,6 +44,7 @@ class MJPEGStreamer:
         self._running = False
         self._client_count = 0
         self._client_lock = threading.Lock()
+        self._frame_times: collections.deque = collections.deque(maxlen=_FPS_WINDOW)
 
     # ---------------------------------------------------------------------------
     # Lifecycle
@@ -51,6 +54,7 @@ class MJPEGStreamer:
         if self._running:
             return
         self._running = True
+        self._frame_times.clear()
         self._capture_thread = threading.Thread(
             target=self._capture_loop, daemon=True, name="mjpeg-capture"
         )
@@ -81,6 +85,7 @@ class MJPEGStreamer:
                 with self._frame_lock:
                     self._latest_frame = frame
                     self._frame_lock.notify_all()
+                self._frame_times.append(t0)
             except Exception as e:
                 log.warning("MJPEG capture error: %s", e)
                 time.sleep(0.5)
@@ -139,6 +144,14 @@ class MJPEGStreamer:
                 with self._client_lock:
                     self._client_count -= 1
                 log.debug("MJPEG client disconnected (total: %d)", self._client_count)
+
+    @property
+    def actual_fps(self) -> float:
+        """Measured capture rate based on the last up-to-30 frame timestamps."""
+        times = list(self._frame_times)
+        if len(times) < 2:
+            return 0.0
+        return round((len(times) - 1) / (times[-1] - times[0]), 1)
 
     @property
     def client_count(self) -> int:
