@@ -117,6 +117,7 @@ class Picamera2Backend(CameraBackend):
 
         self._picam.start()
         self._running = True
+        self._picam.options["quality"] = self._jpeg_quality
 
         # Apply image controls from config (brightness, AWB, exposure, etc.)
         for key, value in self._initial_settings.items():
@@ -174,6 +175,8 @@ class Picamera2Backend(CameraBackend):
 
     def set_jpeg_quality(self, value: int) -> None:
         self._jpeg_quality = max(1, min(100, int(value)))
+        if self._picam is not None:
+            self._picam.options["quality"] = self._jpeg_quality
 
     # ---------------------------------------------------------------------------
     # Image controls
