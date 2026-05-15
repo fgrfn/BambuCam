@@ -1282,12 +1282,8 @@
           <input type="number" id="cfg-mjpeg-port" class="text-input" min="1024" max="65535" value="8080" />
         </div>
         <div class="field">
-          <div class="field-label">
-            <span>Qualität</span>
-            <span class="field-label-val"><span id="cfg-mjpeg-quality-val">85</span> %</span>
-          </div>
-          <input type="range" id="cfg-mjpeg-quality" min="50" max="100" step="5" value="85"
-            oninput="document.getElementById('cfg-mjpeg-quality-val').textContent=this.value" />
+          <div class="field-label"><span>JPEG-Qualität</span></div>
+          <input type="number" id="mjpeg-quality" class="text-input" min="1" max="100" step="1" value="85" />
         </div>
         <div class="field">
           <div class="field-label"><span>Ziel-fps</span></div>
@@ -1656,8 +1652,7 @@ async function loadNetworkConfig() {
     const auth = w.auth || {};
 
     setVal('cfg-mjpeg-port',    m.port    ?? 8080);
-    setVal('cfg-mjpeg-quality', m.quality ?? 85);
-    document.getElementById('cfg-mjpeg-quality-val').textContent = m.quality ?? 85;
+    setVal('mjpeg-quality',     m.quality ?? 85);
     setVal('cfg-mjpeg-fps',     m.fps     ?? 15);
 
     setVal('cfg-rtsp-port',  r.port        ?? 8554);
@@ -1681,7 +1676,7 @@ async function saveMjpegConfig() {
   btnLoading('btn-cfg-mjpeg', true, 'Speichern…');
   try {
     const port    = parseInt(document.getElementById('cfg-mjpeg-port').value);
-    const quality = parseInt(document.getElementById('cfg-mjpeg-quality').value);
+    const quality = parseInt(document.getElementById('mjpeg-quality').value);
     const fps     = parseInt(document.getElementById('cfg-mjpeg-fps').value);
     await api('POST', '/config', { streaming: { mjpeg: { port, quality, fps } } });
     toast('MJPEG-Einstellungen gespeichert');
