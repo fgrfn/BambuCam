@@ -1607,9 +1607,12 @@ async function loadModelCapabilities(status) {
         .join('');
     }
 
-    resSel.innerHTML = model.supported_resolutions.map(r =>
-      `<option value="${r}"${r === currentRes ? ' selected' : ''}>${r}</option>`
-    ).join('');
+    const resFpsMap = model.resolution_max_framerates || {};
+    resSel.innerHTML = model.supported_resolutions.map(r => {
+      const maxFps = resFpsMap[r];
+      const label = maxFps ? `${r} (max ${maxFps} fps)` : r;
+      return `<option value="${r}"${r === currentRes ? ' selected' : ''}>${label}</option>`;
+    }).join('');
 
     buildFpsOptions(currentRes, currentFps);
 
