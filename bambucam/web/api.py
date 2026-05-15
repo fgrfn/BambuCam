@@ -233,6 +233,16 @@ def set_config():
             _camera().set_jpeg_quality(int(mjpeg_data["quality"]))
         except Exception as e:
             log.warning("Failed to update MJPEG quality: %s", e)
+    rtsp_data = streaming_data.get("rtsp", {})
+    if any(k in rtsp_data for k in ("resolution", "framerate", "bitrate_kbps")):
+        try:
+            _rtsp().update_settings(
+                resolution=rtsp_data.get("resolution"),
+                framerate=rtsp_data.get("framerate"),
+                bitrate_kbps=rtsp_data.get("bitrate_kbps"),
+            )
+        except Exception as e:
+            log.warning("Failed to update RTSP settings: %s", e)
     return jsonify({"ok": True})
 
 
