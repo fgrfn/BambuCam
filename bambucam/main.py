@@ -44,6 +44,29 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _best_resolution_and_fps(model, tier_fps_cap=None):
+    """
+    Pick the supported resolution that maximises width*height*fps product,
+    optionally capped by tier_fps_cap.
+    Falls back to model.max_resolution at model.max_framerate if no data.
+    """
+    candidates = model.resolution_max_framerates
+    if not candidates:
+        fps = model.max_framerate
+        if tier_fps_cap is not None:
+            fps = min(fps, tier_fps_cap)
+        return model.max_resolution, fps
+
+    best_res, best_fps, best_score = None, None, -1
+    for res, fps in candidates.items():
+        if tier_fps_cap is not None:
+            fps = min(fps, tier_fps_cap)
+        score = res.width * res.height * fps
+        if score > best_score:
+            best_res, best_fps, best_score = res, fps, score
+    return best_res, best_fps
+
+
 def main() -> None:
     args = _parse_args()
     _setup_logging(args.log_level)
@@ -139,10 +162,11 @@ def main() -> None:
 
     if _camera_ok:
         try:
+            _smart_res, _smart_fps = _best_resolution_and_fps(detected.model, _mjpeg_fps_cap)
             camera.setup(
                 detected=detected,
-                resolution=Resolution.from_string(cam_cfg.get("resolution", "1920x1080")),
-                framerate=cam_cfg.get("framerate", 15),
+                resolution=Resolution.from_string(cam_cfg.get("resolution", str(_smart_res))),
+                framerate=cam_cfg.get("framerate", _smart_fps),
                 settings={
                     k: cam_cfg[k]
                     for k in (
