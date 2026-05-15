@@ -33,7 +33,7 @@ class CameraBackend(abc.ABC):
         """Stop capture and release resources."""
 
     @abc.abstractmethod
-    def capture_jpeg(self) -> bytes:
+    def capture_jpeg(self, quality: Optional[int] = None) -> bytes:
         """Return a single JPEG frame."""
 
     def frame_iterator(self) -> Iterator[bytes]:
