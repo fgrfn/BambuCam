@@ -783,6 +783,60 @@
     }
     .text-input:focus { outline: none; border-color: var(--accent); }
 
+    /* ── Settings modal ───────────────────────────────────────────────── */
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .settings-overlay.open {
+      display: flex;
+    }
+    .settings-modal {
+      background: var(--surface, #1e1e1e);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 560px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .settings-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+      position: sticky;
+      top: 0;
+      background: var(--surface, #1e1e1e);
+      z-index: 1;
+    }
+    .settings-modal-header h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .settings-modal-close {
+      background: none;
+      border: none;
+      color: inherit;
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      opacity: 0.6;
+      border-radius: 4px;
+    }
+    .settings-modal-close:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+    .settings-modal-body {
+      padding: 1.5rem;
+    }
+
     /* ── Footer ────────────────────────────────────────────────────────── */
     footer {
       background: var(--surface);
@@ -906,6 +960,9 @@
   </div>
 
   <div class="header-right">
+    <button class="btn btn-secondary" onclick="openSettings()" style="display:inline-flex;align-items:center;gap:0.4rem;width:auto;padding:0.3rem 0.7rem;font-size:0.78rem">
+      ⚙ Einstellungen
+    </button>
     <a class="header-link" href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 2C6.477 2 2 6.484 2 12.021c0 4.428 2.865 8.185 6.839 9.504.5.092.682-.217.682-.482 0-.237-.009-.868-.014-1.703-2.782.605-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.026 2.747-1.026.546 1.378.202 2.397.1 2.65.64.7 1.028 1.595 1.028 2.688 0 3.848-2.338 4.695-4.566 4.943.36.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .267.18.579.688.481C19.138 20.2 22 16.444 22 12.021 22 6.484 17.522 2 12 2z"/>
@@ -1269,89 +1326,6 @@
       </div>
     </div>
 
-    <!-- ④ Netzwerk & Dienste ───────────────────────────────────── -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Netzwerk &amp; Dienste</span>
-      </div>
-      <div class="card-body">
-
-        <div class="section-label">MJPEG</div>
-        <div class="field">
-          <div class="field-label"><span>Port</span></div>
-          <input type="number" id="cfg-mjpeg-port" class="text-input" min="1024" max="65535" value="8080" />
-        </div>
-        <div class="field">
-          <div class="field-label"><span>JPEG-Qualität</span></div>
-          <input type="number" id="mjpeg-quality" class="text-input" min="1" max="100" step="1" value="85" />
-        </div>
-        <div class="field">
-          <div class="field-label"><span>Ziel-fps</span></div>
-          <input type="number" id="cfg-mjpeg-fps" class="text-input" min="1" max="120" value="15" />
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="btn-cfg-mjpeg" onclick="saveMjpegConfig()">Speichern</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section-label">RTSP</div>
-        <div class="field">
-          <div class="field-label"><span>Port</span></div>
-          <input type="number" id="cfg-rtsp-port" class="text-input" min="1024" max="65535" value="8554" />
-        </div>
-        <div class="field">
-          <div class="field-label"><span>Stream-Name</span></div>
-          <input type="text" id="cfg-rtsp-name" class="text-input" value="cam" />
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">HLS aktivieren</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="cfg-hls-enabled" checked />
-            <span class="toggle-track"></span>
-            <span class="toggle-thumb"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-label"><span>HLS-Port</span></div>
-          <input type="number" id="cfg-hls-port" class="text-input" min="1024" max="65535" value="8888" />
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="btn-cfg-rtsp" onclick="saveRtspConfig()">Speichern</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section-label">Web-Oberfläche</div>
-        <div class="field">
-          <div class="field-label"><span>Port</span></div>
-          <input type="number" id="cfg-web-port" class="text-input" min="1024" max="65535" value="8080" />
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Passwortschutz</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="cfg-auth-enabled" onchange="toggleAuthFields(this.checked)" />
-            <span class="toggle-track"></span>
-            <span class="toggle-thumb"></span>
-          </label>
-        </div>
-        <div id="cfg-auth-fields" style="display:none">
-          <div class="field">
-            <div class="field-label"><span>Benutzername</span></div>
-            <input type="text" id="cfg-auth-user" class="text-input" value="admin" autocomplete="username" />
-          </div>
-          <div class="field">
-            <div class="field-label"><span>Passwort</span></div>
-            <input type="password" id="cfg-auth-pass" class="text-input" placeholder="Unverändert lassen" autocomplete="new-password" />
-          </div>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="btn-cfg-web" onclick="saveWebConfig()">Speichern</button>
-        </div>
-        <p class="hint" style="margin-top:6px">Port- und Auth-Änderungen erfordern einen Neustart von BambuCam.</p>
-
-      </div>
-    </div>
 
     <!-- ⑤ Snapshot ──────────────────────────────────────────────── -->
     <div class="card">
@@ -1390,6 +1364,93 @@
 
 <!-- Toast container -->
 <div id="toast-container"></div>
+
+<!-- ── Settings modal ──────────────────────────────────────────────────── -->
+<div id="settings-overlay" class="settings-overlay">
+  <div class="settings-modal">
+    <div class="settings-modal-header">
+      <h3>Einstellungen</h3>
+      <button class="settings-modal-close" onclick="closeSettings()" title="Schließen">✕</button>
+    </div>
+    <div class="settings-modal-body">
+
+      <div class="section-label">MJPEG</div>
+      <div class="field">
+        <div class="field-label"><span>Port</span></div>
+        <input type="number" id="cfg-mjpeg-port" class="text-input" min="1024" max="65535" value="8080" />
+      </div>
+      <div class="field">
+        <div class="field-label"><span>JPEG-Qualität</span></div>
+        <input type="number" id="mjpeg-quality" class="text-input" min="1" max="100" step="1" value="85" />
+      </div>
+      <div class="field">
+        <div class="field-label"><span>Ziel-fps</span></div>
+        <input type="number" id="cfg-mjpeg-fps" class="text-input" min="1" max="120" value="15" />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-cfg-mjpeg" onclick="saveMjpegConfig()">Speichern</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-label">RTSP</div>
+      <div class="field">
+        <div class="field-label"><span>Port</span></div>
+        <input type="number" id="cfg-rtsp-port" class="text-input" min="1024" max="65535" value="8554" />
+      </div>
+      <div class="field">
+        <div class="field-label"><span>Stream-Name</span></div>
+        <input type="text" id="cfg-rtsp-name" class="text-input" value="cam" />
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">HLS aktivieren</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="cfg-hls-enabled" checked />
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="field">
+        <div class="field-label"><span>HLS-Port</span></div>
+        <input type="number" id="cfg-hls-port" class="text-input" min="1024" max="65535" value="8888" />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-cfg-rtsp" onclick="saveRtspConfig()">Speichern</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-label">Web-Oberfläche</div>
+      <div class="field">
+        <div class="field-label"><span>Port</span></div>
+        <input type="number" id="cfg-web-port" class="text-input" min="1024" max="65535" value="8080" />
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Passwortschutz</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="cfg-auth-enabled" onchange="toggleAuthFields(this.checked)" />
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div id="cfg-auth-fields" style="display:none">
+        <div class="field">
+          <div class="field-label"><span>Benutzername</span></div>
+          <input type="text" id="cfg-auth-user" class="text-input" value="admin" autocomplete="username" />
+        </div>
+        <div class="field">
+          <div class="field-label"><span>Passwort</span></div>
+          <input type="password" id="cfg-auth-pass" class="text-input" placeholder="Unverändert lassen" autocomplete="new-password" />
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-cfg-web" onclick="saveWebConfig()">Speichern</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Port- und Auth-Änderungen erfordern einen Neustart von BambuCam.</p>
+
+    </div>
+  </div>
+</div>
 
 <!-- ── JavaScript ───────────────────────────────────────────────────────── -->
 <script>
@@ -2062,6 +2123,24 @@ function toggleRow(id, show) {
     if (r.ok) img.src = '/stream';
   }).catch(() => {});
 })();
+
+// ── Settings modal ─────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+// close on backdrop click
+document.getElementById('settings-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeSettings();
+});
+// close on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeSettings();
+});
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 init();
