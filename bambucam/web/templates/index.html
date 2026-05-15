@@ -1738,8 +1738,7 @@ async function saveMjpegConfig() {
   try {
     const port    = parseInt(document.getElementById('cfg-mjpeg-port').value);
     const quality = parseInt(document.getElementById('mjpeg-quality').value);
-    const fps     = parseInt(document.getElementById('cfg-mjpeg-fps').value);
-    await api('POST', '/config', { streaming: { mjpeg: { port, quality, fps } } });
+    await api('POST', '/config', { streaming: { mjpeg: { port, quality } } });
     toast('MJPEG-Einstellungen gespeichert');
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
   finally { btnLoading('btn-cfg-mjpeg', false); }
