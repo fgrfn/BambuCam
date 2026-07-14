@@ -67,6 +67,25 @@ def _best_resolution_and_fps(model, tier_fps_cap=None):
     return best_res, best_fps
 
 
+def _effective_mjpeg_fps(camera_fps: int, mjpeg_cfg: dict, tier_fps_cap=None) -> int:
+    """Return the MJPEG target FPS, honoring config and hardware caps.
+
+    The MJPEG streamer should use streaming.mjpeg.fps when it is configured,
+    but it must not ask for more frames than the camera currently produces or
+    exceed the tier-specific Raspberry Pi capability cap. Invalid values fall
+    back to the camera framerate.
+    """
+    try:
+        requested_fps = int(mjpeg_cfg.get("fps", camera_fps))
+    except (TypeError, ValueError):
+        requested_fps = int(camera_fps)
+
+    effective_fps = min(requested_fps, int(camera_fps))
+    if tier_fps_cap is not None:
+        effective_fps = min(effective_fps, int(tier_fps_cap))
+    return max(1, effective_fps)
+
+
 def main() -> None:
     args = _parse_args()
     _setup_logging(args.log_level)
@@ -194,7 +213,7 @@ def main() -> None:
     # MJPEG streamer
     mjpeg_cfg = stream_cfg.get("mjpeg", {})
     _camera_fps = cam_cfg.get("framerate", 15)
-    _mjpeg_default_fps = _camera_fps if _mjpeg_fps_cap is None else min(_camera_fps, _mjpeg_fps_cap)
+    _mjpeg_default_fps = _effective_mjpeg_fps(_camera_fps, mjpeg_cfg, _mjpeg_fps_cap)
     if _camera_ok:
         _mjpeg_quality = mjpeg_cfg.get("quality", 85)
         camera.set_jpeg_quality(_mjpeg_quality)
