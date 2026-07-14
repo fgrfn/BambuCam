@@ -8,7 +8,6 @@ After=network-online.target
 Type=simple
 User=bambucam
 Group=bambucam
-SupplementaryGroups=video gpio i2c
 ExecStart=/opt/bambucam/venv/bin/bambucam
 Restart=on-failure
 RestartSec=5
@@ -21,7 +20,8 @@ StandardError=journal
 SyslogIdentifier=bambucam
 
 # Runtime and filesystem hardening. The installer rewrites /opt/bambucam when
-# BAMBUCAM_DIR points elsewhere.
+# BAMBUCAM_DIR points elsewhere. Supplementary camera groups are loaded from
+# the service user's group membership created by the installer.
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
