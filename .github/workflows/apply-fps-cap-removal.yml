@@ -1,0 +1,116 @@
+name: Apply FPS cap removal
+
+on:
+  push:
+    branches:
+      - fix/remove-tier1-fps-cap
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/remove-tier1-fps-cap
+          fetch-depth: 0
+
+      - name: Apply changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main = Path("bambucam/main.py")
+          text = main.read_text()
+          old = '''    tier_label = {
+              1: "low (Pi Zero/1/2) — MJPEG-only",
+              2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG≤30fps",
+              3: "high (Pi 4/5+) — full stack",
+          }.get(tier, str(tier))
+          log.info("Hardware capability tier %d: %s", tier, tier_label)
+
+          rtsp_default_enabled = tier >= 2
+          mjpeg_fps_cap = {1: 15, 2: 30}.get(tier)
+          '''
+          new = '''    tier_label = {
+              1: "low (Pi Zero/1/2) — MJPEG-only",
+              2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG",
+              3: "high (Pi 4/5+) — full stack",
+          }.get(tier, str(tier))
+          log.info("Hardware capability tier %d: %s", tier, tier_label)
+
+          # Hardware tiers control expensive streaming defaults only. Never silently
+          # reduce a user-selected camera or MJPEG frame rate.
+          rtsp_default_enabled = tier >= 2
+          hardware_fps_cap = None
+          '''
+          assert old in text, "main tier block changed unexpectedly"
+          text = text.replace(old, new)
+          text = text.replace(
+              '''            mjpeg_fps_cap,
+              detected.detected_resolutions,
+          ''',
+              '''            hardware_fps_cap,
+              detected.detected_resolutions,
+          ''',
+              1,
+          )
+          text = text.replace(
+              "mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, mjpeg_fps_cap)",
+              "mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, hardware_fps_cap)",
+          )
+          main.write_text(text)
+
+          system_info = Path("bambucam/system_info.py")
+          text = system_info.read_text()
+          text = text.replace(
+              '''      1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
+                2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps
+                3 — Pi 4, Pi 5, non-Pi          → full stack, no caps
+          ''',
+              '''      1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
+                2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG
+                3 — Pi 4, Pi 5, non-Pi          → full stack
+
+              Tiers select streaming defaults only and never cap a configured frame rate.
+          ''',
+          )
+          system_info.write_text(text)
+
+          config = Path("config/bambucam.yaml")
+          text = config.read_text().replace(
+              "framerate: auto            # auto or 1-120, capped to camera and hardware limits",
+              "framerate: auto            # auto or 1-120, capped only to camera limits",
+          )
+          config.write_text(text)
+
+          pyproject = Path("pyproject.toml")
+          text = pyproject.read_text()
+          assert 'version = "1.0.6"' in text
+          pyproject.write_text(text.replace('version = "1.0.6"', 'version = "1.0.7"', 1))
+
+          tests = Path("tests/test_main.py")
+          text = tests.read_text()
+          marker = '''    def test_applies_hardware_tier_cap(self):
+                  assert _effective_mjpeg_fps(60, {"fps": 45}, tier_fps_cap=30) == 30
+          '''
+          addition = marker + '''
+              def test_without_hardware_cap_preserves_selected_fps(self):
+                  assert _effective_mjpeg_fps(30, {"fps": 30}, tier_fps_cap=None) == 30
+          '''
+          assert marker in text, "test insertion point changed unexpectedly"
+          tests.write_text(text.replace(marker, addition, 1))
+          PY
+
+          rm .github/workflows/apply-fps-cap-removal.yml
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: remove automatic hardware FPS caps"
+          git push origin HEAD:fix/remove-tier1-fps-cap
