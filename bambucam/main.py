@@ -216,9 +216,7 @@ def main() -> None:
 
     rtsp_config = streaming_config.get("rtsp", {})
     will_use_rtsp = (
-        camera_ok
-        and not args.no_rtsp
-        and rtsp_config.get("enabled", rtsp_default_enabled)
+        camera_ok and not args.no_rtsp and rtsp_config.get("enabled", rtsp_default_enabled)
     )
 
     if camera_ok and detected is not None and selected_resolution is not None:
@@ -296,9 +294,7 @@ def main() -> None:
     snapshot = SnapshotService(
         capture_fn=(lambda: camera.capture_jpeg(quality=95)) if camera_ok else lambda: None,
         snapshot_dir=Path(
-            streaming_config.get("snapshot", {}).get(
-                "save_dir", "/var/lib/bambucam/snapshots"
-            )
+            streaming_config.get("snapshot", {}).get("save_dir", "/var/lib/bambucam/snapshots")
         ),
     )
 
