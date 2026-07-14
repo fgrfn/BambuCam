@@ -9,7 +9,7 @@ import zipfile
 from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Any
+from typing import Any, Optional
 
 from bambucam import __version__
 from bambucam.system_info import system_summary
@@ -31,7 +31,7 @@ class RingBufferLogHandler(logging.Handler):
 
     def __init__(self, capacity: int = 300):
         super().__init__(level=logging.INFO)
-        self._records: deque[str] = deque(maxlen=max(20, int(capacity)))
+        self._records: deque = deque(maxlen=max(20, int(capacity)))
         self._lock = Lock()
         self.setFormatter(
             logging.Formatter(
@@ -49,7 +49,7 @@ class RingBufferLogHandler(logging.Handler):
         with self._lock:
             self._records.append(message)
 
-    def lines(self, limit: int | None = None) -> list[str]:
+    def lines(self, limit: Optional[int] = None) -> list[str]:
         with self._lock:
             values = list(self._records)
         if limit is not None:
@@ -57,7 +57,7 @@ class RingBufferLogHandler(logging.Handler):
         return values
 
 
-_log_handler: RingBufferLogHandler | None = None
+_log_handler: Optional[RingBufferLogHandler] = None
 _handler_lock = Lock()
 
 
@@ -81,7 +81,10 @@ def redact(value: Any, key: str = "") -> Any:
     if key.lower() in _SECRET_KEYS and value not in (None, "", False):
         return "***"
     if isinstance(value, dict):
-        return {str(item_key): redact(item_value, str(item_key)) for item_key, item_value in value.items()}
+        return {
+            str(item_key): redact(item_value, str(item_key))
+            for item_key, item_value in value.items()
+        }
     if isinstance(value, list):
         return [redact(item) for item in value]
     if isinstance(value, tuple):
@@ -154,7 +157,10 @@ def diagnostics_zip(payload: dict) -> bytes:
             "diagnostics.json",
             json.dumps(json_payload, indent=2, sort_keys=True, ensure_ascii=False),
         )
-        archive.writestr("logs.txt", "\n".join(str(line) for line in logs) + ("\n" if logs else ""))
+        archive.writestr(
+            "logs.txt",
+            "\n".join(str(line) for line in logs) + ("\n" if logs else ""),
+        )
     return memory.getvalue()
 
 
@@ -172,7 +178,12 @@ def prometheus_payload(config, camera, mjpeg, rtsp, snapshot, updater) -> str:
         f'bambucam_info{{version="{_escape_label(__version__)}"}} 1',
     ]
 
-    _metric(lines, "bambucam_camera_running", camera_status.get("running"), "Camera running state")
+    _metric(
+        lines,
+        "bambucam_camera_running",
+        camera_status.get("running"),
+        "Camera running state",
+    )
     _metric(lines, "bambucam_mjpeg_running", mjpeg.is_running, "MJPEG capture loop state")
     _metric(lines, "bambucam_mjpeg_clients", mjpeg.client_count, "Connected MJPEG clients")
     _metric(lines, "bambucam_mjpeg_fps", mjpeg.actual_fps, "Measured MJPEG frames per second")
@@ -183,8 +194,18 @@ def prometheus_payload(config, camera, mjpeg, rtsp, snapshot, updater) -> str:
         rtsp_status.get("publisher_running"),
         "RTSP publisher state",
     )
-    _metric(lines, "bambucam_cpu_temperature_celsius", system.get("cpu_temp_c"), "CPU temperature")
-    _metric(lines, "bambucam_cpu_usage_percent", system.get("cpu_usage_pct"), "CPU utilization")
+    _metric(
+        lines,
+        "bambucam_cpu_temperature_celsius",
+        system.get("cpu_temp_c"),
+        "CPU temperature",
+    )
+    _metric(
+        lines,
+        "bambucam_cpu_usage_percent",
+        system.get("cpu_usage_pct"),
+        "CPU utilization",
+    )
     _metric(
         lines,
         "bambucam_memory_available_bytes",
@@ -235,11 +256,11 @@ def _metric(lines: list[str], name: str, value: Any, help_text: str) -> None:
     lines.append(f"{name} {rendered}")
 
 
-def _mb_to_bytes(value: Any) -> float | None:
+def _mb_to_bytes(value: Any) -> Optional[float]:
     return None if value is None else float(value) * 1024 * 1024
 
 
-def _gb_to_bytes(value: Any) -> float | None:
+def _gb_to_bytes(value: Any) -> Optional[float]:
     return None if value is None else float(value) * 1024 * 1024 * 1024
 
 
