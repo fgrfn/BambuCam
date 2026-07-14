@@ -129,7 +129,7 @@ if (( ${#_MISSING_PACKAGES[@]} > 0 )); then
   warn "CSI cameras may not work; V4L2 USB webcams remain supported."
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd || true)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd)"
 SOURCE_ROOT="$(dirname "$SCRIPT_DIR" 2>/dev/null || true)"
 LOCAL_SOURCE=false
 if [[ -f "$SOURCE_ROOT/pyproject.toml" ]]; then
@@ -227,7 +227,9 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 for group in video gpio i2c; do
-  getent group "$group" >/dev/null 2>&1 && usermod -aG "$group" "$SERVICE_USER" || true
+  if getent group "$group" >/dev/null 2>&1; then
+    usermod -aG "$group" "$SERVICE_USER" || true
+  fi
 done
 
 install -d -m 755 "$BAMBUCAM_DIR" "$BAMBUCAM_CONFIG_DIR"
