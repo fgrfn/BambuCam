@@ -1,14 +1,11 @@
-"""
-Flask application factory.
-
-Creates the Flask app and registers all blueprints (API, stream, UI).
-"""
+"""Flask application factory for BambuCam."""
 
 import logging
 import secrets
 from typing import TYPE_CHECKING
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 if TYPE_CHECKING:
     from bambucam.camera.manager import CameraManager
@@ -29,8 +26,7 @@ def create_app(
     snapshot_service: "SnapshotService",
     updater: "Updater",
 ) -> Flask:
-    """Application factory — wire together all components."""
-
+    """Create the Flask app and wire together shared services."""
     app = Flask(
         __name__,
         template_folder="templates",
@@ -38,11 +34,24 @@ def create_app(
         static_url_path="/static",
     )
 
-    # Secret key for session cookies
-    secret = config.get("web", "secret_key") or secrets.token_hex(32)
-    app.config["SECRET_KEY"] = secret
+    secret = config.get("web", "secret_key")
+    if not secret:
+        secret = secrets.token_hex(32)
+        config.set("web", "secret_key", value=secret)
+        config.save()
+        log.info("Generated and persisted a WebUI session secret")
 
-    # Store shared services in app context
+    app.config.update(
+        SECRET_KEY=secret,
+        MAX_CONTENT_LENGTH=1024 * 1024,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Strict",
+        SESSION_COOKIE_SECURE=bool(config.get("web", "https", "enabled", default=False)),
+    )
+
+    if config.get("web", "trust_proxy", default=False):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
     app.config["bambucam_config"] = config
     app.config["camera_manager"] = camera_manager
     app.config["mjpeg_streamer"] = mjpeg_streamer
@@ -51,9 +60,11 @@ def create_app(
     app.config["updater"] = updater
 
     from bambucam.web.api import api_bp
+    from bambucam.web.security import configure_web_security
     from bambucam.web.stream import stream_bp
     from bambucam.web.ui import ui_bp
 
+    configure_web_security(app, config)
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     app.register_blueprint(stream_bp)
     app.register_blueprint(ui_bp)
