@@ -49,7 +49,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _best_resolution_and_fps(model, tier_fps_cap=None):
-    """Pick the mode with the highest width × height × FPS score."""
+    """Pick the model mode with the highest width × height × FPS score."""
     candidates = model.resolution_max_framerates
     if not candidates:
         fps = model.max_framerate
@@ -75,14 +75,18 @@ def _resolve_camera_mode(model, camera_config: dict, tier_fps_cap=None, resoluti
     from bambucam.camera.models import Resolution
 
     smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap)
+    available = list(resolutions or model.supported_resolutions)
     configured_resolution = camera_config.get("resolution", "auto")
-    resolution = (
-        smart_resolution
-        if _is_auto(configured_resolution)
-        else Resolution.from_string(str(configured_resolution))
-    )
 
-    available = resolutions or model.supported_resolutions
+    if _is_auto(configured_resolution):
+        resolution = smart_resolution
+        if available and resolution not in available:
+            # Generic USB models do not necessarily know the modes reported by
+            # the attached device. Prefer the largest actually detected mode.
+            resolution = max(available, key=lambda item: item.width * item.height)
+    else:
+        resolution = Resolution.from_string(str(configured_resolution))
+
     if available and resolution not in available:
         allowed = ", ".join(str(item) for item in available)
         raise ValueError(f"Resolution {resolution} is not supported. Available: {allowed}")
@@ -93,8 +97,6 @@ def _resolve_camera_mode(model, camera_config: dict, tier_fps_cap=None, resoluti
 
     configured_fps = camera_config.get("framerate", "auto")
     if _is_auto(configured_fps):
-        # Preserve the selected smart pair where possible, otherwise use the
-        # maximum valid FPS for an explicitly selected resolution.
         fps = smart_fps if resolution == smart_resolution else max_fps
     else:
         try:
