@@ -1,200 +1,219 @@
 # BambuCam
 
-**Raspberry Pi camera streaming software for BambuBuddy and BambuStudio**
+**Raspberry Pi and USB camera streaming for BambuBuddy, BambuStudio, browsers, Home Assistant, and media players.**
 
-BambuCam turns your Raspberry Pi into a dedicated camera server for your Bambu Lab 3D printer.  
-It streams the camera feed via **RTSP**, **MJPEG**, and **HLS**, and provides a **WebUI** to configure everything — resolution, framerate, image settings, and more.
+BambuCam turns a Raspberry Pi or compatible Debian computer into a dedicated camera server for a 3D printer. It provides RTSP, MJPEG, HLS, optional WebRTC, snapshots, a responsive WebUI, and a documented REST API.
 
----
-
-## Features
+## Highlights
 
 | Feature | Status |
 |---|---|
-| Auto-detect CSI cameras (libcamera) | ✅ |
-| USB webcam support (V4L2) | ✅ |
-| MJPEG HTTP stream (browser, VLC, OBS) | ✅ |
-| RTSP stream (BambuBuddy / BambuStudio) | ✅ |
-| HLS stream (browser-native) | ✅ |
-| WebUI with live preview | ✅ |
+| Raspberry Pi CSI cameras through picamera2/libcamera | ✅ |
+| V4L2 USB webcams | ✅ |
+| Automatic camera detection and validated modes | ✅ |
+| Hardware-aware automatic resolution and FPS | ✅ |
+| MJPEG browser stream | ✅ |
+| RTSP through MediaMTX | ✅ |
+| HLS and optional WebRTC | ✅ |
+| Camera-model-aware controls | ✅ |
+| Camera Module 3 autofocus and HDR | ✅ |
+| Snapshot storage and downloads | ✅ |
 | REST API | ✅ |
-| Camera-model-aware settings | ✅ |
-| Autofocus (Camera Module 3) | ✅ |
-| HDR (Camera Module 3) | ✅ |
-| Snapshot endpoint | ✅ |
-| systemd service | ✅ |
-| One-line installer | ✅ |
+| Optional Basic/Bearer authentication | ✅ |
+| Optional HTTPS | ✅ |
+| Secure in-place updater | ✅ |
+| Hardened systemd service | ✅ |
+| Verified release installer | ✅ |
 
----
+## Supported hardware
 
-## Supported Hardware
+### Computers
 
-### Raspberry Pi Models
-- Raspberry Pi 2 / 3 / 3B+
-- Raspberry Pi 4 (recommended)
-- Raspberry Pi 5
+- Raspberry Pi Zero 2 W
+- Raspberry Pi 2, 3, 3B+, 4, and 5
+- Debian-based x86-64 or ARM systems with a V4L2 USB webcam
 
-### Camera Modules
+Lower-powered systems automatically receive conservative streaming limits. Raspberry Pi 4 or 5 is recommended for simultaneous high-resolution MJPEG and RTSP/HLS.
 
-| Module | Sensor | Resolution | FPS | Autofocus | HDR |
-|---|---|---|---|---|---|
-| Camera Module v1 | OV5647 | 2592×1944 | 90 | — | — |
-| Camera Module v2 | IMX219 | 3280×2464 | 90 | — | — |
-| Camera Module v2 NoIR | IMX219 | 3280×2464 | 90 | — | — |
-| **Camera Module 3** | IMX708 | 4608×2592 | 120 | ✅ PDAF | ✅ |
-| Camera Module 3 Wide | IMX708 | 4608×2592 | 120 | ✅ | ✅ |
-| HQ Camera | IMX477 | 4056×3040 | 120 | — | — |
-| Global Shutter Camera | IMX296 | 1456×1088 | 60 | — | — |
-| USB Webcam | any | up to 1080p | 30 | — | — |
+### Camera modules
 
----
+| Module | Sensor | Maximum resolution | Autofocus | HDR |
+|---|---|---:|---:|---:|
+| Camera Module v1 / NoIR | OV5647 | 2592×1944 | — | — |
+| Camera Module v2 / NoIR | IMX219 | 3280×2464 | — | — |
+| Camera Module 3 / Wide / NoIR | IMX708 | 4608×2592 | ✅ | ✅ |
+| HQ Camera | IMX477 | 4056×3040 | — | — |
+| Global Shutter Camera | IMX296 | 1456×1088 | — | — |
+| V4L2 USB webcam | varies | detected at runtime | device-specific | device-specific |
 
-## Quick Start
+## Quick start
 
-### 1. Install (Raspberry Pi OS Bullseye / Bookworm)
-
-**One-liner (recommended):**
+### 1. Install the latest release
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh | sudo bash
-```
-
-The installer takes care of everything: system packages, MediaMTX, Python venv, config and systemd service. Start BambuCam after installation:
-
-```bash
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash
 sudo systemctl start bambucam
 ```
 
-> **Specific version:** `curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash`
->
-> **From source (development):** `git clone https://github.com/fgrfn/bambucam && sudo bash bambucam/scripts/install.sh`
+New releases contain a complete installer bundle, wheel, and `SHA256SUMS`. The installer verifies release assets before installation, preserves an existing configuration, and renders the systemd unit for a custom `BAMBUCAM_DIR` when configured.
 
-### 2. Access WebUI
+```bash
+# Different installation directory
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh \
+  | sudo BAMBUCAM_DIR=/srv/bambucam bash
 
-Open `http://<your-pi-ip>:8080` in your browser.
-
-### 3. Configure BambuBuddy
-
-In BambuBuddy go to **Settings → Camera → Custom RTSP URL** and enter:
-
+# Development branch — not release-checksummed
+curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh \
+  | sudo BAMBUCAM_BRANCH=main bash
 ```
+
+See [docs/installation.md](docs/installation.md) for manual verification, upgrades, and uninstallation.
+
+### 2. Open the WebUI
+
+Open:
+
+```text
+http://<your-pi-ip>:8080
+```
+
+### 3. Configure BambuBuddy or BambuStudio
+
+Use the RTSP URL shown by the WebUI:
+
+```text
 rtsp://<your-pi-ip>:8554/cam
 ```
 
-Or use the **BambuCam WebUI** — it shows you the exact URL on the main page.
-
----
-
 ## Stream URLs
 
-| Protocol | URL | Use case |
+The defaults are:
+
+| Protocol | URL | Typical use |
 |---|---|---|
-| RTSP | `rtsp://<pi-ip>:8554/cam` | BambuBuddy, VLC, ffplay |
-| MJPEG | `http://<pi-ip>:8080/stream` | Browser, OBS |
-| HLS | `http://<pi-ip>:8888/cam/index.m3u8` | Browser (native) |
-| Snapshot | `http://<pi-ip>:8080/snapshot` | Single JPEG frame |
+| RTSP | `rtsp://<pi-ip>:8554/cam` | BambuBuddy, BambuStudio, VLC, ffplay |
+| MJPEG | `http://<pi-ip>:8080/stream` | Browser, OBS, Home Assistant |
+| HLS | `http://<pi-ip>:8888/cam/index.m3u8` | Browser players and integrations |
+| Snapshot | `http://<pi-ip>:8080/snapshot` | Current JPEG frame |
+| Health | `http://<pi-ip>:8080/health` | Service health probe |
 
----
+RTSP, HLS, WebRTC, stream name, bitrate, and ffmpeg path are configurable. MJPEG is served by the WebUI and therefore shares its port.
 
-## REST API
+## Automatic camera modes
 
-All endpoints under `/api/v1/`:
-
-```
-GET  /camera/status          Camera state & current settings
-GET  /camera/models          All supported camera models & capabilities
-GET  /camera/detect          Scan for connected cameras
-POST /camera/settings        Apply camera settings (JSON body)
-
-GET  /stream/status          Stream URLs & client count
-POST /stream/rtsp/start      Start RTSP streamer
-POST /stream/rtsp/stop       Stop RTSP streamer
-POST /stream/rtsp/settings   Update RTSP settings
-
-GET  /snapshot               Capture JPEG snapshot
-GET  /snapshot?save=true     Capture and save to disk
-GET  /snapshot/list          List saved snapshots
-
-GET  /config                 Full configuration (passwords redacted)
-POST /config                 Update configuration
-
-GET  /system                 CPU temp, memory, disk, uptime
-
-GET  /bambubuddy             BambuBuddy integration URLs & instructions
-```
-
-### Example: change resolution
-
-```bash
-curl -X POST http://<pi-ip>:8080/api/v1/camera/settings \
-  -H 'Content-Type: application/json' \
-  -d '{"resolution": "1280x720", "framerate": 30}'
-```
-
----
-
-## Configuration
-
-Edit `/etc/bambucam/bambucam.yaml` (or `~/.config/bambucam/bambucam.yaml` for user installs):
+Fresh installations use:
 
 ```yaml
 camera:
-  resolution: 1920x1080
-  framerate: 15
-  vflip: false
-  hflip: false
-  autofocus: true      # Camera Module 3 only
-  hdr: false           # Camera Module 3 only
-
-streaming:
-  rtsp:
-    enabled: true
-    bitrate_kbps: 2000
-  mjpeg:
-    fps: 15
-
-web:
-  port: 8080
-  auth:
-    enabled: false     # Set to true + password to protect WebUI
+  backend: auto
+  resolution: auto
+  framerate: auto
 ```
 
-Full reference: [docs/configuration.md](docs/configuration.md)
+BambuCam selects a mode from the detected camera capabilities and applies a hardware-tier FPS limit. Explicit values remain supported and are validated before the camera restarts. Multiple CSI cameras keep separate capability lists, and `camera.backend` can force `picamera2` or `v4l2`.
 
----
+## Authentication and HTTPS
+
+WebUI/API protection is optional but recommended on shared networks:
+
+```yaml
+web:
+  auth:
+    enabled: true
+    username: admin
+    password: "choose-a-long-password"
+    api_token: "optional-token-for-integrations"
+
+  https:
+    enabled: false
+    cert: /etc/ssl/bambucam.crt
+    key: /etc/ssl/bambucam.key
+```
+
+A plaintext password is migrated to a secure hash on startup. Browsers can use HTTP Basic authentication. Integrations can send:
+
+```http
+Authorization: Bearer <api_token>
+```
+
+State-changing Basic-auth API requests outside the WebUI must additionally send `X-BambuCam-CSRF: 1`. `/health` remains public for monitoring.
+
+## REST API
+
+All JSON endpoints are below `/api/v1`:
+
+```text
+GET    /camera/status
+GET    /camera/models
+GET    /camera/detect
+POST   /camera/settings
+
+GET    /stream/status
+POST   /stream/rtsp/start
+POST   /stream/rtsp/stop
+POST   /stream/rtsp/settings
+
+GET    /snapshot
+GET    /snapshot?save=true
+GET    /snapshot/list
+DELETE /snapshot/<filename>
+
+GET    /config
+POST   /config
+GET    /system
+POST   /system/restart-camera
+
+GET    /update/status
+POST   /update/check
+POST   /update/start
+GET    /update/releases
+```
+
+Example:
+
+```bash
+curl -u admin:password \
+  -H 'Content-Type: application/json' \
+  -H 'X-BambuCam-CSRF: 1' \
+  -d '{"resolution":"1280x720","framerate":30}' \
+  http://<pi-ip>:8080/api/v1/camera/settings
+```
+
+The configuration API validates ports, image quality, FPS, bitrate, stream names, authentication requirements, and section structure before atomically replacing the YAML file. Credentials are redacted from responses.
+
+## Configuration
+
+System installations use `/etc/bambucam/bambucam.yaml`. User installations default to `~/.config/bambucam/bambucam.yaml`. An explicit `$BAMBUCAM_CONFIG` or `--config` path has highest priority.
+
+See [docs/configuration.md](docs/configuration.md) for the full reference.
+
+## Updates
+
+The protected WebUI can check, install, and downgrade releases. The updater:
+
+- reserves one update operation atomically;
+- limits package and checksum downloads;
+- verifies release SHA-256 checksums when available;
+- rejects path traversal, links, and device files in source archives;
+- checks that the installed package reports the expected version;
+- cleans temporary data and restarts the service.
+
+The release workflow tests Python 3.9–3.12, runs Ruff, Black, ShellCheck, package builds, and publishes checksummed assets only after all checks pass.
 
 ## Architecture
 
-```
-Camera Hardware
-    │
-    ▼
-┌─────────────────────────────────┐
-│         Camera Backend          │
-│  picamera2 (CSI) / V4L2 (USB)  │
-└────────────┬────────────────────┘
-             │ JPEG frames
-     ┌───────┴────────────┐
-     │                    │
-     ▼                    ▼
-┌──────────┐       ┌─────────────────────────────┐
-│  MJPEG   │       │  ffmpeg → MediaMTX           │
-│  Server  │       │  RTSP / HLS / WebRTC         │
-└──────────┘       └─────────────────────────────┘
-     │                    │
-     ▼                    ▼
-HTTP :8080          RTSP :8554
-                    HLS  :8888
+```text
+CSI camera ── picamera2 ─┬─ JPEG capture ── MJPEG / snapshots
+                         └─ H.264 encoder ── MediaMTX ── RTSP/HLS/WebRTC
 
-     ▲
-     │
-┌──────────────────────┐
-│   Flask WebUI + API  │
-│   /api/v1/...        │
-└──────────────────────┘
+USB camera ── OpenCV ────┬─ JPEG capture ── MJPEG / snapshots
+                         └─ JPEG pipe ── ffmpeg/H.264 ── MediaMTX
+
+Flask WebUI + API controls camera, streams, snapshots, configuration,
+health information, authentication, and updates.
 ```
 
----
+The USB pipeline opens the V4L2 device only once; ffmpeg receives captured JPEG frames through stdin instead of competing with OpenCV for the camera.
 
 ## Development
 
@@ -205,16 +224,17 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/
+ruff check bambucam tests
+black --check bambucam tests
+shellcheck scripts/install.sh
 ```
 
-List cameras without starting the full server:
+List cameras without starting the server:
 
 ```bash
 bambucam --list-cameras
 ```
 
----
-
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).

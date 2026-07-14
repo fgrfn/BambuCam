@@ -2,172 +2,132 @@
 
 ## Requirements
 
-- Raspberry Pi 2 / 3 / 4 / 5
-- Raspberry Pi OS Bullseye or Bookworm (64-bit or 32-bit)
-- Compatible camera module (see [README](../README.md))
-- Internet connection
+- Raspberry Pi 2, 3, 4, 5, or another Debian-based computer for USB webcams
+- Raspberry Pi OS Bullseye/Bookworm or a compatible Debian release
+- A supported CSI camera or V4L2 USB webcam
+- Internet access during installation
 
----
+## Recommended release installation
 
-## One-liner installation (recommended)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh | sudo bash
-```
-
-After installation, start BambuCam:
+Use the installer attached to the latest GitHub release:
 
 ```bash
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash
 sudo systemctl start bambucam
 ```
 
-### Variants
+For newly published releases, the installer downloads the complete source bundle and wheel, verifies both against the release `SHA256SUMS`, and only then installs them. Older releases without verified bundles fall back to GitHub's source archive with a warning.
+
+### Installation variants
 
 ```bash
-# Always install the latest stable release (attached to GitHub Release):
-curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash
+# Install a specific tagged release
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh \
+  | sudo BAMBUCAM_VERSION=1.0.6 bash
 
-# Install a specific version:
-BAMBUCAM_VERSION=0.2.0 bash <(curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh)
+# Use a different application directory
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh \
+  | sudo BAMBUCAM_DIR=/srv/bambucam bash
 
-# Install from a specific branch (e.g. for testing):
-BAMBUCAM_BRANCH=feature/my-feature sudo bash <(curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh)
+# Install a development branch (not release-checksummed)
+curl -fsSL https://raw.githubusercontent.com/fgrfn/bambucam/main/scripts/install.sh \
+  | sudo BAMBUCAM_BRANCH=main bash
 
-# Install from a local clone (development):
-git clone https://github.com/fgrfn/bambucam
-sudo bash bambucam/scripts/install.sh
+# Install from a local clone
+ git clone https://github.com/fgrfn/bambucam
+ sudo bash bambucam/scripts/install.sh
 ```
+
+`BAMBUCAM_DIR` must be an absolute path without whitespace. The installer renders the systemd unit with that path, so self-updates and service startup continue to work outside `/opt/bambucam`.
 
 The installer:
-- Installs system packages (`ffmpeg`, `libcamera-apps`, `python3-picamera2`, …)
-- Downloads and installs **MediaMTX** (RTSP server binary)
-- Creates a dedicated system user `bambucam`
-- Installs BambuCam into `/opt/bambucam/`
-- Writes default config to `/etc/bambucam/bambucam.yaml`
-- Registers and enables the systemd service
 
----
+- installs Python, ffmpeg, V4L2 tools, OpenCV, and Raspberry Pi camera packages where available;
+- installs the pinned MediaMTX server;
+- creates the restricted `bambucam` service account;
+- creates a virtual environment below `BAMBUCAM_DIR`;
+- preserves an existing `/etc/bambucam/bambucam.yaml`;
+- installs and hardens the systemd service;
+- restarts the service automatically when updating a running installation.
 
-## Manual installation
+## Verify release assets manually
 
-### 1. System packages
-
-```bash
-sudo apt update
-sudo apt install -y \
-  python3 python3-pip python3-venv \
-  python3-picamera2 \
-  ffmpeg libcamera-apps \
-  v4l-utils
-```
-
-### 2. MediaMTX
-
-Download from [github.com/bluenviron/mediamtx/releases](https://github.com/bluenviron/mediamtx/releases):
+A release can be downloaded and verified before running its installer:
 
 ```bash
-# ARM64 (RPi 4/5 with 64-bit OS)
-curl -L https://github.com/bluenviron/mediamtx/releases/download/v1.9.3/mediamtx_v1.9.3_linux_arm64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin mediamtx
-
-# ARMv7 (RPi 2/3 or 32-bit OS)
-curl -L https://github.com/bluenviron/mediamtx/releases/download/v1.9.3/mediamtx_v1.9.3_linux_armv7.tar.gz \
-  | sudo tar -xz -C /usr/local/bin mediamtx
+VERSION=1.0.6
+BASE="https://github.com/fgrfn/bambucam/releases/download/v${VERSION}"
+curl -fLO "${BASE}/install.sh"
+curl -fLO "${BASE}/SHA256SUMS"
+grep ' install.sh$' SHA256SUMS | sha256sum -c -
+sudo bash install.sh
 ```
-
-### 3. Python package
-
-```bash
-python3 -m venv /opt/bambucam/venv
-/opt/bambucam/venv/bin/pip install bambucam
-```
-
-Or install from source (development):
-
-```bash
-git clone https://github.com/fgrfn/bambucam
-cd bambucam
-python3 -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
-```
-
-### 4. Run
-
-```bash
-bambucam
-# or
-bambucam --config /path/to/bambucam.yaml
-# or (debug mode)
-bambucam --log-level DEBUG
-```
-
----
 
 ## Service management
 
 ```bash
-# Start
 sudo systemctl start bambucam
-
-# Stop
 sudo systemctl stop bambucam
-
-# Restart
 sudo systemctl restart bambucam
-
-# Enable on boot
 sudo systemctl enable bambucam
-
-# View logs
-journalctl -u bambucam -f
-
-# Status
 systemctl status bambucam
+journalctl -u bambucam -f
 ```
 
----
+## Verify the installation
 
-## Verify installation
+The executable lives inside the configured installation directory. With the default path:
 
 ```bash
-# List detected cameras
-bambucam --list-cameras
-
-# Test MJPEG stream (should return JPEG data)
+/opt/bambucam/venv/bin/bambucam --version
+sudo -u bambucam /opt/bambucam/venv/bin/bambucam --list-cameras
+curl -s http://localhost:8080/health | python3 -m json.tool
 curl -s http://localhost:8080/snapshot | file -
-
-# Test API
-curl http://localhost:8080/api/v1/camera/status | python3 -m json.tool
-
-# Test RTSP (requires ffplay or VLC)
 ffplay rtsp://localhost:8554/cam
 ```
 
----
+When WebUI authentication is enabled, API calls require HTTP Basic authentication or the configured Bearer token. State-changing Basic-auth requests also require a same-origin browser request or the `X-BambuCam-CSRF: 1` header.
 
 ## Updating
 
+The preferred method is **WebUI → Software Update**. The updater:
+
+- prevents concurrent update jobs;
+- limits download sizes;
+- verifies `SHA256SUMS` when provided;
+- rejects unsafe paths and special files in source archives;
+- verifies that the installed package reports the expected release version;
+- restarts the systemd service or re-executes the process.
+
+Re-running the release installer is also supported and preserves the existing configuration:
+
 ```bash
-cd bambucam
-git pull
-sudo bash scripts/install.sh
-sudo systemctl restart bambucam
+curl -fsSL https://github.com/fgrfn/bambucam/releases/latest/download/install.sh | sudo bash
 ```
 
----
+## Manual development installation
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-picamera2 ffmpeg v4l-utils
+
+git clone https://github.com/fgrfn/bambucam
+cd bambucam
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -e ".[dev]"
+pytest tests/
+bambucam --config ./config/bambucam.yaml
+```
 
 ## Uninstalling
 
 ```bash
-sudo systemctl stop bambucam
-sudo systemctl disable bambucam
-sudo rm /etc/systemd/system/bambucam.service
+sudo systemctl disable --now bambucam
+sudo rm -f /etc/systemd/system/bambucam.service
 sudo systemctl daemon-reload
-sudo rm -rf /opt/bambucam
-sudo rm -rf /etc/bambucam
-# Optional: remove data
-sudo rm -rf /var/lib/bambucam
-# Optional: remove user
-sudo userdel bambucam
+sudo rm -rf /opt/bambucam             # adjust when BAMBUCAM_DIR was changed
+sudo rm -rf /etc/bambucam             # removes configuration and credentials
+sudo rm -rf /var/lib/bambucam         # optional: removes snapshots and data
+sudo userdel bambucam                 # optional
 ```

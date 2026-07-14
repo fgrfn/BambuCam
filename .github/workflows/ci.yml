@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: ["**"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Tests (Python ${{ matrix.python-version }})
@@ -14,40 +21,50 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v --tb=short \
+            --cov=bambucam \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=35
+      - name: Upload coverage report
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
-      - name: Run tests
-        run: pytest tests/ -v --tb=short
-
-  lint:
-    name: Lint & format check
+  quality:
+    name: Code and package quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install tools
-        run: pip install ruff black
-
-      - name: Ruff (lint)
+        run: pip install -e ".[dev]" build twine
+      - name: Ruff
         run: ruff check bambucam/ tests/
-
-      - name: Black (format)
+      - name: Black
         run: black --check bambucam/ tests/
+      - name: ShellCheck installer
+        run: shellcheck scripts/install.sh
+      - name: Compile sources
+        run: python -m compileall -q bambucam tests
+      - name: Build and inspect distributions
+        run: |
+          python -m build
+          twine check dist/*

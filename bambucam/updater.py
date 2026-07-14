@@ -1,21 +1,13 @@
-"""
-BambuCam update service.
+"""Secure, thread-safe in-place updater for BambuCam releases."""
 
-Update flow:
-  1. check()       — query GitHub Releases API for latest version
-  2. download()    — download the source tarball to a temp directory
-  3. install()     — run pip install inside the venv
-  4. restart()     — restart the systemd service (or the process)
-
-All operations are non-blocking: a background thread runs the install and
-posts progress events that the WebUI can poll via GET /api/v1/update/progress.
-"""
-
+import copy
+import hashlib
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -30,10 +22,14 @@ log = logging.getLogger(__name__)
 
 GITHUB_API = "https://api.github.com"
 GITHUB_REPO = "fgrfn/bambucam"
-VENV_PIP = Path("/opt/bambucam/venv/bin/pip")
-INSTALL_SCRIPT = Path("/opt/bambucam/venv/lib").glob(
-    "python*/site-packages/bambucam/../../../../../../scripts/install.sh"
-)
+VENV_PIP = Path(sys.executable).parent / "pip"
+MAX_PACKAGE_BYTES = 100 * 1024 * 1024
+MAX_CHECKSUM_BYTES = 1024 * 1024
+_ACTIVE_STATES = {
+    "downloading",
+    "installing",
+    "restarting",
+}
 
 
 class UpdateState(str, Enum):
@@ -67,14 +63,14 @@ class UpdateStatus:
     current_version: str = ""
     latest_version: str = ""
     latest_release: Optional[ReleaseInfo] = None
-    progress: int = 0  # 0-100
+    progress: int = 0
     message: str = ""
     error: str = ""
     update_available: bool = False
     checked_at: Optional[float] = None
 
     def as_dict(self) -> dict:
-        d = {
+        result = {
             "state": self.state.value,
             "current_version": self.current_version,
             "latest_version": self.latest_version,
@@ -85,7 +81,7 @@ class UpdateStatus:
             "checked_at": self.checked_at,
         }
         if self.latest_release:
-            d["latest_release"] = {
+            result["latest_release"] = {
                 "version": self.latest_release.version,
                 "tag": self.latest_release.tag,
                 "name": self.latest_release.name,
@@ -94,21 +90,15 @@ class UpdateStatus:
                 "html_url": self.latest_release.html_url,
                 "is_prerelease": self.latest_release.is_prerelease,
             }
-        return d
+        return result
 
 
 class Updater:
-    """
-    Manages version checking and in-place upgrades from GitHub Releases.
+    """Check, verify, install, and activate BambuCam GitHub releases."""
 
-    Thread-safety: all public methods can be called from any thread.
-    The install/restart flow runs in a dedicated background thread.
-    """
-
-    # First check delay and interval for the background auto-check thread
-    _AUTO_CHECK_INITIAL_DELAY = 60  # seconds after startup
-    _AUTO_CHECK_INTERVAL = 24 * 3600  # seconds between subsequent checks
-    _RELEASES_CACHE_TTL = 3600  # seconds before releases list is re-fetched
+    _AUTO_CHECK_INITIAL_DELAY = 60
+    _AUTO_CHECK_INTERVAL = 24 * 3600
+    _RELEASES_CACHE_TTL = 3600
 
     def __init__(
         self,
@@ -116,50 +106,49 @@ class Updater:
         repo: str = GITHUB_REPO,
         include_prerelease: bool = False,
         pip_path: Path = VENV_PIP,
+        auto_check: bool = True,
+        max_package_bytes: int = MAX_PACKAGE_BYTES,
     ):
         self._current = current_version
         self._repo = repo
         self._include_prerelease = include_prerelease
-        self._pip_path = pip_path
+        self._pip_path = Path(pip_path)
+        self._max_package_bytes = int(max_package_bytes)
         self._status = UpdateStatus(current_version=current_version)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._worker: Optional[threading.Thread] = None
         self._releases_cache: list = []
-        self._releases_cached_at: float = 0.0
+        self._releases_cached_at = 0.0
+        self._stop_event = threading.Event()
+        self._auto_check_thread: Optional[threading.Thread] = None
 
-        # Background auto-check: runs once after startup delay, then every 24 h
-        self._auto_check_thread = threading.Thread(
-            target=self._auto_check_loop, daemon=True, name="bambucam-update-check"
-        )
-        self._auto_check_thread.start()
-
-    # ---------------------------------------------------------------------------
-    # Public API
-    # ---------------------------------------------------------------------------
+        if auto_check:
+            self._auto_check_thread = threading.Thread(
+                target=self._auto_check_loop,
+                daemon=True,
+                name="bambucam-update-check",
+            )
+            self._auto_check_thread.start()
 
     def check(self) -> UpdateStatus:
-        """
-        Synchronously check GitHub for the latest release.
-        Returns the updated status.
-        """
+        """Synchronously check GitHub for the newest suitable release."""
         with self._lock:
-            if self._status.state in (UpdateState.DOWNLOADING, UpdateState.INSTALLING):
-                return self._status
+            if self._is_update_active():
+                return copy.deepcopy(self._status)
             self._status.state = UpdateState.CHECKING
             self._status.message = "Prüfe auf Updates…"
             self._status.error = ""
 
         try:
             release = self._fetch_latest_release()
-        except Exception as e:
-            self._set_error(f"Verbindung zu GitHub fehlgeschlagen: {e}")
-            return self._status
+        except Exception as exc:
+            self._set_error(f"Verbindung zu GitHub fehlgeschlagen: {exc}")
+            return self.status
 
         with self._lock:
             self._status.latest_release = release
             self._status.latest_version = release.version
             self._status.checked_at = time.time()
-
             if _version_gt(release.version, self._current):
                 self._status.state = UpdateState.AVAILABLE
                 self._status.update_available = True
@@ -168,99 +157,97 @@ class Updater:
                 self._status.state = UpdateState.UP_TO_DATE
                 self._status.update_available = False
                 self._status.message = "BambuCam ist aktuell."
-
-        return self._status
+            return copy.deepcopy(self._status)
 
     def list_releases(self) -> list:
-        """
-        Return all available releases as a list of dicts, newest first.
-        Results are cached for _RELEASES_CACHE_TTL seconds.
-        """
+        """Return suitable releases, with a short-lived stale-on-error cache."""
         now = time.time()
-        if self._releases_cache and (now - self._releases_cached_at) < self._RELEASES_CACHE_TTL:
-            return self._releases_cache
+        with self._lock:
+            if self._releases_cache and now - self._releases_cached_at < self._RELEASES_CACHE_TTL:
+                return copy.deepcopy(self._releases_cache)
 
         try:
             releases = self._fetch_all_releases()
+        except Exception as exc:
+            log.warning("Failed to fetch releases list: %s", exc)
+            with self._lock:
+                return copy.deepcopy(self._releases_cache)
+
+        with self._lock:
             self._releases_cache = releases
             self._releases_cached_at = now
-            return releases
-        except Exception as e:
-            log.warning("Failed to fetch releases list: %s", e)
-            return self._releases_cache  # return stale cache on error
+            return copy.deepcopy(releases)
 
     def start_update(self, target_version: Optional[str] = None) -> bool:
-        """
-        Start the download → install → restart pipeline in a background thread.
-
-        target_version: if given (e.g. '1.0.5'), install that specific release
-        (allows downgrade). If None, install the latest available release.
-        Returns False if an update/install is already running.
-        """
+        """Reserve and start one update worker; concurrent starts are rejected."""
         with self._lock:
-            if self._status.state in (
-                UpdateState.DOWNLOADING,
-                UpdateState.INSTALLING,
-                UpdateState.RESTARTING,
-            ):
+            if self._is_update_active():
                 log.warning("Update already in progress")
                 return False
 
-        if target_version:
-            release = self._find_release(target_version)
-            if release is None:
-                log.warning("Release v%s not found", target_version)
-                return False
-            with self._lock:
-                self._status.latest_release = release
-                self._status.update_available = True
-        else:
-            with self._lock:
-                if not self._status.update_available or self._status.latest_release is None:
+            if target_version is None:
+                release = self._status.latest_release
+                if not self._status.update_available or release is None:
                     log.warning("No update available — call check() first")
                     return False
+            else:
+                release = None
 
-        self._worker = threading.Thread(
-            target=self._update_pipeline,
-            daemon=True,
-            name="bambucam-updater",
-        )
-        self._worker.start()
+            # Reserve the operation before any network lookup. This closes the
+            # race where two callers previously passed the guard simultaneously.
+            self._status.state = UpdateState.DOWNLOADING
+            self._status.progress = 1
+            self._status.message = "Bereite Update vor…"
+            self._status.error = ""
+
+        if target_version is not None:
+            release = self._find_release(target_version)
+            if release is None:
+                self._set_error(f"Release v{target_version.lstrip('v')} nicht gefunden")
+                return False
+
+        assert release is not None
+        with self._lock:
+            self._status.latest_release = release
+            self._status.latest_version = release.version
+            self._status.update_available = True
+            self._worker = threading.Thread(
+                target=self._update_pipeline,
+                args=(release,),
+                daemon=True,
+                name="bambucam-updater",
+            )
+            worker = self._worker
+        worker.start()
         return True
+
+    def stop(self) -> None:
+        """Stop only the optional auto-check loop; an active install is not aborted."""
+        self._stop_event.set()
 
     @property
     def status(self) -> UpdateStatus:
         with self._lock:
-            return self._status
+            return copy.deepcopy(self._status)
 
-    # ---------------------------------------------------------------------------
-    # Internal pipeline
-    # ---------------------------------------------------------------------------
+    def _is_update_active(self) -> bool:
+        return self._status.state.value in _ACTIVE_STATES
 
-    def _update_pipeline(self) -> None:
+    def _update_pipeline(self, release: ReleaseInfo) -> None:
+        temp_root: Optional[Path] = None
         try:
-            release = self._status.latest_release
-            assert release is not None
-
-            # 1. Download
             self._set_state(UpdateState.DOWNLOADING, "Lade Update herunter…", 5)
-            tarball_path = self._download(release)
+            package_path = self._download(release)
+            temp_root = package_path.parent
 
-            # 2. Install
             self._set_state(UpdateState.INSTALLING, "Installiere Update…", 50)
-            self._install(tarball_path)
+            self._install(package_path, expected_version=release.version)
 
-            # 3. Cleanup
-            try:
-                shutil.rmtree(tarball_path.parent, ignore_errors=True)
-            except Exception:
-                pass
-
-            # 4. Restart
             self._set_state(UpdateState.RESTARTING, "Starte BambuCam neu…", 90)
             self._restart()
 
             with self._lock:
+                self._current = release.version
                 self._status.state = UpdateState.SUCCESS
                 self._status.current_version = release.version
                 self._status.update_available = False
@@ -268,237 +255,289 @@ class Updater:
                 self._status.message = (
                     f"Update auf v{release.version} erfolgreich! BambuCam wird neu gestartet…"
                 )
-
-        except Exception as e:
+        except Exception as exc:
             log.exception("Update pipeline failed")
-            self._set_error(str(e))
+            self._set_error(str(exc))
+        finally:
+            if temp_root is not None:
+                shutil.rmtree(temp_root, ignore_errors=True)
+            with self._lock:
+                self._worker = None
 
     def _download(self, release: ReleaseInfo) -> Path:
-        """Download the wheel (preferred) or source tarball; return path to local file."""
-        tmp_dir = Path(tempfile.mkdtemp(prefix="bambucam_update_"))
+        """Download a release wheel/sdist, enforce limits, and verify SHA-256 when provided."""
+        temp_dir = Path(tempfile.mkdtemp(prefix="bambucam_update_"))
+        selected = self._select_package_asset(release)
+        if selected is None:
+            selected = {
+                "name": f"bambucam-{release.version}.tar.gz",
+                "url": release.tarball_url,
+                "size": 0,
+                "source_tarball": True,
+            }
+            log.warning(
+                "No packaged release asset found; using unchecksummed GitHub source tarball"
+            )
 
-        # Prefer pre-built wheel: version metadata is injected by the release
-        # workflow, so the installed package will report the correct version.
-        wheel_url = next(
-            (a["url"] for a in release.assets if a["name"].endswith(".whl")),
-            None,
+        asset_size = int(selected.get("size") or 0)
+        if asset_size > self._max_package_bytes:
+            raise RuntimeError(
+                f"Update package is too large ({asset_size} bytes; limit {self._max_package_bytes})"
+            )
+
+        filename = Path(str(selected["name"])).name
+        if filename != selected["name"]:
+            raise RuntimeError("Release asset has an unsafe filename")
+        local_path = temp_dir / filename
+        expected_hashes = self._fetch_release_checksums(release)
+        expected_hash = expected_hashes.get(filename)
+        if expected_hashes and expected_hash is None:
+            raise RuntimeError(f"SHA256SUMS does not contain {filename}")
+
+        actual_hash = self._download_to_file(
+            str(selected["url"]),
+            local_path,
+            max_bytes=self._max_package_bytes,
+            expected_size=asset_size,
         )
-        if wheel_url:
-            local_path = tmp_dir / f"bambucam-{release.version}-py3-none-any.whl"
-            download_url = wheel_url
-            # GitHub release asset: must request as octet-stream
-            headers = {"Accept": "application/octet-stream"}
-            log.info("Downloading wheel %s → %s", download_url, local_path)
+        if expected_hash is not None and not secrets_compare(actual_hash, expected_hash):
+            raise RuntimeError(
+                f"SHA-256 mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+            )
+        if expected_hash is None:
+            log.warning("No SHA-256 checksum available for %s", filename)
         else:
-            local_path = tmp_dir / f"bambucam-{release.version}.tar.gz"
-            download_url = release.tarball_url
-            # GitHub tarball API endpoint: no Accept override (octet-stream → 415)
-            headers = {}
-            log.info("Wheel not found in assets, falling back to tarball %s", download_url)
-
-        response = requests.get(download_url, headers=headers, stream=True, timeout=60)
-        response.raise_for_status()
-
-        total = int(response.headers.get("content-length", 0))
-        downloaded = 0
-
-        with local_path.open("wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-                downloaded += len(chunk)
-                if total:
-                    pct = 5 + int(40 * downloaded / total)
-                    self._set_progress(pct, f"Lade herunter… {downloaded // 1024} KB")
-
-        log.info("Download complete: %s (%d bytes)", local_path, downloaded)
+            log.info("Verified SHA-256 for %s", filename)
         return local_path
 
-    def _install(self, package_path: Path) -> None:
-        """Install the downloaded wheel or tarball into the venv."""
-        pip = self._pip_path if self._pip_path.exists() else Path(sys.executable).parent / "pip"
+    @staticmethod
+    def _select_package_asset(release: ReleaseInfo) -> Optional[dict]:
+        wheels = [asset for asset in release.assets if str(asset.get("name", "")).endswith(".whl")]
+        if wheels:
+            return wheels[0]
+        sdists = [
+            asset
+            for asset in release.assets
+            if str(asset.get("name", "")).endswith((".tar.gz", ".tgz"))
+        ]
+        return sdists[0] if sdists else None
 
+    def _fetch_release_checksums(self, release: ReleaseInfo) -> dict[str, str]:
+        asset = next(
+            (
+                item
+                for item in release.assets
+                if str(item.get("name", "")).upper() in {"SHA256SUMS", "SHA256SUMS.TXT"}
+            ),
+            None,
+        )
+        if asset is None:
+            return {}
+
+        response = requests.get(str(asset["url"]), stream=True, timeout=(10, 30))
+        response.raise_for_status()
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_CHECKSUM_BYTES:
+                raise RuntimeError("SHA256SUMS asset exceeds the size limit")
+            chunks.append(chunk)
+        return _parse_checksum_file(b"".join(chunks).decode("utf-8"))
+
+    def _download_to_file(
+        self,
+        url: str,
+        destination: Path,
+        max_bytes: int,
+        expected_size: int = 0,
+    ) -> str:
+        response = requests.get(url, stream=True, timeout=(10, 60))
+        response.raise_for_status()
+        declared_size = int(response.headers.get("content-length", 0) or 0)
+        if declared_size > max_bytes:
+            raise RuntimeError(
+                f"Download is too large ({declared_size} bytes; " f"limit {max_bytes})"
+            )
+        if expected_size and declared_size and declared_size != expected_size:
+            raise RuntimeError(
+                f"Release asset size changed: expected {expected_size}, "
+                f"server reports {declared_size}"
+            )
+
+        digest = hashlib.sha256()
+        downloaded = 0
+        with destination.open("xb") as handle:
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                downloaded += len(chunk)
+                if downloaded > max_bytes:
+                    raise RuntimeError(f"Download exceeded the {max_bytes}-byte limit")
+                handle.write(chunk)
+                digest.update(chunk)
+                if declared_size:
+                    progress = 5 + int(40 * downloaded / declared_size)
+                    self._set_progress(min(progress, 45), f"Lade herunter… {downloaded // 1024} KB")
+
+        if expected_size and downloaded != expected_size:
+            raise RuntimeError(
+                f"Release asset size mismatch: expected {expected_size}, downloaded {downloaded}"
+            )
+        if downloaded == 0:
+            raise RuntimeError("Downloaded update package is empty")
+        log.info("Download complete: %s (%d bytes)", destination, downloaded)
+        return digest.hexdigest()
+
+    def _install(self, package_path: Path, expected_version: Optional[str] = None) -> None:
+        """Safely extract source archives and install the package into the active venv."""
+        pip = self._pip_path if self._pip_path.exists() else Path(sys.executable).parent / "pip"
         install_target = package_path
 
-        # GitHub source tarballs wrap everything in a top-level directory
-        # (e.g. fgrfn-BambuCam-abc123/), so pip can't find pyproject.toml at
-        # the archive root.  Extract and point pip at the inner directory.
-        if package_path.name.endswith(".tar.gz"):
-            import tarfile
-
+        if package_path.name.endswith((".tar.gz", ".tgz")):
             extract_dir = package_path.parent / "src"
             extract_dir.mkdir(exist_ok=True)
-            with tarfile.open(package_path) as tf:
-                tf.extractall(extract_dir)
-            subdirs = [p for p in extract_dir.iterdir() if p.is_dir()]
-            if subdirs:
-                install_target = subdirs[0]
-                log.info("Tarball extracted to %s", install_target)
+            _safe_extract_tar(package_path, extract_dir)
+            candidates = [path for path in extract_dir.iterdir() if path.is_dir()]
+            if len(candidates) != 1 or not (candidates[0] / "pyproject.toml").is_file():
+                raise RuntimeError("Source archive does not contain one valid Python project")
+            install_target = candidates[0]
+            log.info("Source archive safely extracted to %s", install_target)
 
-        # --no-user: never fall back to user-site install (venv pip only)
-        # HOME=/tmp: service user has no home dir; avoids pip cache permission warning
-        cmd = [str(pip), "install", "--upgrade", "--no-user", str(install_target)]
-        env = os.environ.copy()
-        env["HOME"] = "/tmp"
-        env["PIP_NO_CACHE_DIR"] = "1"
+        command = [
+            str(pip),
+            "install",
+            "--upgrade",
+            "--no-user",
+            "--disable-pip-version-check",
+            str(install_target),
+        ]
+        environment = os.environ.copy()
+        environment["HOME"] = "/tmp"
+        environment["PIP_NO_CACHE_DIR"] = "1"
 
-        log.info("Running: %s", " ".join(cmd))
         self._set_progress(55, "Installiere Python-Paket…")
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=environment,
+        )
         if result.returncode != 0:
-            raise RuntimeError(f"pip install failed (exit {result.returncode}):\n{result.stderr}")
-        log.info("pip install succeeded:\n%s", result.stdout)
-        self._set_progress(85, "Installation abgeschlossen.")
+            raise RuntimeError(
+                f"pip install failed (exit {result.returncode}):\n{result.stderr[-4000:]}"
+            )
+        log.info("pip install succeeded")
+        self._verify_installed_package(pip, expected_version)
+        self._set_progress(85, "Installation geprüft und abgeschlossen.")
+
+    @staticmethod
+    def _verify_installed_package(pip: Path, expected_version: Optional[str]) -> None:
+        python = pip.parent / "python"
+        if not python.exists():
+            python = Path(sys.executable)
+        command = [
+            str(python),
+            "-c",
+            "from importlib.metadata import version; print(version('bambucam'))",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        if result.returncode != 0:
+            raise RuntimeError(f"Installed BambuCam package cannot be imported: {result.stderr}")
+        installed = result.stdout.strip()
+        if expected_version and installed != expected_version:
+            raise RuntimeError(
+                f"Installed version mismatch: expected {expected_version}, found {installed}"
+            )
 
     def _restart(self) -> None:
-        """Restart the BambuCam service via systemctl or by re-execing."""
         self._set_progress(92, "Neustart wird eingeleitet…")
-
-        # Try systemd first (production)
         if shutil.which("systemctl"):
             result = subprocess.run(
                 ["systemctl", "restart", "bambucam"],
                 capture_output=True,
-                timeout=10,
+                text=True,
+                timeout=15,
             )
             if result.returncode == 0:
                 log.info("systemd restart triggered")
                 return
+            log.warning("systemd restart failed: %s", result.stderr.strip())
 
-        # Fallback: re-exec the current process
-        log.warning("systemctl not available — re-execing process")
+        log.warning("systemctl restart unavailable — re-execing process")
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
-    # ---------------------------------------------------------------------------
-    # Background auto-check
-    # ---------------------------------------------------------------------------
-
     def _auto_check_loop(self) -> None:
-        """Wait for startup delay, then check for updates every 24 h."""
-        time.sleep(self._AUTO_CHECK_INITIAL_DELAY)
-        while True:
+        if self._stop_event.wait(self._AUTO_CHECK_INITIAL_DELAY):
+            return
+        while not self._stop_event.is_set():
             try:
                 self.check()
-            except Exception as e:
-                log.debug("Auto update check failed: %s", e)
-            time.sleep(self._AUTO_CHECK_INTERVAL)
+            except Exception as exc:
+                log.debug("Auto update check failed: %s", exc)
+            self._stop_event.wait(self._AUTO_CHECK_INTERVAL)
 
-    # ---------------------------------------------------------------------------
-    # GitHub API
-    # ---------------------------------------------------------------------------
+    def _github_headers(self) -> dict:
+        return {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "BambuCam-Updater",
+        }
 
     def _fetch_all_releases(self) -> list:
-        """Fetch all releases and return as a list of dicts (newest first)."""
-        url = f"{GITHUB_API}/repos/{self._repo}/releases"
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(
+            f"{GITHUB_API}/repos/{self._repo}/releases",
+            headers=self._github_headers(),
+            timeout=(10, 30),
+        )
         response.raise_for_status()
-        result = []
-        for rel in response.json():
-            if rel.get("draft"):
-                continue
-            if rel.get("prerelease") and not self._include_prerelease:
-                continue
-            tag = rel["tag_name"]
-            version = tag.lstrip("v")
-            result.append(
-                {
-                    "version": version,
-                    "tag": tag,
-                    "name": rel.get("name") or tag,
-                    "published_at": rel.get("published_at", ""),
-                    "html_url": rel["html_url"],
-                    "is_prerelease": rel.get("prerelease", False),
-                    "is_current": version == self._current,
-                }
-            )
-        return result
+        return [
+            {
+                "version": release["tag_name"].lstrip("v"),
+                "tag": release["tag_name"],
+                "name": release.get("name") or release["tag_name"],
+                "published_at": release.get("published_at", ""),
+                "html_url": release["html_url"],
+                "is_prerelease": release.get("prerelease", False),
+                "is_current": release["tag_name"].lstrip("v") == self._current,
+            }
+            for release in response.json()
+            if not release.get("draft")
+            and (self._include_prerelease or not release.get("prerelease"))
+        ]
 
     def _find_release(self, version: str) -> Optional[ReleaseInfo]:
-        """Fetch a specific release by version string."""
         tag = f"v{version.lstrip('v')}"
-        url = f"{GITHUB_API}/repos/{self._repo}/releases/tags/{tag}"
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
         try:
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(
+                f"{GITHUB_API}/repos/{self._repo}/releases/tags/{tag}",
+                headers=self._github_headers(),
+                timeout=(10, 30),
+            )
             response.raise_for_status()
-            rel = response.json()
-        except Exception as e:
-            log.warning("Could not fetch release %s: %s", tag, e)
+            return _release_from_api(response.json())
+        except Exception as exc:
+            log.warning("Could not fetch release %s: %s", tag, exc)
             return None
-        version_clean = rel["tag_name"].lstrip("v")
-        return ReleaseInfo(
-            version=version_clean,
-            tag=rel["tag_name"],
-            name=rel.get("name") or rel["tag_name"],
-            body=rel.get("body") or "",
-            published_at=rel.get("published_at", ""),
-            tarball_url=rel["tarball_url"],
-            html_url=rel["html_url"],
-            is_prerelease=rel.get("prerelease", False),
-            assets=[
-                {
-                    "name": a["name"],
-                    "url": a["browser_download_url"],
-                    "size": a["size"],
-                }
-                for a in rel.get("assets", [])
-            ],
-        )
 
     def _fetch_latest_release(self) -> ReleaseInfo:
-        url = f"{GITHUB_API}/repos/{self._repo}/releases"
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(
+            f"{GITHUB_API}/repos/{self._repo}/releases",
+            headers=self._github_headers(),
+            timeout=(10, 30),
+        )
         response.raise_for_status()
-        releases = response.json()
-
-        if not releases:
-            raise RuntimeError("No releases found on GitHub")
-
-        for rel in releases:
-            if rel.get("draft"):
+        for release in response.json():
+            if release.get("draft"):
                 continue
-            if rel.get("prerelease") and not self._include_prerelease:
+            if release.get("prerelease") and not self._include_prerelease:
                 continue
-
-            tag = rel["tag_name"]
-            version = tag.lstrip("v")
-
-            return ReleaseInfo(
-                version=version,
-                tag=tag,
-                name=rel.get("name") or tag,
-                body=rel.get("body") or "",
-                published_at=rel.get("published_at", ""),
-                tarball_url=rel["tarball_url"],
-                html_url=rel["html_url"],
-                is_prerelease=rel.get("prerelease", False),
-                assets=[
-                    {
-                        "name": a["name"],
-                        "url": a["browser_download_url"],
-                        "size": a["size"],
-                    }
-                    for a in rel.get("assets", [])
-                ],
-            )
-
+            return _release_from_api(release)
         raise RuntimeError("No suitable release found")
-
-    # ---------------------------------------------------------------------------
-    # Helpers
-    # ---------------------------------------------------------------------------
 
     def _set_state(self, state: UpdateState, message: str, progress: int) -> None:
         with self._lock:
@@ -509,7 +548,7 @@ class Updater:
 
     def _set_progress(self, progress: int, message: str = "") -> None:
         with self._lock:
-            self._status.progress = progress
+            self._status.progress = max(0, min(100, int(progress)))
             if message:
                 self._status.message = message
 
@@ -522,20 +561,74 @@ class Updater:
         log.error("[updater] %s", error)
 
 
-# ---------------------------------------------------------------------------
-# Semantic version comparison (no external dependencies)
-# ---------------------------------------------------------------------------
+def _release_from_api(release: dict) -> ReleaseInfo:
+    return ReleaseInfo(
+        version=release["tag_name"].lstrip("v"),
+        tag=release["tag_name"],
+        name=release.get("name") or release["tag_name"],
+        body=release.get("body") or "",
+        published_at=release.get("published_at", ""),
+        tarball_url=release["tarball_url"],
+        html_url=release["html_url"],
+        is_prerelease=release.get("prerelease", False),
+        assets=[
+            {
+                "name": asset["name"],
+                "url": asset["browser_download_url"],
+                "size": asset.get("size", 0),
+            }
+            for asset in release.get("assets", [])
+        ],
+    )
 
 
-def _parse_version(v: str) -> tuple:
-    """Parse 'x.y.z' or 'x.y.z-suffix' into comparable tuple."""
-    v = v.lstrip("v").split("-")[0]
+def _parse_checksum_file(content: str) -> dict[str, str]:
+    checksums = {}
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
+            raise RuntimeError("Invalid SHA256SUMS line")
+        digest, filename = parts
+        filename = filename.lstrip("* ")
+        if len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
+            raise RuntimeError("Invalid SHA-256 digest in SHA256SUMS")
+        if Path(filename).name != filename:
+            raise RuntimeError("Unsafe filename in SHA256SUMS")
+        checksums[filename] = digest.lower()
+    return checksums
+
+
+def _safe_extract_tar(archive: Path, destination: Path) -> None:
+    root = destination.resolve()
+    with tarfile.open(archive, mode="r:*") as tar:
+        members = tar.getmembers()
+        if not members:
+            raise RuntimeError("Source archive is empty")
+        for member in members:
+            target = (root / member.name).resolve()
+            if target != root and root not in target.parents:
+                raise RuntimeError(f"Unsafe path in source archive: {member.name}")
+            if member.issym() or member.islnk() or member.isdev():
+                raise RuntimeError(f"Unsupported special file in source archive: {member.name}")
+        tar.extractall(root, members=members)
+
+
+def secrets_compare(left: str, right: str) -> bool:
+    import secrets
+
+    return secrets.compare_digest(left.lower(), right.lower())
+
+
+def _parse_version(version: str) -> tuple:
+    value = version.lstrip("v").split("-")[0]
     try:
-        return tuple(int(p) for p in v.split("."))
+        return tuple(int(part) for part in value.split("."))
     except ValueError:
         return (0,)
 
 
-def _version_gt(a: str, b: str) -> bool:
-    """Return True if version a is strictly greater than b."""
-    return _parse_version(a) > _parse_version(b)
+def _version_gt(left: str, right: str) -> bool:
+    return _parse_version(left) > _parse_version(right)
