@@ -16,6 +16,9 @@ class TestEffectiveMjpegFps:
     def test_applies_hardware_tier_cap(self):
         assert _effective_mjpeg_fps(60, {"fps": 45}, tier_fps_cap=30) == 30
 
+    def test_without_hardware_cap_preserves_selected_fps(self):
+        assert _effective_mjpeg_fps(30, {"fps": 30}, tier_fps_cap=None) == 30
+
     def test_invalid_config_falls_back_to_camera_fps(self):
         assert _effective_mjpeg_fps(20, {"fps": "invalid"}) == 20
 

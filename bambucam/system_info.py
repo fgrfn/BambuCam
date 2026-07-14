@@ -88,8 +88,10 @@ def pi_capability_tier() -> int:
     """
     Return a hardware capability tier for adaptive defaults:
       1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
-      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps
-      3 — Pi 4, Pi 5, non-Pi          → full stack, no caps
+      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG
+      3 — Pi 4, Pi 5, non-Pi          → full stack
+
+    Tiers select streaming defaults only and never cap a configured frame rate.
     """
     model = raspberry_pi_model()
     if model is None:
