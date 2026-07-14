@@ -127,7 +127,10 @@ class RTSPStreamer:
                 process.stdin.close()
             except OSError:
                 pass
-        if self._feeder_thread is not None and self._feeder_thread is not threading.current_thread():
+        if (
+            self._feeder_thread is not None
+            and self._feeder_thread is not threading.current_thread()
+        ):
             self._feeder_thread.join(timeout=3)
         self._feeder_thread = None
         self._kill(process, "ffmpeg")
@@ -179,7 +182,10 @@ class RTSPStreamer:
             self._kill(self._mediamtx_proc, "mediamtx")
             self._mediamtx_proc = None
             self._remove_config_file()
-        if self._monitor_thread is not None and self._monitor_thread is not threading.current_thread():
+        if (
+            self._monitor_thread is not None
+            and self._monitor_thread is not threading.current_thread()
+        ):
             self._monitor_thread.join(timeout=4)
         self._monitor_thread = None
         log.info("RTSP streamer stopped")
@@ -466,7 +472,9 @@ class RTSPStreamer:
             "mediamtx_running": mediamtx_ok,
             "publisher_running": self._publisher_alive(),
             "publisher_mode": (
-                "picamera2" if self._uses_picamera2() else "frame_pipe" if self._uses_frame_pipe() else "v4l2"
+                "picamera2"
+                if self._uses_picamera2()
+                else "frame_pipe" if self._uses_frame_pipe() else "v4l2"
             ),
             "device": self._device,
             "resolution": self._resolution,

@@ -178,9 +178,7 @@ def camera_settings():
                 framerate=_camera().current_framerate,
             )
             mjpeg_config = _cfg().get("streaming", "mjpeg", default={}) or {}
-            _mjpeg().update_fps(
-                _effective_mjpeg_fps(_camera().current_framerate, mjpeg_config)
-            )
+            _mjpeg().update_fps(_effective_mjpeg_fps(_camera().current_framerate, mjpeg_config))
     except Exception as exc:
         log.exception("Failed to apply camera settings")
         return jsonify({"error": str(exc)}), 400
@@ -326,9 +324,7 @@ def set_config():
     if "quality" in mjpeg_data:
         _camera().set_jpeg_quality(int(mjpeg_data["quality"]))
     if "fps" in mjpeg_data:
-        _mjpeg().update_fps(
-            _effective_mjpeg_fps(_camera().current_framerate, mjpeg_data)
-        )
+        _mjpeg().update_fps(_effective_mjpeg_fps(_camera().current_framerate, mjpeg_data))
 
     rtsp_data = streaming.get("rtsp", {})
     runtime_rtsp_keys = {
@@ -405,9 +401,7 @@ def update_start():
             ),
             409,
         )
-    message = (
-        f"Installation of v{target_version} started." if target_version else "Update started."
-    )
+    message = f"Installation of v{target_version} started." if target_version else "Update started."
     return jsonify({"ok": True, "message": message})
 
 

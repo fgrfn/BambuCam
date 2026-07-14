@@ -277,11 +277,16 @@ def main() -> None:
         bitrate_kbps=rtsp_config.get("bitrate_kbps", 2000),
         stream_name=rtsp_config.get("stream_name", "cam"),
         mediamtx_path=Path(cfg.system.get("mediamtx_path", "/usr/local/bin/mediamtx")),
+        ffmpeg_path=cfg.system.get("ffmpeg_path", "ffmpeg"),
+        rtsp_port=rtsp_config.get("port", 8554),
+        hls_port=rtsp_config.get("hls_port", 8888),
+        webrtc_port=rtsp_config.get("webrtc_port", 8889),
         enable_hls=rtsp_config.get("enable_hls", True),
         enable_webrtc=rtsp_config.get("enable_webrtc", False),
         rtsp_auth_user=rtsp_auth.get("username") if rtsp_auth.get("enabled") else None,
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
         camera_backend=picamera2_backend,
+        capture_fn=(camera.capture_jpeg if camera_ok and picamera2_backend is None else None),
     )
     if will_use_rtsp:
         try:
@@ -316,13 +321,30 @@ def main() -> None:
         updater=updater,
     )
 
-    log.info("WebUI listening on http://%s:%d", host, port)
-    log.info("MJPEG stream: http://<pi-ip>:%d/stream", port)
+    https_config = web_config.get("https", {})
+    ssl_context = None
+    scheme = "http"
+    if https_config.get("enabled", False):
+        cert_path = Path(str(https_config.get("cert", "")))
+        key_path = Path(str(https_config.get("key", "")))
+        if not cert_path.is_file() or not key_path.is_file():
+            raise RuntimeError("HTTPS is enabled but certificate or key file is missing")
+        ssl_context = (str(cert_path), str(key_path))
+        scheme = "https"
+
+    log.info("WebUI listening on %s://%s:%d", scheme, host, port)
+    log.info("MJPEG stream: %s://<pi-ip>:%d/stream", scheme, port)
     if rtsp.is_running:
         log.info("RTSP stream: %s", rtsp.stream_urls("<pi-ip>")["rtsp"])
 
     try:
-        app.run(host=host, port=port, threaded=True, use_reloader=False)
+        app.run(
+            host=host,
+            port=port,
+            threaded=True,
+            use_reloader=False,
+            ssl_context=ssl_context,
+        )
     except KeyboardInterrupt:
         log.info("Shutting down…")
     finally:

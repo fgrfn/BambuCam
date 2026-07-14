@@ -80,7 +80,9 @@ DEFAULTS: dict = {
             "enabled": False,
             "username": "admin",
             "password": "",
+            "api_token": "",
         },
+        "trust_proxy": False,
         "https": {
             "enabled": False,
             "cert": "",
