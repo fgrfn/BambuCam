@@ -20,6 +20,30 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _resolve_session_secret(config: "Config") -> str:
+    """Return a WebUI session secret without making startup depend on config writes."""
+    secret = config.get("web", "secret_key")
+    if secret:
+        return str(secret)
+
+    secret = secrets.token_hex(32)
+    config.set("web", "secret_key", value=secret)
+    try:
+        config.save()
+    except OSError as exc:
+        # The service must still start when an older/manual installation left
+        # /etc/bambucam/bambucam.yaml owned by root. Sessions will simply be
+        # invalidated on the next restart until permissions are repaired.
+        log.warning(
+            "Could not persist the generated WebUI session secret; "
+            "continuing with an in-memory secret: %s",
+            exc,
+        )
+    else:
+        log.info("Generated and persisted a WebUI session secret")
+    return secret
+
+
 def create_app(
     config: "Config",
     camera_manager: "CameraManager",
@@ -36,12 +60,7 @@ def create_app(
         static_url_path="/static",
     )
 
-    secret = config.get("web", "secret_key")
-    if not secret:
-        secret = secrets.token_hex(32)
-        config.set("web", "secret_key", value=secret)
-        config.save()
-        log.info("Generated and persisted a WebUI session secret")
+    secret = _resolve_session_secret(config)
 
     app.config.update(
         SECRET_KEY=secret,
