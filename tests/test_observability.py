@@ -129,10 +129,13 @@ def test_redact_recursively_hides_credentials():
 
 def test_diagnostics_payload_redacts_config_and_counts_snapshots():
     camera, mjpeg, rtsp = _services()
-    with patch(
-        "bambucam.observability.system_summary",
-        return_value={"hostname": "pi", "cpu_usage_pct": 1.0},
-    ), patch("bambucam.observability.recent_logs", return_value=["safe log"]):
+    with (
+        patch(
+            "bambucam.observability.system_summary",
+            return_value={"hostname": "pi", "cpu_usage_pct": 1.0},
+        ),
+        patch("bambucam.observability.recent_logs", return_value=["safe log"]),
+    ):
         payload = diagnostics_payload(
             FakeConfig(),
             camera,

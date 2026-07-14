@@ -120,12 +120,8 @@ def test_retention_rejects_unknown_or_negative_values():
     app, config, _snapshot = _app()
     client = app.test_client()
 
-    assert client.post(
-        "/api/v1/snapshot/retention", json={"unknown": 1}
-    ).status_code == 400
-    assert client.post(
-        "/api/v1/snapshot/retention", json={"max_count": -1}
-    ).status_code == 400
+    assert client.post("/api/v1/snapshot/retention", json={"unknown": 1}).status_code == 400
+    assert client.post("/api/v1/snapshot/retention", json={"max_count": -1}).status_code == 400
     assert config.saved == 0
 
 

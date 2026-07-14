@@ -4,7 +4,6 @@ import io
 import json
 import logging
 import math
-import time
 import zipfile
 from collections import deque
 from datetime import datetime, timezone
@@ -99,8 +98,7 @@ def health_payload(camera, mjpeg, rtsp) -> tuple[dict, int]:
     rtsp_status = rtsp.status()
     rtsp_requested = bool(rtsp_status.get("running"))
     rtsp_healthy = not rtsp_requested or (
-        bool(rtsp_status.get("mediamtx_running"))
-        and bool(rtsp_status.get("publisher_running"))
+        bool(rtsp_status.get("mediamtx_running")) and bool(rtsp_status.get("publisher_running"))
     )
 
     ready = camera_running and (mjpeg_running or rtsp_healthy)
@@ -140,9 +138,7 @@ def diagnostics_payload(config, camera, mjpeg, rtsp, snapshot, updater) -> dict:
         },
         "updater": updater.status.as_dict(),
         "config": redact(config.as_dict()),
-        "logs": recent_logs(
-            limit=int(config.get("system", "diagnostics_log_lines", default=300))
-        ),
+        "logs": recent_logs(limit=int(config.get("system", "diagnostics_log_lines", default=300))),
     }
 
 

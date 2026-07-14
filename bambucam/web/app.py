@@ -66,9 +66,7 @@ def create_app(
     from bambucam.web.stream import stream_bp
     from bambucam.web.ui import ui_bp
 
-    install_log_buffer(
-        capacity=int(config.get("system", "diagnostics_log_lines", default=300))
-    )
+    install_log_buffer(capacity=int(config.get("system", "diagnostics_log_lines", default=300)))
     configure_web_security(app, config)
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     app.register_blueprint(operations_bp, url_prefix="/api/v1")

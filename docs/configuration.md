@@ -65,6 +65,9 @@ streaming:
   snapshot:
     enabled: true
     save_dir: /var/lib/bambucam/snapshots
+    max_count: 500
+    max_age_days: 30
+    max_bytes: 1073741824
 
 web:
   host: 0.0.0.0
@@ -85,6 +88,7 @@ system:
   log_level: INFO
   mediamtx_path: /usr/local/bin/mediamtx
   ffmpeg_path: ffmpeg
+  diagnostics_log_lines: 300
 ```
 
 ## Automatic camera modes

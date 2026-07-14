@@ -296,11 +296,13 @@ def main() -> None:
         except Exception as exc:
             log.warning("RTSP streaming disabled: %s", exc)
 
+    snapshot_config = streaming_config.get("snapshot", {})
     snapshot = SnapshotService(
         capture_fn=(lambda: camera.capture_jpeg(quality=95)) if camera_ok else lambda: None,
-        snapshot_dir=Path(
-            streaming_config.get("snapshot", {}).get("save_dir", "/var/lib/bambucam/snapshots")
-        ),
+        snapshot_dir=Path(snapshot_config.get("save_dir", "/var/lib/bambucam/snapshots")),
+        max_count=snapshot_config.get("max_count", 500),
+        max_age_days=snapshot_config.get("max_age_days", 30),
+        max_bytes=snapshot_config.get("max_bytes", 1024 * 1024 * 1024),
     )
 
     from bambucam import __version__

@@ -88,9 +88,7 @@ def test_retention_prunes_by_age_and_bytes(tmp_path: Path):
     deleted = service.prune(now=now)
 
     assert deleted == ["snapshot_expired.jpg", "snapshot_large.jpg"]
-    assert [item["filename"] for item in service.list_snapshots()] == [
-        "snapshot_latest.jpg"
-    ]
+    assert [item["filename"] for item in service.list_snapshots()] == ["snapshot_latest.jpg"]
 
 
 def test_retention_can_be_updated_at_runtime(tmp_path: Path):
