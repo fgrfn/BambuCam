@@ -1,0 +1,2 @@
+scripts/install.sh:132:75: note: Note that A && B || C is not if-then-else. C may run when A is true. [SC2015]
+scripts/install.sh:230:41: note: Note that A && B || C is not if-then-else. C may run when A is true. [SC2015]
