@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  shellcheck-diagnostic:
-    name: One-time ShellCheck diagnostic
+  shellcheck-fix:
+    name: One-time ShellCheck fix
     if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -19,11 +19,34 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Capture ShellCheck output
+      - name: Apply exact ShellCheck fixes
         run: |
-          shellcheck --format=gcc scripts/install.sh > shellcheck-report.txt 2>&1 || true
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/install.sh")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd || true)"',
+              'SCRIPT_DIR=""\n'
+              'if SCRIPT_PARENT=$(dirname "${BASH_SOURCE[0]:-install.sh}"); then\n'
+              '  SCRIPT_DIR=$(cd "$SCRIPT_PARENT" 2>/dev/null && pwd || true)\n'
+              'fi',
+              1,
+          )
+          text = text.replace(
+              '  getent group "$group" >/dev/null 2>&1 && usermod -aG "$group" "$SERVICE_USER" || true',
+              '  if getent group "$group" >/dev/null 2>&1; then\n'
+              '    usermod -aG "$group" "$SERVICE_USER" || true\n'
+              '  fi',
+              1,
+          )
+          path.write_text(text, encoding="utf-8")
+          Path("shellcheck-report.txt").unlink(missing_ok=True)
+          PY
+          shellcheck scripts/install.sh
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add shellcheck-report.txt
-          git commit -m "chore: capture ShellCheck diagnostic"
+          git add scripts/install.sh shellcheck-report.txt
+          git commit -m "fix: satisfy ShellCheck installer diagnostics"
           git push origin HEAD:${{ github.head_ref }}
