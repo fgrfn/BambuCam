@@ -415,6 +415,7 @@ async function applyStreamSettings() {
   btnLoading('btn-stream-apply', true, 'Wird angewendet…');
   try {
     const result = await api('POST', '/camera/settings', { resolution, framerate });
+    await api('POST', '/config', { streaming: { mjpeg: { fps: framerate } } });
     await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
 
     const img = document.getElementById('stream-img');

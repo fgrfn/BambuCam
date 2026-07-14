@@ -7,7 +7,7 @@ camera:
   module: auto               # auto | v1 | v1_noir | v2 | v2_noir | v3 | v3_noir | v3_wide | v3_wide_noir | hq | ai | gs
                              # Use v3_noir / v3_wide_noir if auto-detection shows the wrong model
   resolution: auto           # auto or WidthxHeight, e.g. 1920x1080
-  framerate: auto            # auto or 1-120, capped to camera and hardware limits
+  framerate: auto            # auto or 1-120, capped only to camera limits
 
   # Image adjustments (-1.0 … 1.0 for brightness, 0 … 32 for others)
   brightness: 0.0
@@ -32,7 +32,7 @@ streaming:
     enabled: true
     port: 8080               # Same port as WebUI (/stream path)
     quality: 85              # JPEG quality (1-100)
-    fps: 15                  # MJPEG target FPS, capped by camera FPS
+    fps: 15                  # Default target; stream selection can set this up to camera FPS
 
   rtsp:
     enabled: true

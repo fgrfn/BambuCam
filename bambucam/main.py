@@ -184,13 +184,14 @@ def main() -> None:
     tier = pi_capability_tier()
     tier_label = {
         1: "low (Pi Zero/1/2) — MJPEG-only",
-        2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG≤30fps",
+        2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG",
         3: "high (Pi 4/5+) — full stack",
     }.get(tier, str(tier))
     log.info("Hardware capability tier %d: %s", tier, tier_label)
 
     rtsp_default_enabled = tier >= 2
-    mjpeg_fps_cap = {1: 15, 2: 30}.get(tier)
+    # Tiers select expensive streaming defaults only; user-selected FPS is never capped.
+    hardware_fps_cap = None
 
     camera = CameraManager()
     camera_ok = True
@@ -206,7 +207,7 @@ def main() -> None:
         selected_resolution, selected_fps = _resolve_camera_mode(
             detected.model,
             camera_config,
-            mjpeg_fps_cap,
+            hardware_fps_cap,
             detected.detected_resolutions,
         )
         log.info("Selected camera mode: %s @ %d FPS", selected_resolution, selected_fps)
@@ -251,7 +252,7 @@ def main() -> None:
             will_use_rtsp = False
 
     mjpeg_config = streaming_config.get("mjpeg", {})
-    mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, mjpeg_fps_cap)
+    mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, hardware_fps_cap)
     if camera_ok:
         camera.set_jpeg_quality(int(mjpeg_config.get("quality", 85)))
 
