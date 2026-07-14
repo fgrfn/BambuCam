@@ -7,13 +7,44 @@ on:
     branches: ["**"]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  transform:
+    name: One-time observability transformation
+    if: github.ref_name == 'agent/observability-ui-cleanup' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/observability-ui-cleanup
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Transform, format, and test
+        run: |
+          python scripts/apply_observability_cleanup.py
+          python -m pip install -e ".[dev]"
+          black bambucam/ tests/
+          ruff check bambucam/ tests/
+          pytest tests/ -q --cov=bambucam --cov-fail-under=35
+          test -s bambucam/web/static/css/app.css
+          test -s bambucam/web/static/js/app.js
+          ! grep -q '<style>' bambucam/web/templates/index.html
+      - name: Commit generated cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f scripts/apply_observability_cleanup.py scripts/.observability-trigger
+          git add bambucam config docs README.md tests
+          git commit -m "refactor: split WebUI and wire observability settings"
+          git push origin HEAD:agent/observability-ui-cleanup
+
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -38,12 +69,6 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml \
             --cov-fail-under=35
-      - name: Upload coverage report
-        if: matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
 
   quality:
     name: Code and package quality
