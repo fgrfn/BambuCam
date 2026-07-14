@@ -66,9 +66,7 @@ def create_app(
     )
     timelapse_service = TimelapseService(
         capture_fn=lambda: camera_manager.capture_jpeg(quality=95),
-        root_dir=Path(
-            timelapse_config.get("save_dir", "/var/lib/bambucam/timelapse")
-        ),
+        root_dir=Path(timelapse_config.get("save_dir", "/var/lib/bambucam/timelapse")),
         ffmpeg_path=config.get("system", "ffmpeg_path", default="ffmpeg"),
         interval_seconds=timelapse_config.get("interval_seconds", 10),
         output_fps=timelapse_config.get("output_fps", 30),
