@@ -361,7 +361,10 @@ class Updater:
             raise RuntimeError(f"Download is too large ({declared_size} bytes; limit {max_bytes})")
         if expected_size and declared_size and declared_size != expected_size:
             raise RuntimeError(
-                f"Release asset size changed: expected {expected_size}, server reports {declared_size}"
+                (
+                    f"Release asset size changed: expected {expected_size}, "
+                    f"server reports {declared_size}"
+                )
             )
 
         digest = hashlib.sha256()
