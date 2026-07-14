@@ -7,53 +7,13 @@ on:
     branches: ["**"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  autofix:
-    name: One-time branch formatting
-    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Apply final targeted fixes
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('bambucam/updater.py')
-          text = path.read_text()
-          text = text.replace(
-              'VENV_PIP = Path("/opt/bambucam/venv/bin/pip")\n',
-              'VENV_PIP = Path(sys.executable).parent / "pip"\n',
-          )
-          path.write_text(text)
-          PY
-          python -m pip install black ruff
-          ruff check --fix --exit-zero bambucam/ tests/
-          black bambucam/ tests/
-      - name: Commit fixes
-        run: |
-          if git diff --quiet; then
-            echo 'No formatting changes required.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add bambucam tests
-          git commit -m 'style: apply updater lint and formatting fixes'
-          git push origin HEAD:${{ github.head_ref }}
-
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
