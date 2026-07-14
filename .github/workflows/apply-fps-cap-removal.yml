@@ -25,65 +25,42 @@ jobs:
 
           main = Path("bambucam/main.py")
           text = main.read_text()
-          old = '''    tier_label = {
-              1: "low (Pi Zero/1/2) — MJPEG-only",
-              2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG≤30fps",
-              3: "high (Pi 4/5+) — full stack",
-          }.get(tier, str(tier))
-          log.info("Hardware capability tier %d: %s", tier, tier_label)
-
-          rtsp_default_enabled = tier >= 2
-          mjpeg_fps_cap = {1: 15, 2: 30}.get(tier)
-          '''
-          new = '''    tier_label = {
-              1: "low (Pi Zero/1/2) — MJPEG-only",
-              2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG",
-              3: "high (Pi 4/5+) — full stack",
-          }.get(tier, str(tier))
-          log.info("Hardware capability tier %d: %s", tier, tier_label)
-
-          # Hardware tiers control expensive streaming defaults only. Never silently
-          # reduce a user-selected camera or MJPEG frame rate.
-          rtsp_default_enabled = tier >= 2
-          hardware_fps_cap = None
-          '''
-          assert old in text, "main tier block changed unexpectedly"
-          text = text.replace(old, new)
-          text = text.replace(
-              '''            mjpeg_fps_cap,
-              detected.detected_resolutions,
-          ''',
-              '''            hardware_fps_cap,
-              detected.detected_resolutions,
-          ''',
-              1,
-          )
-          text = text.replace(
-              "mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, mjpeg_fps_cap)",
-              "mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, hardware_fps_cap)",
-          )
+          replacements = {
+              '2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG≤30fps",':
+                  '2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG",',
+              '    mjpeg_fps_cap = {1: 15, 2: 30}.get(tier)':
+                  '    # Tiers select expensive streaming defaults only; user-selected FPS is never capped.\n'
+                  '    hardware_fps_cap = None',
+              '            mjpeg_fps_cap,\n            detected.detected_resolutions,':
+                  '            hardware_fps_cap,\n            detected.detected_resolutions,',
+              'mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, mjpeg_fps_cap)':
+                  'mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, hardware_fps_cap)',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"Missing main.py text: {old!r}")
+              text = text.replace(old, new, 1)
           main.write_text(text)
 
           app_js = Path("bambucam/web/static/js/app.js")
           text = app_js.read_text()
-          old = '''    const result = await api('POST', '/camera/settings', { resolution, framerate });
-              await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
-          '''
-          new = '''    const result = await api('POST', '/camera/settings', { resolution, framerate });
-              await api('POST', '/config', { streaming: { mjpeg: { fps: framerate } } });
-              await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
-          '''
-          assert old in text, "stream settings block changed unexpectedly"
-          app_js.write_text(text.replace(old, new, 1))
+          anchor = "    const result = await api('POST', '/camera/settings', { resolution, framerate });\n"
+          sync = "    await api('POST', '/config', { streaming: { mjpeg: { fps: framerate } } });\n"
+          if anchor not in text:
+              raise SystemExit("Missing stream settings anchor in app.js")
+          if sync not in text:
+              text = text.replace(anchor, anchor + sync, 1)
+          app_js.write_text(text)
 
           system_info = Path("bambucam/system_info.py")
           text = system_info.read_text()
           text = text.replace(
-              "      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps\n"
+              "      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps\n",
+              "      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG\n",
+          ).replace(
               "      3 — Pi 4, Pi 5, non-Pi          → full stack, no caps\n",
-              "      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG\n"
-              "      3 — Pi 4, Pi 5, non-Pi          → full stack\n\n"
-              "    Tiers select streaming defaults only and never cap a configured frame rate.\n",
+              "      3 — Pi 4, Pi 5, non-Pi          → full stack\n"
+              "\n    Tiers select streaming defaults only and never cap a configured frame rate.\n",
           )
           system_info.write_text(text)
 
@@ -96,20 +73,19 @@ jobs:
 
           pyproject = Path("pyproject.toml")
           text = pyproject.read_text()
-          assert 'version = "1.0.6"' in text
-          pyproject.write_text(text.replace('version = "1.0.6"', 'version = "1.0.7"', 1))
+          if 'version = "1.0.6"' not in text:
+              raise SystemExit("Unexpected project version")
+          pyproject.write_text(text.replace('version = "1.0.6"', 'version = "1.0.16"', 1))
 
           tests = Path("tests/test_main.py")
           text = tests.read_text()
-          marker = '''    def test_applies_hardware_tier_cap(self):
-                  assert _effective_mjpeg_fps(60, {"fps": 45}, tier_fps_cap=30) == 30
-          '''
-          addition = marker + '''
-              def test_without_hardware_cap_preserves_selected_fps(self):
-                  assert _effective_mjpeg_fps(30, {"fps": 30}, tier_fps_cap=None) == 30
-          '''
-          assert marker in text, "test insertion point changed unexpectedly"
-          tests.write_text(text.replace(marker, addition, 1))
+          anchor = "    def test_applies_hardware_tier_cap(self):\n        assert _effective_mjpeg_fps(60, {\"fps\": 45}, tier_fps_cap=30) == 30\n"
+          addition = "\n    def test_without_hardware_cap_preserves_selected_fps(self):\n        assert _effective_mjpeg_fps(30, {\"fps\": 30}, tier_fps_cap=None) == 30\n"
+          if anchor not in text:
+              raise SystemExit("Missing test insertion anchor")
+          if "test_without_hardware_cap_preserves_selected_fps" not in text:
+              text = text.replace(anchor, anchor + addition, 1)
+          tests.write_text(text)
           PY
 
           rm .github/workflows/apply-fps-cap-removal.yml
