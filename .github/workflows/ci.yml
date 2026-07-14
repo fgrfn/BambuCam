@@ -40,8 +40,7 @@ jobs:
           git rm -f \
             scripts/apply_observability_cleanup.py \
             scripts/.observability-trigger \
-            transform-report.txt \
-            .github/workflows/temporary-observability-cleanup.yml
+            transform-report.txt
           git add bambucam config docs README.md tests
           git commit -m "refactor: split WebUI and wire observability settings"
           git push origin HEAD:agent/observability-ui-cleanup
