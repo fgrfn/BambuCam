@@ -16,7 +16,7 @@ concurrency:
 jobs:
   transform:
     name: One-time observability transformation
-    if: github.ref_name == 'agent/observability-ui-cleanup' && github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.ref_name == 'agent/observability-ui-cleanup' || github.head_ref == 'agent/observability-ui-cleanup')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
