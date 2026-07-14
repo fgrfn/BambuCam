@@ -1,0 +1,43 @@
+name: Temporary observability cleanup
+
+on:
+  push:
+    branches:
+      - agent/observability-ui-cleanup
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/observability-ui-cleanup
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Transform, format, and test
+        run: |
+          python scripts/apply_observability_cleanup.py
+          python -m pip install -e ".[dev]"
+          black bambucam/ tests/
+          ruff check bambucam/ tests/
+          pytest tests/ -q --cov=bambucam --cov-fail-under=35
+          test -s bambucam/web/static/css/app.css
+          test -s bambucam/web/static/js/app.js
+          ! grep -q '<style>' bambucam/web/templates/index.html
+      - name: Commit generated cleanup
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bambucam config docs README.md tests
+          git commit -m "refactor: split WebUI and wire observability settings"
+          git push origin HEAD:agent/observability-ui-cleanup
