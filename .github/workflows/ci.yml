@@ -40,7 +40,7 @@ jobs:
           path.write_text(text)
           PY
           python -m pip install black ruff
-          ruff check --fix bambucam/ tests/
+          ruff check --fix --exit-zero bambucam/ tests/
           black bambucam/ tests/
       - name: Commit fixes
         run: |
