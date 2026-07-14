@@ -14,10 +14,7 @@ log = logging.getLogger(__name__)
 
 
 class CameraManager:
-    """
-    Manages the active camera backend lifecycle.
-    Instantiated once at startup; shared across the streaming and web layers.
-    """
+    """Manage camera selection, backend lifecycle, settings, and recovery."""
 
     def __init__(self):
         self._backend: Optional[CameraBackend] = None
@@ -28,25 +25,33 @@ class CameraManager:
         self._watchdog_thread: Optional[threading.Thread] = None
         self._watchdog_running = False
 
-    # ---------------------------------------------------------------------------
-    # Detection & initialisation
-    # ---------------------------------------------------------------------------
-
     def detect_and_select(
-        self, preferred_index: int = 0, module_override: str = "auto"
+        self,
+        preferred_index: int = 0,
+        module_override: str = "auto",
+        preferred_backend: str = "auto",
     ) -> DetectedCamera:
+        """Detect cameras and select one after applying an optional backend filter."""
         cameras = detect_cameras()
         if not cameras:
             raise RuntimeError(
                 "No cameras found. Check connections and run "
                 "'rpicam-hello --list-cameras' or 'v4l2-ctl --list-devices'."
             )
-        if preferred_index >= len(cameras):
+
+        backend = (preferred_backend or "auto").lower()
+        if backend not in {"auto", "picamera2", "v4l2"}:
+            raise ValueError(f"Unknown camera backend: {preferred_backend!r}")
+        if backend != "auto":
+            cameras = [camera for camera in cameras if camera.backend == backend]
+            if not cameras:
+                raise RuntimeError(f"No cameras found for requested backend {backend!r}")
+
+        if preferred_index < 0 or preferred_index >= len(cameras):
             log.warning("Preferred camera index %d not found, using 0", preferred_index)
             preferred_index = 0
         detected = cameras[preferred_index]
 
-        # Allow config to override the auto-detected model (e.g. v3_noir vs v3)
         if module_override and module_override.lower() != "auto":
             from bambucam.camera.models import get_model_by_alias
 
@@ -67,8 +72,8 @@ class CameraManager:
                 )
 
         self._detected = detected
-        log.info("Selected camera: %s", self._detected)
-        return self._detected
+        log.info("Selected camera: %s", detected)
+        return detected
 
     def setup(
         self,
@@ -78,15 +83,17 @@ class CameraManager:
         settings: Optional[dict] = None,
         enable_lores: bool = True,
     ) -> None:
-        """Create and configure the backend for the given camera."""
-        if detected is None:
-            detected = self._detected
+        """Create and configure the backend for the selected camera."""
+        detected = detected or self._detected
         if detected is None:
             raise RuntimeError("No camera selected — call detect_and_select() first")
 
+        selected_resolution = resolution or detected.model.max_resolution
+        self._validate_mode(selected_resolution, framerate, detected)
+
         self._detected = detected
-        self._resolution = resolution or detected.model.supported_resolutions[1]
-        self._framerate = framerate
+        self._resolution = selected_resolution
+        self._framerate = int(framerate)
         self._settings = settings or {}
 
         backend = self._create_backend(detected, enable_lores=enable_lores)
@@ -103,16 +110,32 @@ class CameraManager:
                 camera_index=detected.index,
                 enable_lores=enable_lores,
             )
-        elif detected.backend == "v4l2":
+        if detected.backend == "v4l2":
             from bambucam.camera.backends.v4l2_backend import V4L2Backend
 
             return V4L2Backend(model=detected.model, device=detected.device)
-        else:
-            raise ValueError(f"Unknown backend: {detected.backend!r}")
+        raise ValueError(f"Unknown backend: {detected.backend!r}")
 
-    # ---------------------------------------------------------------------------
-    # Lifecycle
-    # ---------------------------------------------------------------------------
+    @staticmethod
+    def _validate_mode(
+        resolution: Resolution,
+        framerate: int,
+        detected: DetectedCamera,
+    ) -> None:
+        fps = int(framerate)
+        if fps < 1:
+            raise ValueError("Framerate must be at least 1 FPS")
+
+        available = detected.detected_resolutions or detected.model.supported_resolutions
+        if available and resolution not in available:
+            allowed = ", ".join(str(item) for item in available)
+            raise ValueError(f"Resolution {resolution} is not supported. Available: {allowed}")
+
+        max_fps = detected.model.resolution_max_framerates.get(
+            resolution, detected.model.max_framerate
+        )
+        if fps > max_fps:
+            raise ValueError(f"{resolution} supports at most {max_fps} FPS, requested {fps}")
 
     def start(self) -> None:
         if self._backend is None:
@@ -126,30 +149,32 @@ class CameraManager:
             self._backend.stop()
 
     def restart(self) -> None:
-        """Restart with current settings (e.g., after a resolution change)."""
+        """Restart the active backend with the current mode and settings."""
+        if self._backend is None or self._resolution is None:
+            raise RuntimeError("Camera is not configured")
         self.stop()
         self._backend.configure(self._resolution, self._framerate, **self._extra_settings())
         try:
             self._backend.start()
         except Exception:
-            # Watchdog will recover — re-raise so callers know restart failed
             self._start_watchdog()
             raise
         self._start_watchdog()
 
-    # ---------------------------------------------------------------------------
-    # Camera watchdog — auto-restarts the camera if it dies unexpectedly
-    # ---------------------------------------------------------------------------
-
     def _extra_settings(self) -> dict:
-        """Return self._settings without keys already passed as positional args to configure()."""
-        return {k: v for k, v in self._settings.items() if k not in ("resolution", "framerate")}
+        return {
+            key: value
+            for key, value in self._settings.items()
+            if key not in ("resolution", "framerate")
+        }
 
     def _start_watchdog(self) -> None:
         self._stop_watchdog()
         self._watchdog_running = True
         self._watchdog_thread = threading.Thread(
-            target=self._watchdog_loop, daemon=True, name="camera-watchdog"
+            target=self._watchdog_loop,
+            daemon=True,
+            name="camera-watchdog",
         )
         self._watchdog_thread.start()
 
@@ -168,26 +193,28 @@ class CameraManager:
             if self._backend is None or self._backend.is_running:
                 consecutive_failures = 0
                 continue
+
             consecutive_failures += 1
             log.warning(
                 "Camera watchdog: camera not running (attempt %d), restarting…",
                 consecutive_failures,
             )
-            backoff = min(5 * consecutive_failures, 60)
-            time.sleep(backoff)
+            time.sleep(min(5 * consecutive_failures, 60))
             if not self._watchdog_running:
                 break
             try:
-                self._backend.configure(self._resolution, self._framerate, **self._extra_settings())
+                if self._resolution is None:
+                    raise RuntimeError("Camera mode is not configured")
+                self._backend.configure(
+                    self._resolution,
+                    self._framerate,
+                    **self._extra_settings(),
+                )
                 self._backend.start()
                 consecutive_failures = 0
                 log.info("Camera watchdog: restart successful")
-            except Exception as e:
-                log.error("Camera watchdog: restart failed: %s", e)
-
-    # ---------------------------------------------------------------------------
-    # Frame access
-    # ---------------------------------------------------------------------------
+            except Exception as exc:
+                log.error("Camera watchdog: restart failed: %s", exc)
 
     def capture_jpeg(self, quality: Optional[int] = None) -> bytes:
         if self._backend is None or not self._backend.is_running:
@@ -199,31 +226,22 @@ class CameraManager:
             raise RuntimeError("Camera is not running")
         return self._backend.frame_iterator()
 
-    # ---------------------------------------------------------------------------
-    # Settings
-    # ---------------------------------------------------------------------------
-
     def apply_settings(self, new_settings: dict) -> None:
-        """
-        Apply a dict of settings to the running backend.
-        Keys: resolution, framerate, brightness, contrast, saturation,
-              sharpness, exposure_mode, awb_mode, vflip, hflip,
-              autofocus, hdr
-        """
+        """Apply camera settings, restarting only when the mode or transform changes."""
         restart_needed = False
+        next_resolution = self._resolution
+        next_framerate = self._framerate
 
         if "resolution" in new_settings:
-            new_res = Resolution.from_string(new_settings["resolution"])
-            if new_res != self._resolution:
-                self._resolution = new_res
-                restart_needed = True
+            next_resolution = Resolution.from_string(str(new_settings["resolution"]))
+            restart_needed = next_resolution != self._resolution
         if "framerate" in new_settings:
-            new_fps = int(new_settings["framerate"])
-            if new_fps != self._framerate:
-                self._framerate = new_fps
-                restart_needed = True
-        # Flips require a full camera restart (applied via Transform at configure time),
-        # but only when the value actually changes — not just because the key is present.
+            next_framerate = int(new_settings["framerate"])
+            restart_needed = restart_needed or next_framerate != self._framerate
+
+        if self._detected is not None and next_resolution is not None:
+            self._validate_mode(next_resolution, next_framerate, self._detected)
+
         if "vflip" in new_settings and bool(new_settings["vflip"]) != bool(
             self._settings.get("vflip", False)
         ):
@@ -233,46 +251,37 @@ class CameraManager:
         ):
             restart_needed = True
 
-        # Merge settings before restart so configure() sees the updated values
+        self._resolution = next_resolution
+        self._framerate = next_framerate
         self._settings.update(new_settings)
 
         if restart_needed and self._backend:
             if self._backend.is_running:
                 self.restart()
-            # If not running, watchdog will restart with updated settings
             return
 
         if self._backend and self._backend.is_running:
-            b = self._backend
-            if "brightness" in new_settings:
-                b.set_brightness(float(new_settings["brightness"]))
-            if "contrast" in new_settings:
-                b.set_contrast(float(new_settings["contrast"]))
-            if "saturation" in new_settings:
-                b.set_saturation(float(new_settings["saturation"]))
-            if "sharpness" in new_settings:
-                b.set_sharpness(float(new_settings["sharpness"]))
-            if "exposure_mode" in new_settings:
-                b.set_exposure_mode(new_settings["exposure_mode"])
-            if "awb_mode" in new_settings:
-                b.set_awb_mode(new_settings["awb_mode"])
-            if "iso" in new_settings:
-                b.set_iso(int(new_settings["iso"]))
-            if "autofocus" in new_settings:
-                b.set_autofocus(bool(new_settings["autofocus"]))
-            if "hdr" in new_settings:
-                b.set_hdr(bool(new_settings["hdr"]))
-            if "noise_reduction" in new_settings:
-                b.set_noise_reduction(new_settings["noise_reduction"])
+            backend = self._backend
+            setters = {
+                "brightness": lambda value: backend.set_brightness(float(value)),
+                "contrast": lambda value: backend.set_contrast(float(value)),
+                "saturation": lambda value: backend.set_saturation(float(value)),
+                "sharpness": lambda value: backend.set_sharpness(float(value)),
+                "exposure_mode": backend.set_exposure_mode,
+                "awb_mode": backend.set_awb_mode,
+                "iso": lambda value: backend.set_iso(int(value)),
+                "autofocus": lambda value: backend.set_autofocus(bool(value)),
+                "hdr": lambda value: backend.set_hdr(bool(value)),
+                "noise_reduction": backend.set_noise_reduction,
+            }
+            for key, setter in setters.items():
+                if key in new_settings:
+                    setter(new_settings[key])
 
     def set_jpeg_quality(self, value: int) -> None:
         self._settings["jpeg_quality"] = value
         if self._backend is not None:
             self._backend.set_jpeg_quality(value)
-
-    # ---------------------------------------------------------------------------
-    # Introspection
-    # ---------------------------------------------------------------------------
 
     @property
     def backend(self) -> Optional[CameraBackend]:
@@ -296,9 +305,7 @@ class CameraManager:
 
     @property
     def v4l2_device(self) -> Optional[str]:
-        if self._backend is not None:
-            return self._backend.get_v4l2_device()
-        return None
+        return self._backend.get_v4l2_device() if self._backend is not None else None
 
     def status(self) -> dict:
         return {
@@ -309,6 +316,11 @@ class CameraManager:
             "device": self._detected.device if self._detected else None,
             "resolution": str(self._resolution) if self._resolution else None,
             "framerate": self._framerate,
+            "available_resolutions": (
+                [str(item) for item in self._detected.detected_resolutions]
+                if self._detected
+                else []
+            ),
             "has_autofocus": self.model.has_autofocus if self.model else False,
             "has_hdr": self.model.has_hdr if self.model else False,
             "is_noir": self.model.is_noir if self.model else False,

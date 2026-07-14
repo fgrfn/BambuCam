@@ -9,11 +9,12 @@ Config is loaded from (in order, later overrides earlier):
   5. --config CLI argument
 
 All settings are also writable at runtime via the WebUI/API and persisted
-back to the user config file.
+back to the selected writable config file.
 """
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
@@ -21,33 +22,33 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Default configuration
-# ---------------------------------------------------------------------------
 
 DEFAULTS: dict = {
     "camera": {
-        "index": 0,  # Which camera to use if multiple detected
-        "backend": "auto",  # "auto" | "picamera2" | "v4l2"
-        "resolution": "1920x1080",
-        "framerate": 15,
-        "brightness": 0.0,  # -1.0 … 1.0
-        "contrast": 1.0,  # 0.0 … 32.0
+        "index": 0,
+        "backend": "auto",
+        "module": "auto",
+        # "auto" lets startup select a model- and hardware-aware mode. Existing
+        # installations with explicit values remain unchanged.
+        "resolution": "auto",
+        "framerate": "auto",
+        "brightness": 0.0,
+        "contrast": 1.0,
         "saturation": 1.0,
         "sharpness": 1.0,
-        "exposure_mode": "auto",  # auto | sport | night
-        "awb_mode": "auto",  # auto | sunlight | cloudy | …
+        "exposure_mode": "auto",
+        "awb_mode": "auto",
         "vflip": False,
         "hflip": False,
-        "autofocus": True,  # if supported
-        "hdr": False,  # if supported
+        "autofocus": True,
+        "hdr": False,
     },
     "streaming": {
         "mjpeg": {
             "enabled": True,
             "port": 8080,
             "path": "/stream",
-            "quality": 85,  # JPEG quality 1-100
+            "quality": 85,
             "fps": 15,
         },
         "rtsp": {
@@ -74,7 +75,7 @@ DEFAULTS: dict = {
     "web": {
         "host": "0.0.0.0",
         "port": 8080,
-        "secret_key": "",  # Auto-generated on first start if empty
+        "secret_key": "",
         "auth": {
             "enabled": False,
             "username": "admin",
@@ -102,14 +103,14 @@ except RuntimeError:
 
 
 class Config:
-    """Runtime configuration container with persistence."""
+    """Runtime configuration container with atomic persistence."""
 
     def __init__(self):
         self._data: dict = {}
         self._user_config_path: Optional[Path] = None
 
     def load(self, config_path: Optional[Path] = None) -> None:
-        """Load config from all sources and merge."""
+        """Load config from all sources and merge them in precedence order."""
         result = _deep_merge({}, DEFAULTS)
 
         for path in [_SYSTEM_CONFIG, _USER_CONFIG]:
@@ -119,17 +120,15 @@ class Config:
 
         env_path = os.environ.get("BAMBUCAM_CONFIG")
         if env_path:
-            p = Path(env_path)
-            if p.exists():
-                result = _deep_merge(result, _load_yaml(p))
+            path = Path(env_path)
+            if path.exists():
+                result = _deep_merge(result, _load_yaml(path))
 
         if config_path and config_path.exists():
             result = _deep_merge(result, _load_yaml(config_path))
             self._user_config_path = config_path
         elif _SYSTEM_CONFIG.exists():
-            # When running as the service, persist changes back to the system
-            # config rather than ~/.config (home dir may not exist for the
-            # service user).
+            # The service owns this file and should persist WebUI changes there.
             self._user_config_path = _SYSTEM_CONFIG
         else:
             self._user_config_path = _USER_CONFIG
@@ -138,39 +137,72 @@ class Config:
         log.info("Configuration loaded (will persist to %s)", self._user_config_path)
 
     def save(self) -> None:
-        """Persist current settings to the user config file."""
+        """Persist current settings atomically to avoid truncated YAML files."""
         path = self._user_config_path or _USER_CONFIG
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(self._data, default_flow_style=False))
-        log.debug("Config saved to %s", path)
+        rendered = yaml.safe_dump(self._data, default_flow_style=False, sort_keys=False)
+
+        tmp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                handle.write(rendered)
+                handle.flush()
+                os.fsync(handle.fileno())
+                tmp_path = Path(handle.name)
+
+            if path.exists():
+                tmp_path.chmod(path.stat().st_mode & 0o777)
+            else:
+                tmp_path.chmod(0o640)
+            os.replace(tmp_path, path)
+            log.debug("Config saved atomically to %s", path)
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
 
     def get(self, *keys: str, default: Any = None) -> Any:
-        """Get a nested config value by dot-path keys."""
-        node = self._data
-        for k in keys:
-            if not isinstance(node, dict):
+        """Get a nested config value by path components."""
+        node: Any = self._data
+        for key in keys:
+            if not isinstance(node, dict) or key not in node:
                 return default
-            node = node.get(k, default)
-            if node is default:
-                return default
+            node = node[key]
         return node
 
     def set(self, *keys: str, value: Any) -> None:
-        """Set a nested config value and persist."""
+        """Set a nested config value in memory."""
+        if not keys:
+            raise ValueError("At least one config key is required")
         node = self._data
-        for k in keys[:-1]:
-            node = node.setdefault(k, {})
+        for key in keys[:-1]:
+            child = node.setdefault(key, {})
+            if not isinstance(child, dict):
+                raise ValueError(f"Config path component {key!r} is not a section")
+            node = child
         node[keys[-1]] = value
 
     def update_section(self, section: str, values: dict) -> None:
-        """Merge a dict into a top-level section."""
-        self._data.setdefault(section, {})
-        self._data[section] = _deep_merge(self._data[section], values)
+        """Merge a dictionary into one top-level section."""
+        if not isinstance(values, dict):
+            raise TypeError("Section update must be a dictionary")
+        current = self._data.setdefault(section, {})
+        if not isinstance(current, dict):
+            raise ValueError(f"Config section {section!r} is not a mapping")
+        self._data[section] = _deep_merge(current, values)
 
     def as_dict(self) -> dict:
         return _deep_copy(self._data)
 
-    # Convenience accessors
     @property
     def camera(self) -> dict:
         return self._data.get("camera", {})
@@ -188,37 +220,31 @@ class Config:
         return self._data.get("system", {})
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _load_yaml(path: Path) -> dict:
     try:
-        data = yaml.safe_load(path.read_text())
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except Exception as e:
-        log.warning("Failed to load config from %s: %s", path, e)
+    except Exception as exc:
+        log.warning("Failed to load config from %s: %s", path, exc)
         return {}
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
     result = dict(base)
-    for k, v in override.items():
-        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-            result[k] = _deep_merge(result[k], v)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
         else:
-            result[k] = v
+            result[key] = value
     return result
 
 
-def _deep_copy(d: dict) -> dict:
+def _deep_copy(data: dict) -> dict:
     import copy
 
-    return copy.deepcopy(d)
+    return copy.deepcopy(data)
 
 
-# Singleton
 _config: Optional[Config] = None
 
 

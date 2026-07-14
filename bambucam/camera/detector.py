@@ -14,6 +14,7 @@ from bambucam.camera.models import (
 )
 
 log = logging.getLogger(__name__)
+_CAMERA_HEADER_RE = re.compile(r"(?m)^(\d+)\s*:\s*(\w+)\s*\[")
 
 
 class DetectedCamera:
@@ -27,21 +28,21 @@ class DetectedCamera:
         index: int = 0,
         detected_resolutions: Optional[list[Resolution]] = None,
     ):
-        self.device = device  # e.g. "/dev/video0" or "libcamera:0"
+        self.device = device
         self.model = model
-        self.backend = backend  # "picamera2" or "v4l2"
+        self.backend = backend
         self.index = index
         self.detected_resolutions = detected_resolutions or model.supported_resolutions
 
     def __repr__(self) -> str:
-        return f"<DetectedCamera {self.model.name!r} backend={self.backend!r} device={self.device!r}>"  # noqa: E501
+        return (
+            f"<DetectedCamera {self.model.name!r} "
+            f"backend={self.backend!r} device={self.device!r}>"
+        )
 
 
 def detect_cameras() -> list[DetectedCamera]:
-    """
-    Scan the system for available cameras.
-    Tries libcamera/picamera2 first, then falls back to V4L2 USB devices.
-    """
+    """Scan the system for CSI/libcamera and V4L2 capture devices."""
     cameras: list[DetectedCamera] = []
 
     libcam = _detect_libcamera()
@@ -50,11 +51,10 @@ def detect_cameras() -> list[DetectedCamera]:
         log.info("libcamera detected %d camera(s)", len(libcam))
 
     usb = _detect_v4l2()
-    # Avoid double-counting: CSI cameras already appear as /dev/videoN via libcamera
-    known_devices = {c.device for c in cameras}
-    for cam in usb:
-        if cam.device not in known_devices:
-            cameras.append(cam)
+    # Avoid exact duplicate device records. CSI ISP/metadata nodes are filtered
+    # separately by card name in the V4L2 scanner.
+    known_devices = {camera.device for camera in cameras}
+    cameras.extend(camera for camera in usb if camera.device not in known_devices)
 
     if not cameras:
         log.warning("No cameras detected on this system")
@@ -62,53 +62,56 @@ def detect_cameras() -> list[DetectedCamera]:
     return cameras
 
 
-# ---------------------------------------------------------------------------
-# libcamera / picamera2
-# ---------------------------------------------------------------------------
-
-
 def _detect_libcamera() -> list[DetectedCamera]:
-    """Use rpicam-hello or libcamera-hello --list-cameras to enumerate CSI cameras."""
-    for cmd in ["rpicam-hello", "libcamera-hello"]:
+    """Use rpicam-hello or libcamera-hello to enumerate CSI cameras."""
+    for command in ("rpicam-hello", "libcamera-hello"):
         try:
             result = subprocess.run(
-                [cmd, "--list-cameras"],
+                [command, "--list-cameras"],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             output = result.stdout + result.stderr
-            if "Available cameras" in output or re.search(r"\d+\s*:\s*\w+\s*\[", output):
-                log.debug("libcamera detected via %s", cmd)
+            if "Available cameras" in output or _CAMERA_HEADER_RE.search(output):
+                log.debug("libcamera detected via %s", command)
                 return _parse_libcamera_output(output)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
-    log.debug("Neither rpicam-hello nor libcamera-hello available")
+    log.debug("Neither rpicam-hello nor libcamera-hello is available")
     return []
+
+
+def _libcamera_blocks(output: str) -> list[tuple[re.Match, str]]:
+    """Return each camera header together with only its own output block."""
+    matches = list(_CAMERA_HEADER_RE.finditer(output))
+    blocks = []
+    for position, match in enumerate(matches):
+        end = matches[position + 1].start() if position + 1 < len(matches) else len(output)
+        blocks.append((match, output[match.start() : end]))
+    return blocks
 
 
 def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
     cameras = []
-    # Each camera block starts with: "0 : imx219 [...]"
-    for match in re.finditer(r"(\d+)\s*:\s*(\w+)\s*\[", output):
-        idx = int(match.group(1))
+    for match, block in _libcamera_blocks(output):
+        index = int(match.group(1))
         sensor = match.group(2).lower()
         model = get_model_by_sensor(sensor)
         if model is None:
-            log.warning("Unknown libcamera sensor: %s — using generic model", sensor)
-            from bambucam.camera.models import CAMERA_V2
+            # Keep an unknown sensor usable without claiming it is a specific
+            # Raspberry Pi module. The generic model can later be overridden by
+            # camera.module in the configuration.
+            log.warning("Unknown libcamera sensor: %s — using generic capabilities", sensor)
+            model = CAMERA_USB_GENERIC
 
-            model = CAMERA_V2
-
-        # Try to extract resolutions from the libcamera output block
-        resolutions = _parse_libcamera_resolutions(output, sensor)
-
+        resolutions = _parse_libcamera_resolutions(block, sensor)
         cameras.append(
             DetectedCamera(
-                device=f"libcamera:{idx}",
+                device=f"libcamera:{index}",
                 model=model,
                 backend="picamera2",
-                index=idx,
+                index=index,
                 detected_resolutions=resolutions or model.supported_resolutions,
             )
         )
@@ -116,41 +119,38 @@ def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
 
 
 def _parse_libcamera_resolutions(output: str, sensor: str) -> list[Resolution]:
-    """Extract supported resolutions from libcamera output."""
+    """Extract resolutions from one sensor block, even if full output is supplied."""
+    block = output
+    blocks = _libcamera_blocks(output)
+    if blocks:
+        matching_block = next(
+            (candidate for match, candidate in blocks if match.group(2).lower() == sensor.lower()),
+            None,
+        )
+        if matching_block is not None:
+            block = matching_block
+
     resolutions = []
-    in_sensor_block = False
-    for line in output.splitlines():
-        if sensor in line.lower():
-            in_sensor_block = True
-        if in_sensor_block:
-            # Match patterns like "1920x1080" or "3280x2464"
-            for m in re.finditer(r"(\d{3,4})x(\d{3,4})", line):
-                r = Resolution(int(m.group(1)), int(m.group(2)))
-                if r not in resolutions:
-                    resolutions.append(r)
+    for match in re.finditer(r"(\d{3,5})x(\d{3,5})", block):
+        resolution = Resolution(int(match.group(1)), int(match.group(2)))
+        if resolution not in resolutions:
+            resolutions.append(resolution)
     return resolutions
-
-
-# ---------------------------------------------------------------------------
-# V4L2 / USB webcams
-# ---------------------------------------------------------------------------
 
 
 def _detect_v4l2() -> list[DetectedCamera]:
     """Scan /dev/video* for V4L2 capture devices."""
     cameras = []
-    video_devices = sorted(p for p in os.listdir("/dev") if re.match(r"video\d+$", p))
-    for dev_name in video_devices:
-        device = f"/dev/{dev_name}"
+    video_devices = sorted(path for path in os.listdir("/dev") if re.match(r"video\d+$", path))
+    for device_name in video_devices:
+        device = f"/dev/{device_name}"
         info = _v4l2_device_info(device)
         if info is None:
             continue
-        driver, card, capabilities = info
-        # 0x00000001 = V4L2_CAP_VIDEO_CAPTURE
+        _driver, card, capabilities = info
         if not (capabilities & 0x00000001):
             continue
-        # Skip metadata/ISP nodes (they aren't capture devices for us)
-        if any(kw in card.lower() for kw in ("isp", "unicam", "bcm2835")):
+        if any(keyword in card.lower() for keyword in ("isp", "unicam", "bcm2835", "metadata")):
             continue
 
         resolutions = _v4l2_resolutions(device)
@@ -160,7 +160,7 @@ def _detect_v4l2() -> list[DetectedCamera]:
                 device=device,
                 model=model,
                 backend="v4l2",
-                index=int(re.search(r"\d+$", dev_name).group()),
+                index=int(re.search(r"\d+$", device_name).group()),
                 detected_resolutions=resolutions or model.supported_resolutions,
             )
         )
@@ -169,7 +169,7 @@ def _detect_v4l2() -> list[DetectedCamera]:
 
 
 def _v4l2_device_info(device: str) -> Optional[tuple[str, str, int]]:
-    """Return (driver, card, capabilities) or None."""
+    """Return (driver, card, capabilities), or None when probing fails."""
     try:
         result = subprocess.run(
             ["v4l2-ctl", "--device", device, "--info"],
@@ -177,27 +177,29 @@ def _v4l2_device_info(device: str) -> Optional[tuple[str, str, int]]:
             text=True,
             timeout=3,
         )
+        if result.returncode != 0:
+            return None
         output = result.stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
     driver = _extract_v4l2_field(output, "Driver name")
     card = _extract_v4l2_field(output, "Card type")
-    cap_str = _extract_v4l2_field(output, "Device Caps")
+    capability_string = _extract_v4l2_field(output, "Device Caps")
     try:
-        capabilities = int(cap_str, 16) if cap_str else 0
+        capabilities = int(capability_string, 16) if capability_string else 0
     except ValueError:
         capabilities = 0
     return driver, card, capabilities
 
 
 def _extract_v4l2_field(output: str, field: str) -> str:
-    m = re.search(rf"{re.escape(field)}\s*:\s*(.+)", output)
-    return m.group(1).strip() if m else ""
+    match = re.search(rf"{re.escape(field)}\s*:\s*(.+)", output)
+    return match.group(1).strip() if match else ""
 
 
 def _v4l2_resolutions(device: str) -> list[Resolution]:
-    """Query supported resolutions via v4l2-ctl."""
+    """Query supported discrete resolutions via v4l2-ctl."""
     resolutions = []
     try:
         result = subprocess.run(
@@ -206,16 +208,16 @@ def _v4l2_resolutions(device: str) -> list[Resolution]:
             text=True,
             timeout=5,
         )
-        for m in re.finditer(r"Size: Discrete (\d+)x(\d+)", result.stdout):
-            r = Resolution(int(m.group(1)), int(m.group(2)))
-            if r not in resolutions:
-                resolutions.append(r)
+        for match in re.finditer(r"Size: Discrete (\d+)x(\d+)", result.stdout):
+            resolution = Resolution(int(match.group(1)), int(match.group(2)))
+            if resolution not in resolutions:
+                resolutions.append(resolution)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return resolutions
 
 
 def _match_usb_model(card: str, resolutions: list[Resolution]) -> CameraModel:
-    """Try to match a known USB camera model by card name, else use generic."""
-    # Extend here with known USB camera models in the future
+    """Match a known USB camera model by card name, else use the generic model."""
+    del card, resolutions
     return CAMERA_USB_GENERIC
