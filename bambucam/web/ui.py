@@ -1,6 +1,6 @@
 """UI, health, and Prometheus routes."""
 
-from flask import Blueprint, Response, current_app, jsonify, render_template
+from flask import Blueprint, Response, current_app, jsonify, render_template, url_for
 
 from bambucam.observability import health_payload, prometheus_payload
 
@@ -9,7 +9,13 @@ ui_bp = Blueprint("ui", __name__)
 
 @ui_bp.get("/")
 def index():
-    return render_template("index.html")
+    """Render the dashboard and load optional feature modules as static assets."""
+    html = render_template("index.html")
+    assets = (
+        f'<link rel="stylesheet" href="{url_for("static", filename="css/features.css")}" />\n'
+        f'<script src="{url_for("static", filename="js/features.js")}" defer></script>\n'
+    )
+    return html.replace("</head>", f"{assets}</head>", 1)
 
 
 @ui_bp.get("/health")

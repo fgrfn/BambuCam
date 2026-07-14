@@ -28,6 +28,7 @@ DEFAULTS: dict = {
         "index": 0,
         "backend": "auto",
         "module": "auto",
+        "active_profile": "custom",
         # "auto" lets startup select a model- and hardware-aware mode. Existing
         # installations with explicit values remain unchanged.
         "resolution": "auto",
@@ -38,6 +39,7 @@ DEFAULTS: dict = {
         "sharpness": 1.0,
         "exposure_mode": "auto",
         "awb_mode": "auto",
+        "noise_reduction": "fast",
         "vflip": False,
         "hflip": False,
         "autofocus": True,
@@ -73,6 +75,15 @@ DEFAULTS: dict = {
             "max_count": 500,
             "max_age_days": 30,
             "max_bytes": 1073741824,
+        },
+        "timelapse": {
+            "enabled": True,
+            "save_dir": "/var/lib/bambucam/timelapse",
+            "interval_seconds": 10,
+            "output_fps": 30,
+            "render_on_stop": True,
+            "max_sessions": 20,
+            "max_age_days": 90,
         },
     },
     "web": {
@@ -258,5 +269,4 @@ def get_config() -> Config:
     global _config
     if _config is None:
         _config = Config()
-        _config.load()
     return _config
