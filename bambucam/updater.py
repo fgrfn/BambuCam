@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 GITHUB_API = "https://api.github.com"
 GITHUB_REPO = "fgrfn/bambucam"
-VENV_PIP = Path("/opt/bambucam/venv/bin/pip")
+VENV_PIP = Path(sys.executable).parent / "pip"
 MAX_PACKAGE_BYTES = 100 * 1024 * 1024
 MAX_CHECKSUM_BYTES = 1024 * 1024
 _ACTIVE_STATES = {
@@ -275,7 +275,9 @@ class Updater:
                 "size": 0,
                 "source_tarball": True,
             }
-            log.warning("No packaged release asset found; using unchecksummed GitHub source tarball")
+            log.warning(
+                "No packaged release asset found; using unchecksummed GitHub source tarball"
+            )
 
         asset_size = int(selected.get("size") or 0)
         if asset_size > self._max_package_bytes:
@@ -356,9 +358,7 @@ class Updater:
         response.raise_for_status()
         declared_size = int(response.headers.get("content-length", 0) or 0)
         if declared_size > max_bytes:
-            raise RuntimeError(
-                f"Download is too large ({declared_size} bytes; limit {max_bytes})"
-            )
+            raise RuntimeError(f"Download is too large ({declared_size} bytes; limit {max_bytes})")
         if expected_size and declared_size and declared_size != expected_size:
             raise RuntimeError(
                 f"Release asset size changed: expected {expected_size}, server reports {declared_size}"

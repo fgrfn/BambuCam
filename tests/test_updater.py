@@ -2,7 +2,6 @@
 
 import io
 import tarfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -179,9 +178,7 @@ class TestDownloads:
             }
         )
         responses = [
-            FakeResponse(
-                f"{digest}  bambucam-1.0.0-py3-none-any.whl\n".encode()
-            ),
+            FakeResponse(f"{digest}  bambucam-1.0.0-py3-none-any.whl\n".encode()),
             FakeResponse(package, content_length=len(package)),
         ]
         updater = _updater()
@@ -214,9 +211,7 @@ class TestDownloads:
             }
         )
         responses = [
-            FakeResponse(
-                f"{'0' * 64}  bambucam-1.0.0-py3-none-any.whl\n".encode()
-            ),
+            FakeResponse(f"{'0' * 64}  bambucam-1.0.0-py3-none-any.whl\n".encode()),
             FakeResponse(package, content_length=len(package)),
         ]
         with patch("bambucam.updater.requests.get", side_effect=responses):
