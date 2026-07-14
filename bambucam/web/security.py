@@ -2,7 +2,6 @@
 
 import logging
 import secrets
-from functools import hmac
 
 from flask import Flask, Response, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
