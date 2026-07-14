@@ -26,21 +26,20 @@ jobs:
 
           path = Path("scripts/install.sh")
           text = path.read_text(encoding="utf-8")
-          text = text.replace(
-              'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd || true)"',
-              'SCRIPT_DIR=""\n'
-              'if SCRIPT_PARENT=$(dirname "${BASH_SOURCE[0]:-install.sh}"); then\n'
-              '  SCRIPT_DIR=$(cd "$SCRIPT_PARENT" 2>/dev/null && pwd || true)\n'
-              'fi',
-              1,
-          )
-          text = text.replace(
-              '  getent group "$group" >/dev/null 2>&1 && usermod -aG "$group" "$SERVICE_USER" || true',
+          old_script_dir = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd || true)"'
+          new_script_dir = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd)"'
+          old_group = '  getent group "$group" >/dev/null 2>&1 && usermod -aG "$group" "$SERVICE_USER" || true'
+          new_group = (
               '  if getent group "$group" >/dev/null 2>&1; then\n'
               '    usermod -aG "$group" "$SERVICE_USER" || true\n'
-              '  fi',
-              1,
+              '  fi'
           )
+          if old_script_dir not in text:
+              raise SystemExit("SCRIPT_DIR pattern not found")
+          if old_group not in text:
+              raise SystemExit("group pattern not found")
+          text = text.replace(old_script_dir, new_script_dir, 1)
+          text = text.replace(old_group, new_group, 1)
           path.write_text(text, encoding="utf-8")
           Path("shellcheck-report.txt").unlink(missing_ok=True)
           PY
