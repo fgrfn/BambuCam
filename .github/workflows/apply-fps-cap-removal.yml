@@ -1,9 +1,9 @@
 name: Apply FPS cap removal
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/remove-tier1-fps-cap
+      - main
 
 permissions:
   contents: write
@@ -64,19 +64,26 @@ jobs:
           )
           main.write_text(text)
 
+          app_js = Path("bambucam/web/static/js/app.js")
+          text = app_js.read_text()
+          old = '''    const result = await api('POST', '/camera/settings', { resolution, framerate });
+              await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
+          '''
+          new = '''    const result = await api('POST', '/camera/settings', { resolution, framerate });
+              await api('POST', '/config', { streaming: { mjpeg: { fps: framerate } } });
+              await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
+          '''
+          assert old in text, "stream settings block changed unexpectedly"
+          app_js.write_text(text.replace(old, new, 1))
+
           system_info = Path("bambucam/system_info.py")
           text = system_info.read_text()
           text = text.replace(
-              '''      1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
-                2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps
-                3 — Pi 4, Pi 5, non-Pi          → full stack, no caps
-          ''',
-              '''      1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
-                2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG
-                3 — Pi 4, Pi 5, non-Pi          → full stack
-
-              Tiers select streaming defaults only and never cap a configured frame rate.
-          ''',
+              "      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG capped at 30 fps\n"
+              "      3 — Pi 4, Pi 5, non-Pi          → full stack, no caps\n",
+              "      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG\n"
+              "      3 — Pi 4, Pi 5, non-Pi          → full stack\n\n"
+              "    Tiers select streaming defaults only and never cap a configured frame rate.\n",
           )
           system_info.write_text(text)
 
