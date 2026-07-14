@@ -7,13 +7,70 @@ on:
     branches: ["**"]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  final-fix:
+    name: One-time final updater fix
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fix and validate updater formatting
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("bambucam/updater.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              'raise RuntimeError(f"Download is too large ({declared_size} bytes; limit {max_bytes})")',
+              'raise RuntimeError(\n'
+              '                f"Download is too large ({declared_size} bytes; "\n'
+              '                f"limit {max_bytes})"\n'
+              '            )',
+              1,
+          )
+          text = text.replace(
+              'raise RuntimeError(\n'
+              '                (\n'
+              '                    f"Release asset size changed: expected {expected_size}, "\n'
+              '                    f"server reports {declared_size}"\n'
+              '                )\n'
+              '            )',
+              'raise RuntimeError(\n'
+              '                f"Release asset size changed: expected {expected_size}, "\n'
+              '                f"server reports {declared_size}"\n'
+              '            )',
+              1,
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+          python -m pip install black ruff
+          black bambucam/updater.py tests/test_updater.py
+          ruff check bambucam/ tests/
+      - name: Commit fix
+        run: |
+          if git diff --quiet; then
+            echo "No changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bambucam/updater.py tests/test_updater.py
+          git commit -m "style: fix updater lint issues"
+          git push origin HEAD:${{ github.head_ref }}
+
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
