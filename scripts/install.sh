@@ -36,11 +36,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+NEW_TEMP_DIR=""
 make_temp_dir() {
-  local directory
-  directory=$(mktemp -d)
-  _TMP_DIRS+=("$directory")
-  printf '%s\n' "$directory"
+  NEW_TEMP_DIR=$(mktemp -d)
+  _TMP_DIRS+=("$NEW_TEMP_DIR")
 }
 
 if [[ -t 1 ]]; then
@@ -161,7 +160,8 @@ fi
 SRC_DIR="$SOURCE_ROOT"
 WHEEL_FILE=""
 if [[ "$LOCAL_SOURCE" == "false" ]]; then
-  DOWNLOAD_DIR=$(make_temp_dir)
+  make_temp_dir
+  DOWNLOAD_DIR=$NEW_TEMP_DIR
   SRC_DIR="$DOWNLOAD_DIR/source"
   mkdir -p "$SRC_DIR"
 
@@ -215,7 +215,8 @@ esac
 MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_${MEDIAMTX_ARCH}.tar.gz"
 
 step "Installing MediaMTX ${MEDIAMTX_VERSION}"
-MEDIAMTX_TMP=$(make_temp_dir)
+make_temp_dir
+MEDIAMTX_TMP=$NEW_TEMP_DIR
 curl_download "$MEDIAMTX_URL" "$MEDIAMTX_TMP/mediamtx.tar.gz"
 safe_extract_tar "$MEDIAMTX_TMP/mediamtx.tar.gz" "$MEDIAMTX_TMP/unpacked"
 [[ -x "$MEDIAMTX_TMP/unpacked/mediamtx" ]] || error "MediaMTX archive lacks its executable"
