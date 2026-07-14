@@ -2,10 +2,9 @@
 BambuCam entry point.
 
 Usage:
-  bambucam                     # start with config auto-discovery
+  bambucam
   bambucam --config /path/to/bambucam.yaml
-  bambucam --list-cameras      # detect and print cameras
-  bambucam --help
+  bambucam --list-cameras
 """
 
 import argparse
@@ -16,40 +15,41 @@ from pathlib import Path
 
 def _setup_logging(level: str) -> None:
     logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
+        level=getattr(logging, str(level).upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
     )
 
 
 def _parse_args() -> argparse.Namespace:
     from bambucam import __version__
 
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="bambucam",
         description="BambuCam — Raspberry Pi camera streaming for BambuBuddy",
     )
-    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    p.add_argument("--config", type=Path, help="Path to config YAML file")
-    p.add_argument(
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--config", type=Path, help="Path to config YAML file")
+    parser.add_argument(
         "--list-cameras",
         action="store_true",
         help="Detect cameras, print results, and exit",
     )
-    p.add_argument("--log-level", default="INFO", help="Log level (DEBUG/INFO/WARNING/ERROR)")
-    p.add_argument("--host", help="Override WebUI host (default: 0.0.0.0)")
-    p.add_argument("--port", type=int, help="Override WebUI port (default: 8080)")
-    p.add_argument("--no-rtsp", action="store_true", help="Disable RTSP streaming")
-    p.add_argument("--no-mjpeg", action="store_true", help="Disable MJPEG streaming")
-    return p.parse_args()
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        help="Override configured log level (DEBUG/INFO/WARNING/ERROR)",
+    )
+    parser.add_argument("--host", help="Override WebUI host")
+    parser.add_argument("--port", type=int, help="Override WebUI port")
+    parser.add_argument("--no-rtsp", action="store_true", help="Disable RTSP streaming")
+    parser.add_argument("--no-mjpeg", action="store_true", help="Disable MJPEG streaming")
+    return parser.parse_args()
 
 
 def _best_resolution_and_fps(model, tier_fps_cap=None):
-    """
-    Pick the supported resolution that maximises width*height*fps product,
-    optionally capped by tier_fps_cap.
-    Falls back to model.max_resolution at model.max_framerate if no data.
-    """
+    """Pick the mode with the highest width × height × FPS score."""
     candidates = model.resolution_max_framerates
     if not candidates:
         fps = model.max_framerate
@@ -57,24 +57,66 @@ def _best_resolution_and_fps(model, tier_fps_cap=None):
             fps = min(fps, tier_fps_cap)
         return model.max_resolution, fps
 
-    best_res, best_fps, best_score = None, None, -1
-    for res, fps in candidates.items():
-        if tier_fps_cap is not None:
-            fps = min(fps, tier_fps_cap)
-        score = res.width * res.height * fps
+    best_resolution, best_fps, best_score = None, None, -1
+    for resolution, candidate_fps in candidates.items():
+        fps = min(candidate_fps, tier_fps_cap) if tier_fps_cap is not None else candidate_fps
+        score = resolution.width * resolution.height * fps
         if score > best_score:
-            best_res, best_fps, best_score = res, fps, score
-    return best_res, best_fps
+            best_resolution, best_fps, best_score = resolution, fps, score
+    return best_resolution, best_fps
+
+
+def _is_auto(value) -> bool:
+    return value is None or (isinstance(value, str) and value.strip().lower() in {"", "auto"})
+
+
+def _resolve_camera_mode(model, camera_config: dict, tier_fps_cap=None, resolutions=None):
+    """Resolve auto/explicit camera mode and enforce model and hardware limits."""
+    from bambucam.camera.models import Resolution
+
+    smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap)
+    configured_resolution = camera_config.get("resolution", "auto")
+    resolution = (
+        smart_resolution
+        if _is_auto(configured_resolution)
+        else Resolution.from_string(str(configured_resolution))
+    )
+
+    available = resolutions or model.supported_resolutions
+    if available and resolution not in available:
+        allowed = ", ".join(str(item) for item in available)
+        raise ValueError(f"Resolution {resolution} is not supported. Available: {allowed}")
+
+    max_fps = model.resolution_max_framerates.get(resolution, model.max_framerate)
+    if tier_fps_cap is not None:
+        max_fps = min(max_fps, int(tier_fps_cap))
+
+    configured_fps = camera_config.get("framerate", "auto")
+    if _is_auto(configured_fps):
+        # Preserve the selected smart pair where possible, otherwise use the
+        # maximum valid FPS for an explicitly selected resolution.
+        fps = smart_fps if resolution == smart_resolution else max_fps
+    else:
+        try:
+            fps = int(configured_fps)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid camera framerate: {configured_fps!r}") from exc
+        if fps < 1:
+            raise ValueError("Camera framerate must be at least 1 FPS")
+        if fps > max_fps:
+            logging.getLogger(__name__).warning(
+                "Requested %d FPS at %s exceeds the effective maximum of %d; capping",
+                fps,
+                resolution,
+                max_fps,
+            )
+            fps = max_fps
+
+    return resolution, int(fps)
 
 
 def _effective_mjpeg_fps(camera_fps: int, mjpeg_cfg: dict, tier_fps_cap=None) -> int:
-    """Return the MJPEG target FPS, honoring config and hardware caps.
-
-    The MJPEG streamer should use streaming.mjpeg.fps when it is configured,
-    but it must not ask for more frames than the camera currently produces or
-    exceed the tier-specific Raspberry Pi capability cap. Invalid values fall
-    back to the camera framerate.
-    """
+    """Return configured MJPEG FPS capped by camera and hardware limits."""
     try:
         requested_fps = int(mjpeg_cfg.get("fps", camera_fps))
     except (TypeError, ValueError):
@@ -88,20 +130,16 @@ def _effective_mjpeg_fps(camera_fps: int, mjpeg_cfg: dict, tier_fps_cap=None) ->
 
 def main() -> None:
     args = _parse_args()
-    _setup_logging(args.log_level)
-    log = logging.getLogger("bambucam")
+    _setup_logging("INFO")
 
+    from bambucam.config import Config
+
+    cfg = Config()
+    cfg.load(args.config)
+    _setup_logging(args.log_level or cfg.system.get("log_level", "INFO"))
+    log = logging.getLogger("bambucam")
     log.info("BambuCam starting up…")
 
-    from bambucam.config import get_config
-
-    cfg = get_config()
-    cfg.load(args.config)
-
-    if args.log_level:
-        _setup_logging(args.log_level)
-
-    # -- List cameras and exit ------------------------------------------------
     if args.list_cameras:
         from bambucam.camera.detector import detect_cameras
 
@@ -110,85 +148,86 @@ def main() -> None:
             print("No cameras detected.")
             sys.exit(1)
         print(f"Found {len(cameras)} camera(s):")
-        for i, cam in enumerate(cameras):
-            print(f"\n  [{i}] {cam.model.name}")
-            print(f"      Sensor  : {cam.model.sensor}")
-            print(f"      Backend : {cam.backend}")
-            print(f"      Device  : {cam.device}")
-            print(f"      Max res : {cam.model.max_resolution}")
-            print("      Features: ", end="")
-            feats = []
-            if cam.model.has_autofocus:
-                feats.append("Autofocus")
-            if cam.model.has_hdr:
-                feats.append("HDR")
-            if cam.model.is_noir:
-                feats.append("NoIR")
-            if cam.model.has_global_shutter:
-                feats.append("Global Shutter")
-            print(", ".join(feats) if feats else "—")
+        for position, camera in enumerate(cameras):
+            print(f"\n  [{position}] {camera.model.name}")
+            print(f"      Sensor  : {camera.model.sensor}")
+            print(f"      Backend : {camera.backend}")
+            print(f"      Device  : {camera.device}")
+            print(f"      Modes   : {', '.join(str(r) for r in camera.detected_resolutions)}")
+            features = []
+            if camera.model.has_autofocus:
+                features.append("Autofocus")
+            if camera.model.has_hdr:
+                features.append("HDR")
+            if camera.model.is_noir:
+                features.append("NoIR")
+            if camera.model.has_global_shutter:
+                features.append("Global Shutter")
+            print(f"      Features: {', '.join(features) if features else '—'}")
         sys.exit(0)
 
-    # -- Normal startup -------------------------------------------------------
     from bambucam.camera.manager import CameraManager
-    from bambucam.camera.models import Resolution
     from bambucam.streaming.mjpeg import MJPEGStreamer
     from bambucam.streaming.rtsp import RTSPStreamer
     from bambucam.streaming.snapshot import SnapshotService
     from bambucam.updater import Updater
     from bambucam.web.app import create_app
 
-    cam_cfg = cfg.camera
-    stream_cfg = cfg.streaming
-    web_cfg = cfg.web
+    camera_config = cfg.camera
+    streaming_config = cfg.streaming
+    web_config = cfg.web
 
-    # Detect hardware capability and derive adaptive defaults
     from bambucam.system_info import pi_capability_tier
 
-    _tier = pi_capability_tier()
-    _tier_label = {
+    tier = pi_capability_tier()
+    tier_label = {
         1: "low (Pi Zero/1/2) — MJPEG-only",
         2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG≤30fps",
         3: "high (Pi 4/5+) — full stack",
-    }.get(_tier, str(_tier))
-    log.info("Hardware capability tier %d: %s", _tier, _tier_label)
+    }.get(tier, str(tier))
+    log.info("Hardware capability tier %d: %s", tier, tier_label)
 
-    # Tier-based adaptive defaults (all overridable via config)
-    # Tier 1: RTSP disabled (no lores stream, no H264, less ISP load)
-    # Tier 2: RTSP enabled, MJPEG capped at 30fps
-    # Tier 3: No caps
-    _rtsp_default_enabled = _tier >= 2
-    _mjpeg_fps_cap = {1: 15, 2: 30}.get(_tier)  # None = no cap
+    rtsp_default_enabled = tier >= 2
+    mjpeg_fps_cap = {1: 15, 2: 30}.get(tier)
 
-    # Camera
     camera = CameraManager()
-    _camera_ok = True
+    camera_ok = True
+    detected = None
+    selected_resolution = None
+    selected_fps = 15
     try:
         detected = camera.detect_and_select(
-            cam_cfg.get("index", 0),
-            module_override=cam_cfg.get("module", "auto"),
+            int(camera_config.get("index", 0)),
+            module_override=camera_config.get("module", "auto"),
+            preferred_backend=camera_config.get("backend", "auto"),
         )
-    except RuntimeError as e:
-        log.warning("No camera detected: %s — starting in headless mode (WebUI only)", e)
-        _camera_ok = False
+        selected_resolution, selected_fps = _resolve_camera_mode(
+            detected.model,
+            camera_config,
+            mjpeg_fps_cap,
+            detected.detected_resolutions,
+        )
+        log.info("Selected camera mode: %s @ %d FPS", selected_resolution, selected_fps)
+    except (RuntimeError, ValueError) as exc:
+        log.warning("Camera unavailable: %s — starting in headless mode", exc)
+        camera_ok = False
 
-    # Determine whether RTSP will run — needed before camera setup so we know
-    # whether to allocate the lores stream in picamera2.
-    rtsp_cfg = stream_cfg.get("rtsp", {})
-    _will_use_rtsp = (
-        _camera_ok and not args.no_rtsp and rtsp_cfg.get("enabled", _rtsp_default_enabled)
+    rtsp_config = streaming_config.get("rtsp", {})
+    will_use_rtsp = (
+        camera_ok
+        and not args.no_rtsp
+        and rtsp_config.get("enabled", rtsp_default_enabled)
     )
 
-    if _camera_ok:
+    if camera_ok and detected is not None and selected_resolution is not None:
         try:
-            _smart_res, _smart_fps = _best_resolution_and_fps(detected.model, _mjpeg_fps_cap)
             camera.setup(
                 detected=detected,
-                resolution=Resolution.from_string(cam_cfg.get("resolution", str(_smart_res))),
-                framerate=cam_cfg.get("framerate", _smart_fps),
+                resolution=selected_resolution,
+                framerate=selected_fps,
                 settings={
-                    k: cam_cfg[k]
-                    for k in (
+                    key: camera_config[key]
+                    for key in (
                         "vflip",
                         "hflip",
                         "brightness",
@@ -201,76 +240,66 @@ def main() -> None:
                         "hdr",
                         "noise_reduction",
                     )
-                    if k in cam_cfg
+                    if key in camera_config
                 },
-                enable_lores=_will_use_rtsp,
+                enable_lores=will_use_rtsp,
             )
             camera.start()
-        except Exception as e:
-            log.error("Failed to start camera: %s — continuing in headless mode", e)
-            _camera_ok = False
+        except Exception as exc:
+            log.error("Failed to start camera: %s — continuing in headless mode", exc)
+            camera_ok = False
+            will_use_rtsp = False
 
-    # MJPEG streamer
-    mjpeg_cfg = stream_cfg.get("mjpeg", {})
-    _camera_fps = cam_cfg.get("framerate", 15)
-    _mjpeg_default_fps = _effective_mjpeg_fps(_camera_fps, mjpeg_cfg, _mjpeg_fps_cap)
-    if _camera_ok:
-        _mjpeg_quality = mjpeg_cfg.get("quality", 85)
-        camera.set_jpeg_quality(_mjpeg_quality)
+    mjpeg_config = streaming_config.get("mjpeg", {})
+    mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, mjpeg_fps_cap)
+    if camera_ok:
+        camera.set_jpeg_quality(int(mjpeg_config.get("quality", 85)))
 
     mjpeg = MJPEGStreamer(
-        capture_fn=camera.capture_jpeg if _camera_ok else lambda: None,
-        target_fps=_mjpeg_default_fps,
+        capture_fn=camera.capture_jpeg if camera_ok else lambda: None,
+        target_fps=mjpeg_fps,
     )
-    if _camera_ok and not args.no_mjpeg and mjpeg_cfg.get("enabled", True):
+    if camera_ok and not args.no_mjpeg and mjpeg_config.get("enabled", True):
         mjpeg.start()
 
-    # RTSP streamer
-    # For CSI cameras (picamera2 backend), use the in-process H264Encoder to
-    # avoid the V4L2 device conflict (picamera2 holds /dev/videoN exclusively).
-    # For USB webcams (V4L2 backend), keep the existing ffmpeg-from-V4L2 path.
-    rtsp_auth = rtsp_cfg.get("auth", {})
-
-    _picamera2_backend = None
-    if _will_use_rtsp and _camera_ok and camera.backend is not None:
+    rtsp_auth = rtsp_config.get("auth", {})
+    picamera2_backend = None
+    if will_use_rtsp and camera_ok and camera.backend is not None:
         from bambucam.camera.backends.picamera2_backend import Picamera2Backend
 
         if isinstance(camera.backend, Picamera2Backend):
-            _picamera2_backend = camera.backend
+            picamera2_backend = camera.backend
 
     rtsp = RTSPStreamer(
-        v4l2_device=(camera.v4l2_device if _camera_ok else None) or "/dev/video0",
-        resolution=cam_cfg.get("resolution", "1920x1080"),
-        framerate=cam_cfg.get("framerate", 15),
-        bitrate_kbps=rtsp_cfg.get("bitrate_kbps", 2000),
-        stream_name=rtsp_cfg.get("stream_name", "cam"),
+        v4l2_device=(camera.v4l2_device if camera_ok else None) or "/dev/video0",
+        resolution=str(selected_resolution or "1920x1080"),
+        framerate=selected_fps,
+        bitrate_kbps=rtsp_config.get("bitrate_kbps", 2000),
+        stream_name=rtsp_config.get("stream_name", "cam"),
         mediamtx_path=Path(cfg.system.get("mediamtx_path", "/usr/local/bin/mediamtx")),
-        enable_hls=rtsp_cfg.get("enable_hls", True),
-        enable_webrtc=rtsp_cfg.get("enable_webrtc", False),
+        enable_hls=rtsp_config.get("enable_hls", True),
+        enable_webrtc=rtsp_config.get("enable_webrtc", False),
         rtsp_auth_user=rtsp_auth.get("username") if rtsp_auth.get("enabled") else None,
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
-        camera_backend=_picamera2_backend,
+        camera_backend=picamera2_backend,
     )
-    if _will_use_rtsp:
+    if will_use_rtsp:
         try:
             rtsp.start()
         except FileNotFoundError:
-            log.warning(
-                "MediaMTX not found — RTSP streaming disabled. "
-                "Run the installer or: bambucam-install"
-            )
-        except Exception as e:
-            log.warning("RTSP streaming disabled: %s", e)
+            log.warning("MediaMTX not found — RTSP streaming disabled. Run the installer.")
+        except Exception as exc:
+            log.warning("RTSP streaming disabled: %s", exc)
 
-    # Snapshot service
     snapshot = SnapshotService(
-        capture_fn=(lambda: camera.capture_jpeg(quality=95)) if _camera_ok else lambda: None,
+        capture_fn=(lambda: camera.capture_jpeg(quality=95)) if camera_ok else lambda: None,
         snapshot_dir=Path(
-            stream_cfg.get("snapshot", {}).get("save_dir", "/var/lib/bambucam/snapshots")
+            streaming_config.get("snapshot", {}).get(
+                "save_dir", "/var/lib/bambucam/snapshots"
+            )
         ),
     )
 
-    # Updater
     from bambucam import __version__
 
     updater = Updater(
@@ -278,10 +307,8 @@ def main() -> None:
         include_prerelease=cfg.get("system", "update_include_prerelease", default=False),
     )
 
-    # Flask app
-    host = args.host or web_cfg.get("host", "0.0.0.0")
-    port = args.port or web_cfg.get("port", 8080)
-
+    host = args.host or web_config.get("host", "0.0.0.0")
+    port = args.port or int(web_config.get("port", 8080))
     app = create_app(
         config=cfg,
         camera_manager=camera,
@@ -294,11 +321,7 @@ def main() -> None:
     log.info("WebUI listening on http://%s:%d", host, port)
     log.info("MJPEG stream: http://<pi-ip>:%d/stream", port)
     if rtsp.is_running:
-        log.info(
-            "RTSP stream: rtsp://<pi-ip>:%d/%s",
-            rtsp_cfg.get("port", 8554),
-            rtsp_cfg.get("stream_name", "cam"),
-        )
+        log.info("RTSP stream: %s", rtsp.stream_urls("<pi-ip>")["rtsp"])
 
     try:
         app.run(host=host, port=port, threaded=True, use_reloader=False)
