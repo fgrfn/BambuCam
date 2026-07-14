@@ -6,148 +6,166 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write   # needed to create GitHub releases and upload assets
+  contents: read
 
 jobs:
-  # -------------------------------------------------------------------------
-  # 1. Run tests before releasing
-  # -------------------------------------------------------------------------
   test:
-    name: Pre-release tests
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install and test
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest tests/ -v --tb=short
+
+  quality:
+    name: Lint, format, shell, and package checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
-      - name: Install & test
+      - name: Install tools
+        run: pip install -e ".[dev]" build twine
+      - name: Ruff
+        run: ruff check bambucam/ tests/
+      - name: Black
+        run: black --check bambucam/ tests/
+      - name: ShellCheck
+        run: shellcheck scripts/install.sh
+      - name: Compile Python sources
+        run: python -m compileall -q bambucam tests
+      - name: Build package smoke test
         run: |
-          pip install -e ".[dev]"
-          pytest tests/ -v
+          python -m build
+          twine check dist/*
 
-  # -------------------------------------------------------------------------
-  # 2. Build Python wheel + sdist
-  # -------------------------------------------------------------------------
   build:
-    name: Build distribution packages
-    needs: test
+    name: Build signed-by-checksum release assets
+    needs: [test, quality]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install build tools
-        run: pip install build
+        run: pip install build twine
 
       - name: Set version from tag
+        id: version
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          sed -i "s/^version = .*/version = \"${TAG}\"/" pyproject.toml
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" pyproject.toml
 
-      - name: Build wheel and sdist
-        run: python -m build
+      - name: Build wheel and source distribution
+        run: |
+          python -m build
+          twine check dist/*
+
+      - name: Build complete installer bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cp scripts/install.sh dist/install.sh
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.pytest_cache' \
+            --exclude='__pycache__' \
+            --exclude='dist' \
+            --transform "s,^,bambucam-${VERSION}/," \
+            -czf "dist/bambucam-${VERSION}-bundle.tar.gz" .
+          (
+            cd dist
+            sha256sum \
+              "bambucam-${VERSION}-py3-none-any.whl" \
+              "bambucam-${VERSION}.tar.gz" \
+              "bambucam-${VERSION}-bundle.tar.gz" \
+              install.sh \
+              > SHA256SUMS
+          )
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: release-assets
           path: dist/
+          if-no-files-found: error
 
-  # -------------------------------------------------------------------------
-  # 3. Create GitHub Release with assets
-  # -------------------------------------------------------------------------
   release:
-    name: Create GitHub Release
+    name: Publish GitHub release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history for changelog generation
+          fetch-depth: 0
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: release-assets
           path: dist/
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog
         run: |
-          # Extract commits since last tag for release notes
-          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1)
-          if [ -n "$PREV_TAG" ]; then
-            COMMITS=$(git log "${PREV_TAG}..${GITHUB_REF_NAME}" --pretty=format:"- %s" --no-merges)
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            COMMITS=$(git log "${PREVIOUS_TAG}..${GITHUB_REF_NAME}" --pretty=format:'- %s' --no-merges)
           else
-            COMMITS=$(git log --pretty=format:"- %s" --no-merges | head -20)
+            COMMITS=$(git log --pretty=format:'- %s' --no-merges | head -20)
           fi
-          echo "commits<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$COMMITS" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo 'commits<<EOF'
+            echo "$COMMITS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          name: "BambuCam v${{ steps.version.outputs.version }}"
+          name: BambuCam v${{ steps.version.outputs.version }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}  # e.g. v1.0.0-beta is pre-release
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body: |
             ## BambuCam v${{ steps.version.outputs.version }}
 
             ### Changes
             ${{ steps.changelog.outputs.commits }}
 
-            ---
-
-            ### Installation / Update
-
-            **Fresh install:**
+            ### Installation
             ```bash
-            git clone https://github.com/fgrfn/bambucam
-            cd bambucam
-            sudo bash scripts/install.sh
-            ```
-
-            **Update via WebUI:** Open the BambuCam WebUI → click **"Nach Updates suchen"** → **"Jetzt aktualisieren"**
-
-            **Update via CLI:**
-            ```bash
-            sudo bambucam-update
-            # or
             curl -fsSL https://github.com/fgrfn/bambucam/releases/download/${{ github.ref_name }}/install.sh | sudo bash
             ```
 
-            ### Download
+            Existing installations can update through the protected BambuCam WebUI.
 
-            | File | Description |
-            |---|---|
-            | `bambucam-${{ steps.version.outputs.version }}.tar.gz` | Source distribution |
-            | `bambucam-${{ steps.version.outputs.version }}-py3-none-any.whl` | Python wheel |
-            | `install.sh` | Standalone installer |
-
-          files: |
-            dist/*
-            scripts/install.sh
+            `SHA256SUMS` contains checksums for the wheel, source distribution,
+            complete installer bundle, and installer script.
+          files: dist/*
+          fail_on_unmatched_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
-
-  # -------------------------------------------------------------------------
-  # 4. Notify on failure
-  # -------------------------------------------------------------------------
-  notify-failure:
-    name: Notify on failure
-    needs: [test, build, release]
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Log failure
-        run: echo "Release pipeline failed for ${{ github.ref_name }}"
