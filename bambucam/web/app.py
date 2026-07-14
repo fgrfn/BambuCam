@@ -59,13 +59,17 @@ def create_app(
     app.config["snapshot_service"] = snapshot_service
     app.config["updater"] = updater
 
+    from bambucam.observability import install_log_buffer
     from bambucam.web.api import api_bp
+    from bambucam.web.operations import operations_bp
     from bambucam.web.security import configure_web_security
     from bambucam.web.stream import stream_bp
     from bambucam.web.ui import ui_bp
 
+    install_log_buffer(capacity=int(config.get("system", "diagnostics_log_lines", default=300)))
     configure_web_security(app, config)
     app.register_blueprint(api_bp, url_prefix="/api/v1")
+    app.register_blueprint(operations_bp, url_prefix="/api/v1")
     app.register_blueprint(stream_bp)
     app.register_blueprint(ui_bp)
 

@@ -1,5 +1,7 @@
-"""Tests for snapshot persistence and HTTP routes."""
+"""Tests for snapshot persistence, retention, and HTTP routes."""
 
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -45,6 +47,61 @@ def test_snapshot_can_be_deleted(snapshot_service: SnapshotService):
     snapshot_service.delete_snapshot(filename)
 
     assert snapshot_service.list_snapshots() == []
+
+
+def _write_snapshot(directory: Path, name: str, payload: bytes, modified: float) -> Path:
+    path = directory / name
+    path.write_bytes(payload)
+    os.utime(path, (modified, modified))
+    return path
+
+
+def test_retention_prunes_oldest_files_by_count(tmp_path: Path):
+    now = time.time()
+    _write_snapshot(tmp_path, "snapshot_old.jpg", b"1", now - 30)
+    _write_snapshot(tmp_path, "snapshot_mid.jpg", b"2", now - 20)
+    _write_snapshot(tmp_path, "snapshot_new.jpg", b"3", now - 10)
+    service = SnapshotService(lambda: b"new", snapshot_dir=tmp_path, max_count=2)
+
+    deleted = service.prune(now=now)
+
+    assert deleted == ["snapshot_old.jpg"]
+    assert [item["filename"] for item in service.list_snapshots()] == [
+        "snapshot_mid.jpg",
+        "snapshot_new.jpg",
+    ]
+
+
+def test_retention_prunes_by_age_and_bytes(tmp_path: Path):
+    now = time.time()
+    _write_snapshot(tmp_path, "snapshot_expired.jpg", b"old", now - 3 * 86400)
+    _write_snapshot(tmp_path, "snapshot_large.jpg", b"12345", now - 10)
+    _write_snapshot(tmp_path, "snapshot_latest.jpg", b"67890", now - 5)
+    service = SnapshotService(
+        lambda: b"new",
+        snapshot_dir=tmp_path,
+        max_count=0,
+        max_age_days=1,
+        max_bytes=5,
+    )
+
+    deleted = service.prune(now=now)
+
+    assert deleted == ["snapshot_expired.jpg", "snapshot_large.jpg"]
+    assert [item["filename"] for item in service.list_snapshots()] == ["snapshot_latest.jpg"]
+
+
+def test_retention_can_be_updated_at_runtime(tmp_path: Path):
+    now = time.time()
+    _write_snapshot(tmp_path, "snapshot_one.jpg", b"1", now - 2)
+    _write_snapshot(tmp_path, "snapshot_two.jpg", b"2", now - 1)
+    service = SnapshotService(lambda: b"new", snapshot_dir=tmp_path, max_count=10)
+
+    status = service.update_retention(max_count=1, max_age_days=0, max_bytes=0)
+
+    assert status["count"] == 1
+    assert status["max_count"] == 1
+    assert service.list_snapshots()[0]["filename"] == "snapshot_two.jpg"
 
 
 def _test_app(service: SnapshotService) -> Flask:

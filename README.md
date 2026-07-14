@@ -187,6 +187,14 @@ System installations use `/etc/bambucam/bambucam.yaml`. User installations defau
 
 See [docs/configuration.md](docs/configuration.md) for the full reference.
 
+## Monitoring and diagnostics
+
+- `GET /health` is a public readiness endpoint and returns HTTP 503 when the camera/stream stack is degraded.
+- `GET /metrics` exposes Prometheus text metrics and follows normal WebUI authentication.
+- `GET /api/v1/diagnostics` returns a credential-redacted support payload.
+- `GET /api/v1/diagnostics/download` downloads redacted JSON and recent in-memory logs as a ZIP.
+- Snapshot retention supports count, age, and total-byte limits and can be updated through `/api/v1/snapshot/retention`.
+
 ## Updates
 
 The protected WebUI can check, install, and downgrade releases. The updater:
