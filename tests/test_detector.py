@@ -30,6 +30,16 @@ Available cameras
            2304x1296 [56.03 fps]
 """
 
+OV5647_SAMPLE_OUTPUT = """\
+Available cameras
+-----------------
+0 : ov5647 [2592x1944 10-bit GBRG] (/camera0)
+    Modes: 640x480 [58.92 fps]
+           1296x972 [46.34 fps]
+           1920x1080 [32.81 fps]
+           2592x1944 [15.63 fps]
+"""
+
 
 class TestParseLibcameraOutput:
     def test_detects_imx219(self):
@@ -46,20 +56,22 @@ class TestParseLibcameraOutput:
         assert Resolution(1920, 1080) in resolutions
         assert Resolution(640, 480) in resolutions
 
+    def test_picamera2_includes_scaled_model_outputs(self):
+        camera = _parse_libcamera_output(OV5647_SAMPLE_OUTPUT)[0]
+
+        assert Resolution(2592, 1944) in camera.detected_resolutions
+        assert Resolution(1280, 720) in camera.detected_resolutions
+
     def test_multiple_camera_modes_do_not_mix(self):
         cameras = _parse_libcamera_output(MULTI_CAMERA_OUTPUT)
 
         assert len(cameras) == 2
         assert Resolution(4608, 2592) not in cameras[0].detected_resolutions
         assert Resolution(3280, 2464) not in cameras[1].detected_resolutions
-        assert cameras[0].detected_resolutions == [
-            Resolution(3280, 2464),
-            Resolution(1920, 1080),
-        ]
-        assert cameras[1].detected_resolutions == [
-            Resolution(4608, 2592),
-            Resolution(2304, 1296),
-        ]
+        assert Resolution(3280, 2464) in cameras[0].detected_resolutions
+        assert Resolution(1920, 1080) in cameras[0].detected_resolutions
+        assert Resolution(4608, 2592) in cameras[1].detected_resolutions
+        assert Resolution(2304, 1296) in cameras[1].detected_resolutions
 
     def test_unknown_sensor_uses_generic_model(self):
         cameras = _parse_libcamera_output("0 : futurecam [1920x1080] (/camera0)\n")

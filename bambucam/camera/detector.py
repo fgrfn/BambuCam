@@ -92,6 +92,16 @@ def _libcamera_blocks(output: str) -> list[tuple[re.Match, str]]:
     return blocks
 
 
+def _merge_resolutions(*groups: list[Resolution]) -> list[Resolution]:
+    """Return resolution groups in stable order without duplicates."""
+    merged: list[Resolution] = []
+    for group in groups:
+        for resolution in group:
+            if resolution not in merged:
+                merged.append(resolution)
+    return merged
+
+
 def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
     cameras = []
     for match, block in _libcamera_blocks(output):
@@ -105,14 +115,20 @@ def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
             log.warning("Unknown libcamera sensor: %s — using generic capabilities", sensor)
             model = CAMERA_USB_GENERIC
 
-        resolutions = _parse_libcamera_resolutions(block, sensor)
+        sensor_modes = _parse_libcamera_resolutions(block, sensor)
+        # rpicam --list-cameras reports native sensor modes, not every valid ISP
+        # output size. Picamera2 can scale/crop those native modes to the known
+        # output resolutions from the model table (for example OV5647 1280x720).
+        # Keep both sets so an existing valid output resolution never forces the
+        # application into headless mode after an update or profile change.
+        resolutions = _merge_resolutions(sensor_modes, model.supported_resolutions)
         cameras.append(
             DetectedCamera(
                 device=f"libcamera:{index}",
                 model=model,
                 backend="picamera2",
                 index=index,
-                detected_resolutions=resolutions or model.supported_resolutions,
+                detected_resolutions=resolutions,
             )
         )
     return cameras
