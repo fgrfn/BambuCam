@@ -32,7 +32,7 @@ streaming:
     enabled: true
     port: 8080               # Same port as WebUI (/stream path)
     quality: 85              # JPEG quality (1-100)
-    fps: 15                  # MJPEG target FPS, capped by camera FPS
+    fps: 15                  # Default target; stream selection can set this up to camera FPS
 
   rtsp:
     enabled: true
