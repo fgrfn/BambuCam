@@ -101,12 +101,8 @@ def test_invalid_port_is_rejected_without_saving():
 
 def test_config_response_redacts_all_credentials():
     config = MemoryConfig()
-    config.data["web"]["auth"].update(
-        {"password": "hash", "api_token": "token"}
-    )
-    config.data["streaming"]["rtsp"]["auth"].update(
-        {"password": "rtsp-secret"}
-    )
+    config.data["web"]["auth"].update({"password": "hash", "api_token": "token"})
+    config.data["streaming"]["rtsp"]["auth"].update({"password": "rtsp-secret"})
     app, *_ = _app(config)
 
     response = app.test_client().get("/api/v1/config")
