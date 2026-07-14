@@ -31,3 +31,13 @@ jobs:
                   git push origin --delete "$branch"
                 fi
               done
+
+      - name: Remove this one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/cleanup-branches.yml
+          git commit -m "chore: remove one-time branch cleanup workflow"
+          git push origin HEAD:main
