@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  transform:
-    name: One-time observability transformation
+  diagnose:
+    name: One-time observability diagnostic
     if: github.actor != 'github-actions[bot]' && (github.ref_name == 'agent/observability-ui-cleanup' || github.head_ref == 'agent/observability-ui-cleanup')
     runs-on: ubuntu-latest
     steps:
@@ -22,25 +22,50 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Transform, format, and validate
+      - name: Capture current failure
+        shell: bash
         run: |
-          python scripts/apply_observability_cleanup.py
-          python -m pip install -e ".[dev]"
-          ruff check --fix bambucam/ tests/
-          black bambucam/ tests/
-          ruff check bambucam/ tests/
-          pytest tests/ -q --cov=bambucam --cov-fail-under=35
-          test -s bambucam/web/static/css/app.css
-          test -s bambucam/web/static/js/app.js
-          ! grep -q '<style>' bambucam/web/templates/index.html
-      - name: Commit generated cleanup
-        run: |
+          set +e
+          {
+            echo '=== transform ==='
+            python scripts/apply_observability_cleanup.py
+            transform_status=$?
+            echo "transform_status=$transform_status"
+            echo '=== install ==='
+            python -m pip install -e ".[dev]"
+            install_status=$?
+            echo "install_status=$install_status"
+            echo '=== ruff-fix ==='
+            ruff check --fix bambucam/ tests/
+            ruff_fix_status=$?
+            echo "ruff_fix_status=$ruff_fix_status"
+            echo '=== black ==='
+            black bambucam/ tests/
+            black_status=$?
+            echo "black_status=$black_status"
+            echo '=== ruff-final ==='
+            ruff check bambucam/ tests/
+            ruff_status=$?
+            echo "ruff_status=$ruff_status"
+            echo '=== tests ==='
+            pytest tests/ -q --cov=bambucam --cov-fail-under=35
+            tests_status=$?
+            echo "tests_status=$tests_status"
+            echo '=== static ==='
+            test -s bambucam/web/static/css/app.css
+            css_status=$?
+            test -s bambucam/web/static/js/app.js
+            js_status=$?
+            grep -q '<style>' bambucam/web/templates/index.html
+            style_present=$?
+            echo "css_status=$css_status js_status=$js_status style_present=$style_present"
+          } > current-transform-report.txt 2>&1
+          cp current-transform-report.txt /tmp/current-transform-report.txt
+          git reset --hard HEAD
+          git clean -fd
+          cp /tmp/current-transform-report.txt current-transform-report.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f \
-            scripts/apply_observability_cleanup.py \
-            scripts/.observability-trigger \
-            transform-report.txt
-          git add bambucam config docs README.md tests
-          git commit -m "refactor: split WebUI and wire observability settings"
+          git add current-transform-report.txt
+          git commit -m "chore: capture current observability diagnostic"
           git push origin HEAD:agent/observability-ui-cleanup
