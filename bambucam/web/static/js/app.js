@@ -3,6 +3,10 @@
 // ── Module-level camera model state ───────────────────────────────────────
 let resolutionMaxFps = {};  // populated on load from camera model data
 
+function tr(key, values) {
+  return window.BambuCamI18n ? window.BambuCamI18n.t(key, values) : key;
+}
+
 // ── API helpers ────────────────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json', 'X-BambuCam-CSRF': '1' } };
@@ -31,15 +35,15 @@ function markRestartRequired(port) {
 }
 
 async function restartApplication() {
-  btnLoading('btn-restart-app', true, 'Neustart…');
+  btnLoading('btn-restart-app', true, tr('restart.loading'));
   const target = localStorage.getItem('bambucamRestartRequired') || window.location.href;
   try {
     await api('POST', '/system/restart');
     localStorage.removeItem('bambucamRestartRequired');
-    toast('BambuCam wird neu gestartet…');
+    toast(tr('restart.started'));
     setTimeout(() => { window.location.href = target; }, 4000);
   } catch (e) {
-    toast('Neustart fehlgeschlagen: ' + e.message, 'error');
+    toast(tr('restart.failed', { message: e.message }), 'error');
     btnLoading('btn-restart-app', false);
   }
 }
@@ -68,9 +72,10 @@ function btnLoading(id, loading, label) {
   btn.disabled = loading;
   if (loading) {
     btn.dataset.origLabel = btn.innerHTML;
-    btn.innerHTML = `<span class="spinner"></span> ${label || 'Bitte warten…'}`;
+    btn.innerHTML = `<span class="spinner"></span> ${label || tr('common.wait')}`;
   } else {
     if (btn.dataset.origLabel) btn.innerHTML = btn.dataset.origLabel;
+    if (window.BambuCamI18n) window.BambuCamI18n.translateDocument(btn);
   }
 }
 
@@ -153,10 +158,10 @@ async function loadCameraStatus() {
     dot.classList.remove('pulse');
     if (s.running) {
       dot.className = 'status-dot ok';
-      txt.textContent = 'Kamera aktiv';
+      txt.textContent = tr('header.cameraActive');
     } else {
       dot.className = 'status-dot error';
-      txt.textContent = 'Kamera gestoppt';
+      txt.textContent = tr('header.cameraStopped');
     }
 
     // Conditional controls
@@ -167,7 +172,7 @@ async function loadCameraStatus() {
   } catch(e) {
     const dot = document.getElementById('status-dot');
     dot.className = 'status-dot error';
-    document.getElementById('status-text').textContent = 'Verbindungsfehler';
+    document.getElementById('status-text').textContent = tr('header.connectionError');
   }
 }
 
@@ -194,7 +199,7 @@ async function loadModelCapabilities(status) {
     const resFpsMap = model.resolution_max_framerates || {};
     resSel.innerHTML = model.supported_resolutions.map(r => {
       const maxFps = resFpsMap[r];
-      const label = maxFps ? `${r} (max ${maxFps} fps)` : r;
+      const label = maxFps ? `${r} (${tr('camera.maxFps', { value: maxFps })})` : r;
       return `<option value="${r}"${r === currentRes ? ' selected' : ''}>${label}</option>`;
     }).join('');
 
@@ -221,13 +226,16 @@ async function loadStreamStatus() {
       // Actual measured fps
       const actualFps = s.mjpeg.actual_fps;
       const fpsEl = document.getElementById('cam-fps-actual');
-      if (fpsEl) fpsEl.textContent = actualFps != null ? ' (' + actualFps + ' real)' : '';
+      if (fpsEl) fpsEl.textContent = actualFps != null
+        ? ` (${tr('camera.actualFps', { value: actualFps })})`
+        : '';
 
       const cnt = s.mjpeg.clients || 0;
       const vb = document.getElementById('viewers-badge');
       if (cnt > 0) {
         vb.classList.remove('hidden');
         setText('viewers-count', cnt);
+        setText('viewers-label', tr(cnt === 1 ? 'stream.viewerOne' : 'stream.viewerMany'));
       } else {
         vb.classList.add('hidden');
       }
@@ -327,33 +335,33 @@ function toggleAuthFields(enabled) {
 }
 
 async function saveMjpegConfig() {
-  btnLoading('btn-cfg-mjpeg', true, 'Speichern…');
+  btnLoading('btn-cfg-mjpeg', true, tr('settings.saving'));
   try {
     const port    = parseInt(document.getElementById('cfg-mjpeg-port').value);
     const quality = parseInt(document.getElementById('mjpeg-quality').value);
     const fps     = parseInt(document.getElementById('cfg-mjpeg-fps').value);
     const result = await api('POST', '/config', { streaming: { mjpeg: { port, quality, fps } } });
     if (result.restart_required) markRestartRequired(port);
-    toast('MJPEG-Einstellungen gespeichert');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+    toast(tr('settings.mjpegSaved'));
+  } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
   finally { btnLoading('btn-cfg-mjpeg', false); }
 }
 
 async function saveRtspConfig() {
-  btnLoading('btn-cfg-rtsp', true, 'Speichern…');
+  btnLoading('btn-cfg-rtsp', true, tr('settings.saving'));
   try {
     const port        = parseInt(document.getElementById('cfg-rtsp-port').value);
     const stream_name = document.getElementById('cfg-rtsp-name').value.trim();
     const enable_hls  = document.getElementById('cfg-hls-enabled').checked;
     const hls_port    = parseInt(document.getElementById('cfg-hls-port').value);
     await api('POST', '/config', { streaming: { rtsp: { port, stream_name, enable_hls, hls_port } } });
-    toast('RTSP-Einstellungen gespeichert');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+    toast(tr('settings.rtspSaved'));
+  } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
   finally { btnLoading('btn-cfg-rtsp', false); }
 }
 
 async function saveWebConfig() {
-  btnLoading('btn-cfg-web', true, 'Speichern…');
+  btnLoading('btn-cfg-web', true, tr('settings.saving'));
   try {
     const port    = parseInt(document.getElementById('cfg-web-port').value);
     const enabled = document.getElementById('cfg-auth-enabled').checked;
@@ -363,20 +371,20 @@ async function saveWebConfig() {
     if (passRaw) auth.password = passRaw;  // only send if not blank
     const result = await api('POST', '/config', { web: { port, auth } });
     if (result.restart_required) markRestartRequired(port);
-    toast('Web-Einstellungen gespeichert — Neustart erforderlich');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+    toast(tr('settings.webSaved'));
+  } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
   finally { btnLoading('btn-cfg-web', false); }
 }
 
 // ── Camera restart ─────────────────────────────────────────────────────────
 async function restartCamera() {
-  btnLoading('btn-restart-cam', true, 'Neustart…');
+  btnLoading('btn-restart-cam', true, tr('restart.loading'));
   try {
     await api('POST', '/system/restart-camera');
-    toast('Kamera wird neu gestartet…');
+    toast(tr('restart.started'));
     setTimeout(loadCameraStatus, 3000);
   } catch(e) {
-    toast('Fehler: ' + e.message, 'error');
+    toast(tr('common.error', { message: e.message }), 'error');
   } finally {
     btnLoading('btn-restart-cam', false);
   }
@@ -385,18 +393,18 @@ async function restartCamera() {
 // ── Snapshot ───────────────────────────────────────────────────────────────
 async function takeSnapshot() {
   const save = document.getElementById('chk-snap-save').checked;
-  btnLoading('btn-snapshot', true, 'Aufnehmen…');
+  btnLoading('btn-snapshot', true, tr('snapshot.taking'));
   try {
     const url = '/snapshot' + (save ? '?save=true' : '');
     window.open(url, '_blank');
     if (save) {
-      toast('Snapshot gespeichert');
+      toast(tr('snapshot.saved'));
       await loadSnapshotList();
     } else {
-      toast('Snapshot geöffnet');
+      toast(tr('snapshot.opened'));
     }
   } catch(e) {
-    toast('Fehler: ' + e.message, 'error');
+    toast(tr('common.error', { message: e.message }), 'error');
   } finally {
     btnLoading('btn-snapshot', false);
   }
@@ -407,7 +415,7 @@ async function loadSnapshotList() {
     const items = await api('GET', '/snapshot/list');
     const list = document.getElementById('snapshot-list');
     if (!items || items.length === 0) {
-      list.innerHTML = '<span style="font-size:0.72rem;color:var(--text-faint)">Keine gespeicherten Snapshots</span>';
+      list.innerHTML = `<span style="font-size:0.72rem;color:var(--text-faint)">${tr('snapshot.none')}</span>`;
       return;
     }
     const last5 = items.slice(-5).reverse();
@@ -415,7 +423,7 @@ async function loadSnapshotList() {
       <div class="snapshot-item">
         <span class="snapshot-name">${item.filename || item.name || '—'}</span>
         <span class="snapshot-meta">${item.size_kb ? item.size_kb + ' KB' : ''}</span>
-        <a class="snapshot-dl" href="/snapshots/${item.filename}" download title="Herunterladen">↓</a>
+        <a class="snapshot-dl" href="/snapshots/${item.filename}" download title="${tr('snapshot.download')}">↓</a>
       </div>
     `).join('');
   } catch(e) {
@@ -431,11 +439,11 @@ async function toggleRtsp(enabled) {
   try {
     await api('POST', enabled ? '/stream/rtsp/start' : '/stream/rtsp/stop');
     if (bitrateRow) bitrateRow.style.display = enabled ? '' : 'none';
-    toast(enabled ? 'RTSP gestartet' : 'RTSP gestoppt');
+    toast(tr(enabled ? 'stream.rtspStarted' : 'stream.rtspStopped'));
     loadStreamStatus();
   } catch(e) {
     toggle.checked = !enabled;  // revert on error
-    toast('Fehler: ' + e.message, 'error');
+    toast(tr('common.error', { message: e.message }), 'error');
   } finally {
     toggle._busy = false;
   }
@@ -446,7 +454,7 @@ async function applyStreamSettings() {
   const framerate    = parseInt(document.getElementById('sel-framerate').value);
   const bitrate_kbps = parseInt(document.getElementById('sl-bitrate').value);
 
-  btnLoading('btn-stream-apply', true, 'Wird angewendet…');
+  btnLoading('btn-stream-apply', true, tr('stream.applying'));
   try {
     const result = await api('POST', '/camera/settings', { resolution, framerate });
     await api('POST', '/config', { streaming: { mjpeg: { fps: framerate } } });
@@ -455,10 +463,10 @@ async function applyStreamSettings() {
     const img = document.getElementById('stream-img');
     img.src = '/stream?' + Date.now();
 
-    toast('Streameinstellungen übernommen');
-    if (result.restarted) toast('Kamera wurde neu gestartet');
+    toast(tr('stream.applied'));
+    if (result.restarted) toast(tr('stream.cameraRestarted'));
   } catch(e) {
-    toast('Fehler: ' + e.message, 'error');
+    toast(tr('common.error', { message: e.message }), 'error');
   } finally {
     btnLoading('btn-stream-apply', false);
   }
@@ -478,16 +486,16 @@ async function applyImageSettings() {
   const autofocus        = document.getElementById('chk-autofocus').checked;
   const hdr              = document.getElementById('chk-hdr').checked;
 
-  btnLoading('btn-img-apply', true, 'Wird angewendet…');
+  btnLoading('btn-img-apply', true, tr('stream.applying'));
   try {
     const result = await api('POST', '/camera/settings', {
       brightness, contrast, saturation, sharpness,
       exposure_mode, awb_mode, noise_reduction, vflip, hflip, autofocus, hdr,
     });
-    toast('Bildeinstellungen übernommen');
-    if (result.restarted) toast('Kamera wurde neu gestartet');
+    toast(tr('image.applied'));
+    if (result.restarted) toast(tr('stream.cameraRestarted'));
   } catch(e) {
-    toast('Fehler: ' + e.message, 'error');
+    toast(tr('common.error', { message: e.message }), 'error');
   } finally {
     btnLoading('btn-img-apply', false);
   }
@@ -495,14 +503,27 @@ async function applyImageSettings() {
 
 // ── Update ─────────────────────────────────────────────────────────────────
 let _updatePollTimer = null;
+let _lastUpdateStatus = null;
+let _lastReleases = null;
+
+function translatedUpdateProgress(state, fallback = '') {
+  const keys = {
+    checking: 'update.checking',
+    preparing: 'update.preparing',
+    downloading: 'update.downloading',
+    installing: 'update.installing',
+    restarting: 'update.restarting',
+  };
+  return keys[state] ? tr(keys[state]) : fallback;
+}
 
 async function checkUpdate() {
-  btnLoading('btn-check-update', true, 'Suche…');
+  btnLoading('btn-check-update', true, tr('update.checking'));
   try {
     const s = await api('POST', '/update/check');
     renderUpdateStatus(s);
   } catch(e) {
-    setUpdateMsg('Fehler: ' + e.message, 'error');
+    setUpdateMsg(tr('common.error', { message: e.message }), 'error');
   } finally {
     btnLoading('btn-check-update', false);
   }
@@ -510,16 +531,16 @@ async function checkUpdate() {
 
 async function doUpdate(version) {
   const msg = version
-    ? `v${version} wird installiert. Danach startet BambuCam neu. Fortfahren?`
-    : 'BambuCam wird aktualisiert und danach automatisch neu gestartet. Fortfahren?';
+    ? tr('update.confirmVersion', { version })
+    : tr('update.confirm');
   if (!confirm(msg)) return;
   const body = version ? {version} : null;
-  if (!version) btnLoading('btn-do-update', true, 'Update läuft…');
+  if (!version) btnLoading('btn-do-update', true, tr('update.running'));
   try {
     await api('POST', '/update/start', body);
     startUpdatePolling();
   } catch(e) {
-    toast('Fehler beim Update: ' + e.message, 'error');
+    toast(tr('update.failed', { message: e.message }), 'error');
     if (!version) btnLoading('btn-do-update', false);
   }
 }
@@ -536,7 +557,7 @@ function startUpdatePolling() {
         if (s.state === 'success') {
           let countdown = 5;
           const tick = () => {
-            setUpdateMsg(`Update erfolgreich! Seite wird in ${countdown}s neu geladen…`, 'ok');
+            setUpdateMsg(tr('update.successReload', { seconds: countdown }), 'ok');
             if (countdown-- > 0) setTimeout(tick, 1000);
             else location.reload();
           };
@@ -548,6 +569,7 @@ function startUpdatePolling() {
 }
 
 function renderUpdateStatus(s) {
+  _lastUpdateStatus = s;
   setText('upd-current', s.current_version ? 'v' + s.current_version : '—');
 
   const latestEl = document.getElementById('upd-latest');
@@ -555,7 +577,7 @@ function renderUpdateStatus(s) {
     latestEl.textContent = 'v' + s.latest_version;
     latestEl.className = 'info-val accent';
   } else if (s.state === 'up_to_date') {
-    latestEl.textContent = 'Aktuell';
+    latestEl.textContent = tr('update.upToDate');
     latestEl.className = 'info-val';
   } else {
     latestEl.textContent = s.latest_version ? 'v' + s.latest_version : '—';
@@ -576,16 +598,16 @@ function renderUpdateStatus(s) {
   const pw = document.getElementById('upd-progress-wrap');
   pw.style.display = inProgress ? '' : 'none';
   document.getElementById('upd-progress-fill').style.width = (s.progress || 0) + '%';
-  document.getElementById('upd-progress-label').textContent = s.message || '';
+  document.getElementById('upd-progress-label').textContent = translatedUpdateProgress(s.state, s.message || '');
 
   if (s.state === 'error') {
-    setUpdateMsg(s.error || 'Unbekannter Fehler', 'error');
+    setUpdateMsg(s.error || tr('update.unknownError'), 'error');
   } else if (s.state === 'up_to_date') {
-    setUpdateMsg('✓ BambuCam ist aktuell', 'ok');
+    setUpdateMsg(tr('update.upToDateMessage'), 'ok');
   } else if (s.state === 'available') {
-    setUpdateMsg('Update verfügbar: v' + s.latest_version, 'ok');
+    setUpdateMsg(tr('update.availableVersion', { version: s.latest_version }), 'ok');
   } else if (!inProgress && s.message) {
-    setUpdateMsg(s.message, 'dim');
+    setUpdateMsg(translatedUpdateProgress(s.state, s.message), 'dim');
   } else if (!inProgress) {
     setUpdateMsg('', 'dim');
   }
@@ -596,26 +618,26 @@ function renderUpdateStatus(s) {
   if (s.update_available && !inProgress) {
     btnDo.style.display = '';
     btnDo.disabled = false;
-    btnDo.innerHTML = `Auf v${s.latest_version} aktualisieren`;
+    btnDo.textContent = tr('update.toVersion', { version: s.latest_version });
     btnCheck.style.display = '';
     btnCheck.disabled = false;
-    if (btnCheck.dataset.origLabel) btnCheck.innerHTML = btnCheck.dataset.origLabel;
+    btnCheck.textContent = tr('update.check');
   } else if (inProgress) {
     btnDo.style.display = '';
     btnDo.disabled = true;
-    btnDo.innerHTML = `<span class="spinner"></span> Update läuft…`;
+    btnDo.innerHTML = `<span class="spinner"></span> ${tr('update.running')}`;
     btnCheck.style.display = 'none';
   } else if (s.state === 'error') {
     btnDo.style.display = 'none';
     btnCheck.style.display = '';
     btnCheck.disabled = false;
-    btnCheck.innerHTML = 'Erneut versuchen';
+    btnCheck.textContent = tr('update.retry');
     btnCheck.className = 'btn btn-danger-outline';
   } else {
     btnDo.style.display = 'none';
     btnCheck.style.display = '';
     btnCheck.disabled = false;
-    if (btnCheck.dataset.origLabel) btnCheck.innerHTML = btnCheck.dataset.origLabel;
+    btnCheck.textContent = tr('update.check');
     btnCheck.className = 'btn btn-secondary';
   }
 }
@@ -628,26 +650,27 @@ function toggleReleases() {
   const btn   = document.getElementById('btn-show-releases');
   const open  = panel.style.display === 'none';
   panel.style.display = open ? '' : 'none';
-  btn.textContent = open ? 'Versionshistorie ▴' : 'Versionshistorie ▾';
+  btn.textContent = tr(open ? 'update.historyOpen' : 'update.historyClosed');
   if (open && !_releasesLoaded) loadReleases();
 }
 
 async function loadReleases() {
   const list = document.getElementById('releases-list');
-  list.innerHTML = '<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">Lade…</div>';
+  list.innerHTML = `<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">${tr('common.loading')}</div>`;
   try {
     const releases = await api('GET', '/update/releases');
     _releasesLoaded = true;
     renderReleases(releases);
   } catch(e) {
-    list.innerHTML = `<div style="color:var(--danger);font-size:0.78rem;padding:0.4rem">Fehler: ${e.message}</div>`;
+    list.innerHTML = `<div style="color:var(--danger);font-size:0.78rem;padding:0.4rem">${tr('common.error', { message: e.message })}</div>`;
   }
 }
 
 function renderReleases(releases) {
+  _lastReleases = releases;
   const list = document.getElementById('releases-list');
   if (!releases || releases.length === 0) {
-    list.innerHTML = '<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">Keine Versionen gefunden</div>';
+    list.innerHTML = `<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">${tr('update.noReleases')}</div>`;
     return;
   }
   const currentEl = document.getElementById('upd-current');
@@ -660,12 +683,12 @@ function renderReleases(releases) {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;border-radius:6px;background:var(--card-bg2,rgba(255,255,255,0.04))';
     const badges = [];
-    if (isCurrent) badges.push('<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--accent);color:#fff">Aktuell</span>');
-    if (isLatest && !isCurrent) badges.push('<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--success,#22c55e);color:#fff">Neueste</span>');
+    if (isCurrent) badges.push(`<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--accent);color:#fff">${tr('common.current')}</span>`);
+    if (isLatest && !isCurrent) badges.push(`<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--success,#22c55e);color:#fff">${tr('common.latest')}</span>`);
     const relName = (r.name || '').replace(/^v[\d.]+\s*[-–]?\s*/,'').trim();
     const desc = relName || (r.body ? r.body.split('\n').find(l => l.trim()) || '' : '');
     const descHtml = desc ? `<span style="font-size:0.75rem;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${desc.replace(/"/g,'&quot;')}">${desc}</span>` : '';
-    const installBtn = isCurrent ? '' : `<button onclick="installVersion('${ver}')" style="margin-left:auto;flex-shrink:0;font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--text)'">Installieren</button>`;
+    const installBtn = isCurrent ? '' : `<button onclick="installVersion('${ver}')" style="margin-left:auto;flex-shrink:0;font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--text)'">${tr('common.install')}</button>`;
     row.innerHTML = `<span style="font-weight:600;font-size:0.82rem;flex-shrink:0">v${ver}</span>${badges.join('')}${descHtml}${installBtn}`;
     list.appendChild(row);
   });
@@ -735,6 +758,21 @@ document.getElementById('settings-overlay').addEventListener('click', function(e
 // close on Escape
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeSettings();
+});
+
+window.addEventListener('bambucam:languagechange', () => {
+  loadCameraStatus();
+  loadStreamStatus();
+  loadSnapshotList();
+  if (_lastUpdateStatus) renderUpdateStatus(_lastUpdateStatus);
+  if (_lastReleases) renderReleases(_lastReleases);
+  const releasesPanel = document.getElementById('releases-panel');
+  const releasesButton = document.getElementById('btn-show-releases');
+  if (releasesPanel && releasesButton) {
+    releasesButton.textContent = tr(
+      releasesPanel.style.display === 'none' ? 'update.historyClosed' : 'update.historyOpen'
+    );
+  }
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────

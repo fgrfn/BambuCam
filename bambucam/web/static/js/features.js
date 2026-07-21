@@ -1,6 +1,10 @@
 "use strict";
 
 (function () {
+  function tr(key, values) {
+    return window.BambuCamI18n ? window.BambuCamI18n.t(key, values) : key;
+  }
+
   async function request(path, options = {}) {
     const response = await fetch(path, {
       credentials: "same-origin",
@@ -26,42 +30,42 @@
   function cardMarkup() {
     return `
       <div class="card feature-card" id="camera-profiles-card">
-        <div class="card-header"><span class="card-title">Kamera-Profil</span></div>
+        <div class="card-header"><span class="card-title" data-i18n="profile.title">Camera profile</span></div>
         <div class="card-body">
           <div class="field">
-            <div class="field-label"><span>Profil</span></div>
+            <div class="field-label"><span data-i18n="profile.field">Profile</span></div>
             <select id="feature-profile-select"></select>
           </div>
           <p class="hint feature-description" id="feature-profile-description"></p>
           <div class="btn-row">
-            <button class="btn btn-secondary" id="feature-profile-apply">Profil anwenden</button>
+            <button class="btn btn-secondary" id="feature-profile-apply" data-i18n="profile.apply">Apply profile</button>
           </div>
         </div>
       </div>
       <div class="card feature-card" id="timelapse-card">
         <div class="card-header">
-          <span class="card-title">Timelapse</span>
-          <span class="feature-state" id="timelapse-state">Bereit</span>
+          <span class="card-title" data-i18n="timelapse.title">Timelapse</span>
+          <span class="feature-state" id="timelapse-state" data-i18n="timelapse.ready">Ready</span>
         </div>
         <div class="card-body">
           <div class="field">
-            <div class="field-label"><span>Titel</span></div>
-            <input class="text-input" id="timelapse-title" placeholder="Druckauftrag" maxlength="160" />
+            <div class="field-label"><span data-i18n="timelapse.jobTitle">Title</span></div>
+            <input class="text-input" id="timelapse-title" placeholder="Print job" data-i18n-placeholder="timelapse.jobPlaceholder" maxlength="160" />
           </div>
           <div class="feature-grid">
             <div class="field">
-              <div class="field-label"><span>Intervall (s)</span></div>
+              <div class="field-label"><span data-i18n="timelapse.interval">Interval (s)</span></div>
               <input class="text-input" type="number" id="timelapse-interval" min="0.5" max="86400" step="0.5" value="10" />
             </div>
             <div class="field">
-              <div class="field-label"><span>Video-FPS</span></div>
+              <div class="field-label"><span data-i18n="timelapse.videoFps">Video FPS</span></div>
               <input class="text-input" type="number" id="timelapse-fps" min="1" max="120" value="30" />
             </div>
           </div>
-          <div class="feature-progress" id="timelapse-progress">Noch keine Sitzung</div>
+          <div class="feature-progress" id="timelapse-progress" data-i18n="timelapse.noSession">No session yet</div>
           <div class="btn-row">
-            <button class="btn btn-secondary" id="timelapse-start">Starten</button>
-            <button class="btn btn-danger" id="timelapse-stop" disabled>Stoppen & rendern</button>
+            <button class="btn btn-secondary" id="timelapse-start" data-i18n="timelapse.start">Start</button>
+            <button class="btn btn-danger" id="timelapse-stop" disabled data-i18n="timelapse.stopRender">Stop & render</button>
           </div>
           <div class="snapshot-list feature-sessions" id="timelapse-sessions"></div>
         </div>
@@ -70,6 +74,13 @@
 
   let profiles = [];
   let recommendedProfile = "";
+  let lastSessions = [];
+
+  function profileText(profile, field) {
+    const key = `profile.${profile.name}.${field}`;
+    const translated = tr(key);
+    return translated === key ? profile[field] : translated;
+  }
 
   async function loadProfiles() {
     const payload = await request("/api/v1/camera/profiles");
@@ -81,9 +92,9 @@
     const select = document.getElementById("feature-profile-select");
     select.innerHTML = profiles
       .map((profile) => {
-        const recommended = profile.name === recommendedProfile ? " (Empfohlen)" : "";
+        const recommended = profile.name === recommendedProfile ? ` (${tr('profile.recommended')})` : "";
         const selected = profile.name === selectedProfile ? "selected" : "";
-        return `<option value="${profile.name}" ${selected}>${profile.label}${recommended}</option>`;
+        return `<option value="${profile.name}" ${selected}>${profileText(profile, 'label')}${recommended}</option>`;
       })
       .join("");
     updateProfileDescription();
@@ -93,7 +104,7 @@
     const name = document.getElementById("feature-profile-select").value;
     const profile = profiles.find((item) => item.name === name);
     document.getElementById("feature-profile-description").textContent = profile
-      ? `${profile.description} ${profile.resolved.resolution} @ ${profile.resolved.framerate} FPS${profile.name === recommendedProfile ? " — für dieses System empfohlen" : ""}`
+      ? `${profileText(profile, 'description')} ${profile.resolved.resolution} @ ${profile.resolved.framerate} FPS${profile.name === recommendedProfile ? ` ${tr('profile.recommendedSuffix')}` : ""}`
       : "";
   }
 
@@ -103,7 +114,7 @@
     button.disabled = true;
     try {
       const payload = await request(`/api/v1/camera/profiles/${encodeURIComponent(name)}`, { method: "POST" });
-      toast(`${payload.profile.label}: ${payload.profile.resolution} @ ${payload.profile.framerate} FPS`);
+      toast(`${profileText({ ...payload.profile, name }, 'label')}: ${payload.profile.resolution} @ ${payload.profile.framerate} FPS`);
       await loadProfiles();
     } catch (error) {
       toast(error.message, true);
@@ -122,7 +133,7 @@
           output_fps: Number(document.getElementById("timelapse-fps").value),
         }),
       });
-      toast("Timelapse gestartet");
+      toast(tr("timelapse.started"));
       await refreshTimelapse();
     } catch (error) {
       toast(error.message, true);
@@ -132,17 +143,17 @@
   async function stopTimelapse() {
     const button = document.getElementById("timelapse-stop");
     button.disabled = true;
-    button.textContent = "Rendere…";
+    button.textContent = tr("timelapse.rendering");
     try {
       await request("/api/v1/timelapse/stop", {
         method: "POST",
         body: JSON.stringify({ render: true }),
       });
-      toast("Timelapse beendet und gerendert");
+      toast(tr("timelapse.finished"));
     } catch (error) {
       toast(error.message, true);
     } finally {
-      button.textContent = "Stoppen & rendern";
+      button.textContent = tr("timelapse.stopRender");
       await refreshTimelapse();
     }
   }
@@ -153,7 +164,7 @@
         method: "POST",
         body: JSON.stringify({}),
       });
-      toast("Timelapse gerendert");
+      toast(tr("timelapse.rendered"));
       await refreshTimelapse();
     } catch (error) {
       toast(error.message, true);
@@ -161,10 +172,10 @@
   }
 
   async function deleteSession(sessionId) {
-    if (!window.confirm("Timelapse-Sitzung wirklich löschen?")) return;
+    if (!window.confirm(tr("timelapse.deleteConfirm"))) return;
     try {
       await request(`/api/v1/timelapse/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-      toast("Timelapse gelöscht");
+      toast(tr("timelapse.deleted"));
       await refreshTimelapse();
     } catch (error) {
       toast(error.message, true);
@@ -172,19 +183,20 @@
   }
 
   function renderSessions(sessions) {
+    lastSessions = sessions;
     const container = document.getElementById("timelapse-sessions");
     if (!sessions.length) {
-      container.innerHTML = '<div class="hint">Noch keine Timelapse-Sitzungen.</div>';
+      container.innerHTML = `<div class="hint">${tr('timelapse.noSessions')}</div>`;
       return;
     }
     container.innerHTML = sessions.slice(0, 8).map((session) => {
       const title = session.title || session.session_id;
       const video = session.video_available
         ? `<a class="feature-link" href="/api/v1/timelapse/${encodeURIComponent(session.session_id)}/video">MP4 ↓</a>`
-        : `<button class="feature-link-button" data-render="${session.session_id}">Rendern</button>`;
+        : `<button class="feature-link-button" data-render="${session.session_id}">${tr('timelapse.render')}</button>`;
       return `<div class="feature-session">
-        <div><strong>${title}</strong><small>${session.frame_count} Frames</small></div>
-        <div>${video}<button class="feature-link-button danger" data-delete="${session.session_id}">Löschen</button></div>
+        <div><strong>${title}</strong><small>${tr('timelapse.frames', { count: session.frame_count })}</small></div>
+        <div>${video}<button class="feature-link-button danger" data-delete="${session.session_id}">${tr('timelapse.delete')}</button></div>
       </div>`;
     }).join("");
     container.querySelectorAll("[data-render]").forEach((button) => {
@@ -209,11 +221,11 @@
         ? status.output_fps
         : payload.defaults.output_fps;
       document.getElementById("timelapse-state").textContent = status.rendering
-        ? "Rendert"
-        : status.running ? "Läuft" : "Bereit";
+        ? tr("timelapse.stateRendering")
+        : status.running ? tr("timelapse.stateRunning") : tr("timelapse.ready");
       document.getElementById("timelapse-progress").textContent = status.session_id
-        ? `${status.frame_count} Frames · ${status.session_id}${status.error ? ` · ${status.error}` : ""}`
-        : "Noch keine Sitzung";
+        ? `${tr('timelapse.frames', { count: status.frame_count })} · ${status.session_id}${status.error ? ` · ${status.error}` : ""}`
+        : tr("timelapse.noSession");
       document.getElementById("timelapse-start").disabled = status.running || status.rendering;
       document.getElementById("timelapse-stop").disabled = !status.running || status.rendering;
       renderSessions(sessions);
@@ -226,6 +238,7 @@
     const aside = document.querySelector("aside");
     if (!aside || document.getElementById("timelapse-card")) return;
     aside.insertAdjacentHTML("beforeend", cardMarkup());
+    if (window.BambuCamI18n) window.BambuCamI18n.translateDocument(aside);
     document.getElementById("feature-profile-select").addEventListener("change", updateProfileDescription);
     document.getElementById("feature-profile-apply").addEventListener("click", applyProfile);
     document.getElementById("timelapse-start").addEventListener("click", startTimelapse);
@@ -236,4 +249,18 @@
   }
 
   window.addEventListener("DOMContentLoaded", initialise);
+  window.addEventListener("bambucam:languagechange", () => {
+    if (!document.getElementById("timelapse-card")) return;
+    if (profiles.length) {
+      const selected = document.getElementById("feature-profile-select").value;
+      const select = document.getElementById("feature-profile-select");
+      select.innerHTML = profiles.map((profile) => {
+        const recommended = profile.name === recommendedProfile ? ` (${tr('profile.recommended')})` : "";
+        return `<option value="${profile.name}"${profile.name === selected ? " selected" : ""}>${profileText(profile, 'label')}${recommended}</option>`;
+      }).join("");
+      updateProfileDescription();
+    }
+    renderSessions(lastSessions);
+    refreshTimelapse();
+  });
 })();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  <script src="{{ url_for('static', filename='js/i18n.js') }}" defer></script>
 </head>
 <body>
 
@@ -29,12 +30,16 @@
 
   <div class="status-pill">
     <span class="status-dot pulse" id="status-dot"></span>
-    <span id="status-text">Verbinde…</span>
+    <span id="status-text" data-i18n="header.connecting">Connecting…</span>
   </div>
 
   <div class="header-right">
-    <button class="btn btn-secondary" onclick="openSettings()" style="display:inline-flex;align-items:center;gap:0.4rem;width:auto;padding:0.3rem 0.7rem;font-size:0.78rem">
-      ⚙ Einstellungen
+    <select id="language-select" class="language-select" aria-label="Language" data-i18n-aria-label="language.label">
+      <option value="en">EN</option>
+      <option value="de">DE</option>
+    </select>
+    <button class="btn btn-secondary" onclick="openSettings()" aria-label="Settings" data-i18n-aria-label="header.settings" style="display:inline-flex;align-items:center;gap:0.4rem;width:auto;padding:0.3rem 0.7rem;font-size:0.78rem">
+      <span aria-hidden="true">⚙</span><span class="settings-label" data-i18n="header.settings">Settings</span>
     </button>
     <a class="header-link" href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -46,9 +51,9 @@
 </header>
 
 <div class="restart-banner" id="restart-required-banner" role="status" hidden>
-  <span>Gespeicherte Änderungen werden nach einem Neustart vollständig aktiv.</span>
+  <span data-i18n="restart.notice">Saved changes become fully active after a restart.</span>
   <button class="btn btn-secondary" id="btn-restart-app" onclick="restartApplication()">
-    BambuCam jetzt neu starten
+    <span data-i18n="restart.action">Restart BambuCam now</span>
   </button>
 </div>
 
@@ -61,28 +66,28 @@
     <!-- ① Kamerastatus ──────────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Kamerastatus</span>
+        <span class="card-title" data-i18n="camera.status">Camera status</span>
       </div>
       <div class="card-body">
         <div class="info-grid">
           <div class="info-row">
-            <span class="info-key">Modell</span>
+            <span class="info-key" data-i18n="camera.model">Model</span>
             <span class="info-val" id="cam-model">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Sensor</span>
+            <span class="info-key" data-i18n="camera.sensor">Sensor</span>
             <span class="info-val" id="cam-sensor">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Backend</span>
+            <span class="info-key" data-i18n="camera.backend">Backend</span>
             <span class="info-val" id="cam-backend">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Auflösung</span>
+            <span class="info-key" data-i18n="camera.resolution">Resolution</span>
             <span class="info-val" id="cam-res">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Framerate</span>
+            <span class="info-key" data-i18n="camera.framerate">Frame rate</span>
             <span class="info-val" id="cam-fps">—<span id="cam-fps-actual" style="opacity:0.55;font-size:0.85em"></span></span>
           </div>
         </div>
@@ -91,7 +96,7 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
-            Kamera neu starten
+            <span data-i18n="camera.restart">Restart camera</span>
           </button>
         </div>
       </div>
@@ -106,41 +111,41 @@
       <div class="card-body">
         <div class="metrics-grid">
           <div class="metric-card">
-            <div class="metric-key">CPU Temp</div>
+            <div class="metric-key" data-i18n="system.cpuTemp">CPU temp</div>
             <div class="metric-val" id="sys-temp">—</div>
           </div>
           <div class="metric-card">
-            <div class="metric-key">CPU Last</div>
+            <div class="metric-key" data-i18n="system.cpuLoad">CPU load</div>
             <div class="metric-val" id="sys-cpu">—</div>
           </div>
           <div class="metric-card">
-            <div class="metric-key">RAM frei</div>
+            <div class="metric-key" data-i18n="system.ramFree">Free RAM</div>
             <div class="metric-val" id="sys-ram-free">—</div>
           </div>
           <div class="metric-card">
-            <div class="metric-key">Disk frei</div>
+            <div class="metric-key" data-i18n="system.diskFree">Free disk</div>
             <div class="metric-val" id="sys-disk-free">—</div>
           </div>
         </div>
         <div class="info-grid">
           <div class="info-row">
-            <span class="info-key">RAM gesamt</span>
+            <span class="info-key" data-i18n="system.ramTotal">Total RAM</span>
             <span class="info-val" id="sys-ram-total">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Disk gesamt</span>
+            <span class="info-key" data-i18n="system.diskTotal">Total disk</span>
             <span class="info-val" id="sys-disk-total">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Hostname</span>
+            <span class="info-key" data-i18n="system.hostname">Hostname</span>
             <span class="info-val" id="sys-host">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Pi-Modell</span>
+            <span class="info-key" data-i18n="system.piModel">Pi model</span>
             <span class="info-val" id="sys-pi">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Uptime</span>
+            <span class="info-key" data-i18n="system.uptime">Uptime</span>
             <span class="info-val" id="sys-uptime">—</span>
           </div>
         </div>
@@ -150,23 +155,23 @@
     <!-- ③ Software-Update ───────────────────────────────────────── -->
     <div class="card" id="update-card">
       <div class="card-header">
-        <span class="card-title">Software-Update</span>
+        <span class="card-title" data-i18n="update.title">Software update</span>
       </div>
       <div class="card-body">
         <div class="info-grid">
           <div class="info-row">
-            <span class="info-key">Installiert</span>
+            <span class="info-key" data-i18n="update.installed">Installed</span>
             <span class="info-val" id="upd-current">—</span>
           </div>
           <div class="info-row">
-            <span class="info-key">Verfügbar</span>
+            <span class="info-key" data-i18n="update.available">Available</span>
             <span class="info-val" id="upd-latest">—</span>
           </div>
           <div class="info-row" id="upd-release-row" style="display:none">
-            <span class="info-key">Release</span>
+            <span class="info-key" data-i18n="update.release">Release</span>
             <span class="info-val">
               <a id="upd-release-link" href="#" target="_blank" style="color:var(--info);font-size:0.72rem">
-                Changelog →
+                <span data-i18n="update.changelog">Changelog →</span>
               </a>
             </span>
           </div>
@@ -183,20 +188,20 @@
 
         <div style="display:flex;flex-direction:column;gap:0.35rem">
           <button class="btn btn-secondary" id="btn-check-update" onclick="checkUpdate()">
-            Nach Updates suchen
+            <span data-i18n="update.check">Check for updates</span>
           </button>
           <button class="btn btn-accent-outline" id="btn-do-update" onclick="doUpdate()" style="display:none">
-            Jetzt aktualisieren
+            <span data-i18n="update.now">Update now</span>
           </button>
           <button class="btn btn-ghost" id="btn-show-releases" onclick="toggleReleases()" style="font-size:0.78rem;padding:0.3rem 0.6rem">
-            Versionshistorie ▾
+            <span data-i18n="update.historyClosed">Version history ▾</span>
           </button>
         </div>
 
         <!-- Version history / downgrade panel -->
         <div id="releases-panel" style="display:none;margin-top:0.6rem">
           <div id="releases-list" style="display:flex;flex-direction:column;gap:0.3rem;max-height:260px;overflow-y:auto">
-            <div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">Lade…</div>
+            <div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem" data-i18n="common.loading">Loading…</div>
           </div>
         </div>
       </div>
@@ -214,13 +219,13 @@
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/><circle cx="19" cy="5" r="2" fill="white" stroke="none"/>
         </svg>
-        <span>Kein Stream</span>
+        <span data-i18n="stream.noStream">No stream</span>
       </div>
       <div class="stream-overlay">
         <span class="stream-badge" id="stream-badge">MJPEG</span>
         <span class="viewers-badge hidden" id="viewers-badge">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5a7 7 0 100 14A7 7 0 0012 5zm-9 7a9 9 0 1118 0 9 9 0 01-18 0z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span id="viewers-count">0</span> Zuschauer
+          <span id="viewers-count">0</span> <span id="viewers-label" data-i18n="stream.viewerMany">viewers</span>
         </span>
       </div>
     </div>
@@ -258,19 +263,19 @@
     <!-- ② Stream Settings ──────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Streameinstellungen</span>
+        <span class="card-title" data-i18n="stream.settings">Stream settings</span>
       </div>
       <div class="card-body">
         <div class="field">
-          <div class="field-label"><span>Auflösung</span></div>
+          <div class="field-label"><span data-i18n="camera.resolution">Resolution</span></div>
           <select id="sel-resolution"></select>
         </div>
         <div class="field">
-          <div class="field-label"><span>Framerate</span></div>
+          <div class="field-label"><span data-i18n="camera.framerate">Frame rate</span></div>
           <select id="sel-framerate"></select>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">RTSP aktivieren</span>
+          <span class="toggle-label" data-i18n="stream.enableRtsp">Enable RTSP</span>
           <label class="toggle-switch">
             <input type="checkbox" id="chk-rtsp" onchange="toggleRtsp(this.checked)" />
             <span class="toggle-track"></span>
@@ -279,7 +284,7 @@
         </div>
         <div class="field" id="row-rtsp-bitrate">
           <div class="field-label">
-            <span>RTSP Bitrate</span>
+            <span data-i18n="stream.bitrate">RTSP bitrate</span>
             <span class="field-label-val"><span id="val-bitrate">2000</span> kbps</span>
           </div>
           <input type="range" id="sl-bitrate" min="500" max="8000" step="500" value="2000"
@@ -287,7 +292,7 @@
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="btn-stream-apply" onclick="applyStreamSettings()">
-            Übernehmen
+            <span data-i18n="common.apply">Apply</span>
           </button>
         </div>
       </div>
@@ -296,12 +301,12 @@
     <!-- ③ Image Settings ───────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Bildeinstellungen</span>
+        <span class="card-title" data-i18n="image.settings">Image settings</span>
       </div>
       <div class="card-body">
         <div class="field">
           <div class="field-label">
-            <span>Helligkeit</span>
+            <span data-i18n="image.brightness">Brightness</span>
             <span class="field-label-val" id="val-brightness">0.0</span>
           </div>
           <input type="range" id="sl-brightness" min="-100" max="100" step="1" value="0"
@@ -309,7 +314,7 @@
         </div>
         <div class="field">
           <div class="field-label">
-            <span>Kontrast</span>
+            <span data-i18n="image.contrast">Contrast</span>
             <span class="field-label-val" id="val-contrast">1.0</span>
           </div>
           <input type="range" id="sl-contrast" min="0" max="3200" step="10" value="100"
@@ -317,7 +322,7 @@
         </div>
         <div class="field">
           <div class="field-label">
-            <span>Sättigung</span>
+            <span data-i18n="image.saturation">Saturation</span>
             <span class="field-label-val" id="val-saturation">1.0</span>
           </div>
           <input type="range" id="sl-saturation" min="0" max="3200" step="10" value="100"
@@ -325,7 +330,7 @@
         </div>
         <div class="field">
           <div class="field-label">
-            <span>Schärfe</span>
+            <span data-i18n="image.sharpness">Sharpness</span>
             <span class="field-label-val" id="val-sharpness">1.0</span>
           </div>
           <input type="range" id="sl-sharpness" min="0" max="1600" step="10" value="100"
@@ -335,38 +340,38 @@
         <div class="divider"></div>
 
         <div class="field">
-          <div class="field-label"><span>Belichtungsmodus</span></div>
+          <div class="field-label"><span data-i18n="image.exposureMode">Exposure mode</span></div>
           <select id="sel-exposure">
-            <option value="auto">Auto</option>
-            <option value="sport">Sport</option>
-            <option value="night">Nacht</option>
+            <option value="auto" data-i18n="option.auto">Auto</option>
+            <option value="sport" data-i18n="option.sport">Sport</option>
+            <option value="night" data-i18n="option.night">Night</option>
           </select>
         </div>
         <div class="field">
-          <div class="field-label"><span>Weißabgleich</span></div>
+          <div class="field-label"><span data-i18n="image.whiteBalance">White balance</span></div>
           <select id="sel-awb">
-            <option value="auto">Auto</option>
-            <option value="sunlight">Sonnenlicht</option>
-            <option value="cloudy">Bewölkt</option>
-            <option value="shade">Schatten</option>
-            <option value="tungsten">Glühlampe</option>
-            <option value="fluorescent">Leuchtstoffröhre</option>
+            <option value="auto" data-i18n="option.auto">Auto</option>
+            <option value="sunlight" data-i18n="option.sunlight">Sunlight</option>
+            <option value="cloudy" data-i18n="option.cloudy">Cloudy</option>
+            <option value="shade" data-i18n="option.shade">Shade</option>
+            <option value="tungsten" data-i18n="option.tungsten">Tungsten</option>
+            <option value="fluorescent" data-i18n="option.fluorescent">Fluorescent</option>
           </select>
         </div>
         <div class="field">
-          <div class="field-label"><span>Rauschunterdrückung</span></div>
+          <div class="field-label"><span data-i18n="image.noiseReduction">Noise reduction</span></div>
           <select id="sel-noise-reduction">
-            <option value="off">Aus</option>
-            <option value="minimal">Minimal</option>
-            <option value="fast" selected>Schnell</option>
-            <option value="high_quality">Hohe Qualität</option>
+            <option value="off" data-i18n="option.off">Off</option>
+            <option value="minimal" data-i18n="option.minimal">Minimal</option>
+            <option value="fast" selected data-i18n="option.fast">Fast</option>
+            <option value="high_quality" data-i18n="option.highQuality">High quality</option>
           </select>
         </div>
 
         <div class="divider"></div>
 
         <div class="toggle-row">
-          <span class="toggle-label">Vertikal spiegeln</span>
+          <span class="toggle-label" data-i18n="image.verticalFlip">Flip vertically</span>
           <label class="toggle-switch">
             <input type="checkbox" id="chk-vflip" />
             <span class="toggle-track"></span>
@@ -374,7 +379,7 @@
           </label>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">Horizontal spiegeln</span>
+          <span class="toggle-label" data-i18n="image.horizontalFlip">Flip horizontally</span>
           <label class="toggle-switch">
             <input type="checkbox" id="chk-hflip" />
             <span class="toggle-track"></span>
@@ -382,7 +387,7 @@
           </label>
         </div>
         <div class="toggle-row hidden" id="row-autofocus">
-          <span class="toggle-label">Autofokus</span>
+          <span class="toggle-label" data-i18n="image.autofocus">Autofocus</span>
           <label class="toggle-switch">
             <input type="checkbox" id="chk-autofocus" checked />
             <span class="toggle-track"></span>
@@ -400,7 +405,7 @@
 
         <div class="btn-row">
           <button class="btn btn-primary" id="btn-img-apply" onclick="applyImageSettings()">
-            Anwenden
+            <span data-i18n="common.apply">Apply</span>
           </button>
         </div>
       </div>
@@ -414,7 +419,7 @@
       </div>
       <div class="card-body">
         <div class="toggle-row" style="border-bottom: none; padding-bottom: 0;">
-          <span class="toggle-label">Auf Disk speichern</span>
+          <span class="toggle-label" data-i18n="snapshot.saveToDisk">Save to disk</span>
           <label class="toggle-switch">
             <input type="checkbox" id="chk-snap-save" />
             <span class="toggle-track"></span>
@@ -426,7 +431,7 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="13" r="4"/><path d="M5 7h2l2-3h6l2 3h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z"/>
             </svg>
-            Snapshot aufnehmen
+            <span data-i18n="snapshot.take">Take snapshot</span>
           </button>
         </div>
         <div class="snapshot-list" id="snapshot-list"></div>
@@ -438,11 +443,11 @@
 
 <!-- Footer -->
 <footer>
-  <span>BambuCam — Open Source Raspberry Pi Camera Streaming</span>
+  <span data-i18n="footer.description">BambuCam — Open Source Raspberry Pi Camera Streaming</span>
   <span>
     <a href="/metrics" target="_blank" rel="noopener">Metrics ↗</a>
     ·
-    <a href="/api/v1/diagnostics/download">Diagnosepaket ↓</a>
+    <a href="/api/v1/diagnostics/download" data-i18n="footer.diagnostics">Diagnostics package ↓</a>
     ·
     <a href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener">GitHub ↗</a>
   </span>
@@ -455,8 +460,8 @@
 <div id="settings-overlay" class="settings-overlay">
   <div class="settings-modal">
     <div class="settings-modal-header">
-      <h3>Einstellungen</h3>
-      <button class="settings-modal-close" onclick="closeSettings()" title="Schließen">✕</button>
+      <h3 data-i18n="settings.title">Settings</h3>
+      <button class="settings-modal-close" onclick="closeSettings()" title="Close" data-i18n-title="common.close">✕</button>
     </div>
     <div class="settings-modal-body">
 
@@ -466,15 +471,15 @@
         <input type="number" id="cfg-mjpeg-port" class="text-input" min="1024" max="65535" value="8080" />
       </div>
       <div class="field">
-        <div class="field-label"><span>JPEG-Qualität</span></div>
+        <div class="field-label"><span data-i18n="settings.jpegQuality">JPEG quality</span></div>
         <input type="number" id="mjpeg-quality" class="text-input" min="1" max="100" step="1" value="85" />
       </div>
       <div class="field">
-        <div class="field-label"><span>Ziel-fps</span></div>
+        <div class="field-label"><span data-i18n="settings.targetFps">Target fps</span></div>
         <input type="number" id="cfg-mjpeg-fps" class="text-input" min="1" max="120" value="15" />
       </div>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-cfg-mjpeg" onclick="saveMjpegConfig()">Speichern</button>
+        <button class="btn btn-secondary" id="btn-cfg-mjpeg" onclick="saveMjpegConfig()" data-i18n="common.save">Save</button>
       </div>
 
       <div class="divider"></div>
@@ -485,11 +490,11 @@
         <input type="number" id="cfg-rtsp-port" class="text-input" min="1024" max="65535" value="8554" />
       </div>
       <div class="field">
-        <div class="field-label"><span>Stream-Name</span></div>
+        <div class="field-label"><span data-i18n="settings.streamName">Stream name</span></div>
         <input type="text" id="cfg-rtsp-name" class="text-input" value="cam" />
       </div>
       <div class="toggle-row">
-        <span class="toggle-label">HLS aktivieren</span>
+        <span class="toggle-label" data-i18n="settings.enableHls">Enable HLS</span>
         <label class="toggle-switch">
           <input type="checkbox" id="cfg-hls-enabled" checked />
           <span class="toggle-track"></span>
@@ -501,18 +506,18 @@
         <input type="number" id="cfg-hls-port" class="text-input" min="1024" max="65535" value="8888" />
       </div>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-cfg-rtsp" onclick="saveRtspConfig()">Speichern</button>
+        <button class="btn btn-secondary" id="btn-cfg-rtsp" onclick="saveRtspConfig()" data-i18n="common.save">Save</button>
       </div>
 
       <div class="divider"></div>
 
-      <div class="section-label">Web-Oberfläche</div>
+      <div class="section-label" data-i18n="settings.webUi">Web interface</div>
       <div class="field">
         <div class="field-label"><span>Port</span></div>
         <input type="number" id="cfg-web-port" class="text-input" min="1024" max="65535" value="8080" />
       </div>
       <div class="toggle-row">
-        <span class="toggle-label">Passwortschutz</span>
+        <span class="toggle-label" data-i18n="settings.passwordProtection">Password protection</span>
         <label class="toggle-switch">
           <input type="checkbox" id="cfg-auth-enabled" onchange="toggleAuthFields(this.checked)" />
           <span class="toggle-track"></span>
@@ -521,18 +526,18 @@
       </div>
       <div id="cfg-auth-fields" style="display:none">
         <div class="field">
-          <div class="field-label"><span>Benutzername</span></div>
+          <div class="field-label"><span data-i18n="settings.username">Username</span></div>
           <input type="text" id="cfg-auth-user" class="text-input" value="admin" autocomplete="username" />
         </div>
         <div class="field">
-          <div class="field-label"><span>Passwort</span></div>
-          <input type="password" id="cfg-auth-pass" class="text-input" placeholder="Unverändert lassen" autocomplete="new-password" />
+          <div class="field-label"><span data-i18n="settings.password">Password</span></div>
+          <input type="password" id="cfg-auth-pass" class="text-input" placeholder="Leave unchanged" data-i18n-placeholder="settings.passwordUnchanged" autocomplete="new-password" />
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-cfg-web" onclick="saveWebConfig()">Speichern</button>
+        <button class="btn btn-secondary" id="btn-cfg-web" onclick="saveWebConfig()" data-i18n="common.save">Save</button>
       </div>
-      <p class="hint" style="margin-top:6px">Port- und Auth-Änderungen erfordern einen Neustart von BambuCam.</p>
+      <p class="hint" style="margin-top:6px" data-i18n="settings.restartHint">Port and authentication changes require a BambuCam restart.</p>
 
     </div>
   </div>
