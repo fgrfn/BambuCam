@@ -79,6 +79,30 @@ class TestConfig:
         assert cfg.get("streaming", "mjpeg", "enabled") is True
         path.unlink()
 
+    def test_inaccessible_optional_user_config_does_not_prevent_startup(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        system_path = tmp_path / "system.yaml"
+        system_path.write_text("camera:\n  brightness: 0.25\n", encoding="utf-8")
+        user_path = tmp_path / "protected-home" / "bambucam.yaml"
+        original_exists = Path.exists
+
+        def protected_exists(path):
+            if path == user_path:
+                raise PermissionError(13, "Permission denied", str(path))
+            return original_exists(path)
+
+        monkeypatch.setattr("bambucam.config._SYSTEM_CONFIG", system_path)
+        monkeypatch.setattr("bambucam.config._USER_CONFIG", user_path)
+        monkeypatch.setattr(Path, "exists", protected_exists)
+
+        cfg = Config()
+        cfg.load()
+
+        assert cfg.get("camera", "brightness") == 0.25
+        assert cfg._user_config_path == system_path
+        assert "Skipping inaccessible optional config path" in caplog.text
+
     def test_save_and_reload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.yaml"

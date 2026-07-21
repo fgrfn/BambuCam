@@ -41,6 +41,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ReadWritePaths=/var/lib/bambucam /etc/bambucam /opt/bambucam
 
 Environment="PYTHONUNBUFFERED=1"
+# ProtectHome hides /home from the service. Keep libraries and optional
+# per-user state in the writable application data directory instead.
+Environment="HOME=/var/lib/bambucam"
 EnvironmentFile=-/etc/bambucam/environment
 
 [Install]
