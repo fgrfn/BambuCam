@@ -14,6 +14,14 @@ from bambucam.camera.models import CameraModel, Resolution
 log = logging.getLogger(__name__)
 
 
+def _resolve_control_enum(controls_module, enum_name: str):
+    """Resolve a libcamera enum across stable and draft API layouts."""
+    enum = getattr(controls_module, enum_name, None)
+    if enum is not None:
+        return enum
+    return getattr(getattr(controls_module, "draft", None), enum_name, None)
+
+
 class Picamera2Backend(CameraBackend):
     """Camera backend using the picamera2 / libcamera stack."""
 
@@ -113,7 +121,7 @@ class Picamera2Backend(CameraBackend):
         self._picam.configure(config)
 
         if self._pending_controls:
-            self._picam.set_controls(self._pending_controls)
+            self._set_control(**self._pending_controls)
 
         self._picam.start()
         self._running = True
@@ -184,6 +192,12 @@ class Picamera2Backend(CameraBackend):
 
     def _set_control(self, **kwargs) -> None:
         if self._picam is not None:
+            available_controls = getattr(self._picam, "camera_controls", None)
+            if available_controls is not None:
+                unsupported = [name for name in kwargs if name not in available_controls]
+                if unsupported:
+                    log.warning("Camera does not support control(s): %s", ", ".join(unsupported))
+                    return
             try:
                 self._picam.set_controls(kwargs)
             except Exception as e:
@@ -208,7 +222,10 @@ class Picamera2Backend(CameraBackend):
     def set_exposure_mode(self, mode: str) -> None:
         from libcamera import controls as lc
 
-        _enum = lc.AeExposureModeEnum
+        _enum = _resolve_control_enum(lc, "AeExposureModeEnum")
+        if _enum is None:
+            log.warning("Exposure modes are not supported by this libcamera version")
+            return
         mode_map = {
             "auto": getattr(_enum, "Normal", None),
             "sport": getattr(_enum, "Short", None),
@@ -225,7 +242,10 @@ class Picamera2Backend(CameraBackend):
 
         # libcamera AwbModeEnum: Auto, Tungsten, Fluorescent, Indoor, Daylight, Cloudy, Custom
         # "shade" and "incandescent" are not in the enum; map to nearest equivalent.
-        _enum = lc.AwbModeEnum
+        _enum = _resolve_control_enum(lc, "AwbModeEnum")
+        if _enum is None:
+            log.warning("AWB modes are not supported by this libcamera version")
+            return
         mode_map = {
             "auto": getattr(_enum, "Auto", None),
             "sunlight": getattr(_enum, "Daylight", None),
@@ -254,7 +274,10 @@ class Picamera2Backend(CameraBackend):
             return
         from libcamera import controls as lc
 
-        _enum = lc.AfModeEnum
+        _enum = _resolve_control_enum(lc, "AfModeEnum")
+        if _enum is None:
+            log.warning("Autofocus is not supported by this libcamera version")
+            return
         mode = getattr(_enum, "Continuous", None) if enabled else getattr(_enum, "Manual", None)
         if mode is not None:
             self._set_control(AfMode=mode)
@@ -264,7 +287,10 @@ class Picamera2Backend(CameraBackend):
             return
         from libcamera import controls as lc
 
-        _enum = lc.HdrModeEnum
+        _enum = _resolve_control_enum(lc, "HdrModeEnum")
+        if _enum is None:
+            log.warning("HDR is not supported by this libcamera version")
+            return
         if enabled:
             # MultiExposure is the standard HDR mode for IMX708; fall back to SingleExposure
             mode = getattr(_enum, "MultiExposure", None) or getattr(_enum, "SingleExposure", None)
@@ -276,14 +302,7 @@ class Picamera2Backend(CameraBackend):
     def set_noise_reduction(self, mode: str) -> None:
         from libcamera import controls as lc
 
-        # NoiseReductionMode is still a draft libcamera control in some
-        # Raspberry Pi OS releases.  Its enum therefore moved between
-        # ``controls.NoiseReductionModeEnum`` and
-        # ``controls.draft.NoiseReductionModeEnum`` across versions.
-        _enum = getattr(lc, "NoiseReductionModeEnum", None)
-        if _enum is None:
-            draft_controls = getattr(lc, "draft", None)
-            _enum = getattr(draft_controls, "NoiseReductionModeEnum", None)
+        _enum = _resolve_control_enum(lc, "NoiseReductionModeEnum")
         if _enum is None:
             log.warning("Noise reduction is not supported by this libcamera version")
             return
