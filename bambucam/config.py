@@ -141,7 +141,7 @@ class Config:
         migration_needed = False
 
         for path in [_SYSTEM_CONFIG, _USER_CONFIG]:
-            if path.exists():
+            if _optional_path_exists(path):
                 log.debug("Loading config from %s", path)
                 loaded = _load_yaml(path)
                 migration_needed |= _source_needs_migration(loaded)
@@ -160,7 +160,7 @@ class Config:
             migration_needed |= _source_needs_migration(loaded)
             result = _deep_merge(result, loaded)
             self._user_config_path = config_path
-        elif _SYSTEM_CONFIG.exists():
+        elif _optional_path_exists(_SYSTEM_CONFIG):
             # The service owns this file and should persist WebUI changes there.
             self._user_config_path = _SYSTEM_CONFIG
         else:
@@ -279,6 +279,15 @@ def _load_yaml(path: Path) -> dict:
     except Exception as exc:
         log.warning("Failed to load config from %s: %s", path, exc)
         return {}
+
+
+def _optional_path_exists(path: Path) -> bool:
+    """Check an optional config source without failing on sandboxed home directories."""
+    try:
+        return path.exists()
+    except OSError as exc:
+        log.warning("Skipping inaccessible optional config path %s: %s", path, exc)
+        return False
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
