@@ -18,6 +18,7 @@ BambuCam turns a Raspberry Pi or compatible Debian computer into a dedicated cam
 | Camera-model-aware controls | ✅ |
 | Camera Module 3 autofocus and HDR | ✅ |
 | Snapshot storage and downloads | ✅ |
+| English/German WebUI with browser-language detection | ✅ |
 | REST API | ✅ |
 | Optional Basic/Bearer authentication | ✅ |
 | Optional HTTPS | ✅ |
@@ -76,6 +77,8 @@ Open:
 ```text
 http://<your-pi-ip>:8080
 ```
+
+The WebUI uses English by default, automatically follows German browser preferences, and provides a persistent `EN`/`DE` language selector in the header.
 
 ### 3. Configure BambuBuddy or BambuStudio
 
