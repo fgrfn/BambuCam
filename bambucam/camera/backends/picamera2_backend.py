@@ -276,7 +276,18 @@ class Picamera2Backend(CameraBackend):
     def set_noise_reduction(self, mode: str) -> None:
         from libcamera import controls as lc
 
-        _enum = lc.NoiseReductionModeEnum
+        # NoiseReductionMode is still a draft libcamera control in some
+        # Raspberry Pi OS releases.  Its enum therefore moved between
+        # ``controls.NoiseReductionModeEnum`` and
+        # ``controls.draft.NoiseReductionModeEnum`` across versions.
+        _enum = getattr(lc, "NoiseReductionModeEnum", None)
+        if _enum is None:
+            draft_controls = getattr(lc, "draft", None)
+            _enum = getattr(draft_controls, "NoiseReductionModeEnum", None)
+        if _enum is None:
+            log.warning("Noise reduction is not supported by this libcamera version")
+            return
+
         mode_map = {
             "off": getattr(_enum, "Off", None),
             "minimal": getattr(_enum, "Minimal", None),
