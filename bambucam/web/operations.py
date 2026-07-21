@@ -1,5 +1,6 @@
 """Operational API endpoints: diagnostics and snapshot retention."""
 
+import logging
 from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -7,6 +8,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 from bambucam.observability import diagnostics_payload, diagnostics_zip
 
 operations_bp = Blueprint("operations", __name__)
+log = logging.getLogger(__name__)
 
 
 def _services() -> tuple:
@@ -58,6 +60,10 @@ def snapshot_retention_update():
     if unknown:
         return jsonify({"error": f"Unknown retention field(s): {', '.join(sorted(unknown))}"}), 400
 
+    config = current_app.config["bambucam_config"]
+    service = current_app.config["snapshot_service"]
+    snapshot = config.as_dict()
+    runtime_applied = False
     try:
         values = {}
         for key, value in data.items():
@@ -65,12 +71,24 @@ def snapshot_retention_update():
             if parsed < 0:
                 raise ValueError(f"{key} must be zero or greater")
             values[key] = parsed
-        status = current_app.config["snapshot_service"].update_retention(**values)
-        config = current_app.config["bambucam_config"]
+        status = service.update_retention(**values)
+        runtime_applied = True
         config.update_section("streaming", {"snapshot": values})
         config.save()
-    except (TypeError, ValueError) as exc:
-        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        config.replace(snapshot)
+        if runtime_applied:
+            old = snapshot["streaming"]["snapshot"]
+            try:
+                service.update_retention(
+                    max_count=old["max_count"],
+                    max_age_days=old["max_age_days"],
+                    max_bytes=old["max_bytes"],
+                )
+            except Exception:
+                log.exception("Failed to roll back snapshot retention")
+        status_code = 400 if isinstance(exc, (TypeError, ValueError)) else 500
+        return jsonify({"error": str(exc)}), status_code
     return jsonify({"ok": True, "retention": status})
 
 

@@ -35,6 +35,9 @@ class FakeConfig:
     def save(self):
         self.saved += 1
 
+    def replace(self, data):
+        self.data = deepcopy(data)
+
 
 class FakeSnapshot:
     snapshot_dir = Path("/snapshots")

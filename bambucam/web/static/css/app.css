@@ -144,6 +144,22 @@
     }
     .header-link:hover { color: var(--text-dim); background: var(--surface2); }
 
+    .restart-banner {
+      background: #2a2114;
+      border-bottom: 1px solid var(--warn);
+      color: var(--text);
+      padding: 0.55rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      position: sticky;
+      top: 48px;
+      z-index: 90;
+    }
+    .restart-banner[hidden] { display: none; }
+    .restart-banner .btn { width: auto; flex-shrink: 0; }
+
     /* ── Main layout ───────────────────────────────────────────────────── */
     main {
       display: grid;

@@ -15,6 +15,35 @@ async function api(method, path, body) {
   return r.json();
 }
 
+function markRestartRequired(port) {
+  const banner = document.getElementById('restart-required-banner');
+  if (banner) banner.hidden = false;
+  let target = window.location.href;
+  if (port) {
+    const url = new URL(window.location.href);
+    url.port = String(port);
+    url.pathname = '/';
+    url.search = '';
+    url.hash = '';
+    target = url.toString();
+  }
+  localStorage.setItem('bambucamRestartRequired', target);
+}
+
+async function restartApplication() {
+  btnLoading('btn-restart-app', true, 'Neustart…');
+  const target = localStorage.getItem('bambucamRestartRequired') || window.location.href;
+  try {
+    await api('POST', '/system/restart');
+    localStorage.removeItem('bambucamRestartRequired');
+    toast('BambuCam wird neu gestartet…');
+    setTimeout(() => { window.location.href = target; }, 4000);
+  } catch (e) {
+    toast('Neustart fehlgeschlagen: ' + e.message, 'error');
+    btnLoading('btn-restart-app', false);
+  }
+}
+
 // ── Toast ──────────────────────────────────────────────────────────────────
 function toast(msg, type = 'success') {
   const el = document.createElement('div');
@@ -90,6 +119,10 @@ function fmtUptime(sec) {
 
 // ── Init & polling ─────────────────────────────────────────────────────────
 async function init() {
+  if (localStorage.getItem('bambucamRestartRequired')) {
+    const banner = document.getElementById('restart-required-banner');
+    if (banner) banner.hidden = false;
+  }
   await Promise.allSettled([
     loadCameraStatus(),
     loadStreamStatus(),
@@ -299,7 +332,8 @@ async function saveMjpegConfig() {
     const port    = parseInt(document.getElementById('cfg-mjpeg-port').value);
     const quality = parseInt(document.getElementById('mjpeg-quality').value);
     const fps     = parseInt(document.getElementById('cfg-mjpeg-fps').value);
-    await api('POST', '/config', { streaming: { mjpeg: { port, quality, fps } } });
+    const result = await api('POST', '/config', { streaming: { mjpeg: { port, quality, fps } } });
+    if (result.restart_required) markRestartRequired(port);
     toast('MJPEG-Einstellungen gespeichert');
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
   finally { btnLoading('btn-cfg-mjpeg', false); }
@@ -327,7 +361,8 @@ async function saveWebConfig() {
     const passRaw  = document.getElementById('cfg-auth-pass').value;
     const auth = { enabled, username };
     if (passRaw) auth.password = passRaw;  // only send if not blank
-    await api('POST', '/config', { web: { port, auth } });
+    const result = await api('POST', '/config', { web: { port, auth } });
+    if (result.restart_required) markRestartRequired(port);
     toast('Web-Einstellungen gespeichert — Neustart erforderlich');
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
   finally { btnLoading('btn-cfg-web', false); }
@@ -395,7 +430,6 @@ async function toggleRtsp(enabled) {
   toggle._busy = true;
   try {
     await api('POST', enabled ? '/stream/rtsp/start' : '/stream/rtsp/stop');
-    await api('POST', '/config', { streaming: { rtsp: { enabled } } });
     if (bitrateRow) bitrateRow.style.display = enabled ? '' : 'none';
     toast(enabled ? 'RTSP gestartet' : 'RTSP gestoppt');
     loadStreamStatus();

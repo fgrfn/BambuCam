@@ -105,11 +105,22 @@ def pi_capability_tier() -> int:
     return 3
 
 
+def hardware_recommendations(tier: Optional[int] = None) -> dict:
+    """Return conservative fresh-install defaults for the detected hardware tier."""
+    resolved_tier = pi_capability_tier() if tier is None else int(tier)
+    return {
+        "rtsp_enabled": resolved_tier >= 2,
+        "recommended_profile": "low_power" if resolved_tier == 1 else "balanced",
+    }
+
+
 def system_summary() -> dict:
+    tier = pi_capability_tier()
     return {
         "hostname": platform.node(),
         "pi_model": raspberry_pi_model(),
-        "pi_tier": pi_capability_tier(),
+        "pi_tier": tier,
+        "hardware_recommendations": hardware_recommendations(tier),
         "os": platform.platform(),
         "python": platform.python_version(),
         "cpu_temp_c": cpu_temperature(),

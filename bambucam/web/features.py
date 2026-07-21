@@ -32,9 +32,12 @@ def _json_object() -> dict:
 @features_bp.get("/camera/profiles")
 def camera_profiles():
     try:
+        from bambucam.system_info import hardware_recommendations
+
         return jsonify(
             {
                 "active": _config().get("camera", "active_profile", default="custom"),
+                "recommended": hardware_recommendations()["recommended_profile"],
                 "profiles": _profiles().list_profiles(),
             }
         )
@@ -145,6 +148,8 @@ def timelapse_delete(session_id: str):
 
 @features_bp.post("/timelapse/settings")
 def timelapse_settings():
+    snapshot = _config().as_dict()
+    runtime_applied = False
     try:
         data = _json_object()
         allowed = {
@@ -158,10 +163,30 @@ def timelapse_settings():
         if unknown:
             raise ValueError(f"Unknown timelapse setting(s): {', '.join(sorted(unknown))}")
         defaults = _timelapse().update_defaults(**data)
+        runtime_applied = True
         _config().update_section("streaming", {"timelapse": defaults})
         _config().save()
-    except (TypeError, ValueError) as exc:
-        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        _config().replace(snapshot)
+        if runtime_applied:
+            try:
+                old = snapshot["streaming"]["timelapse"]
+                _timelapse().update_defaults(
+                    **{
+                        key: old[key]
+                        for key in (
+                            "interval_seconds",
+                            "output_fps",
+                            "max_sessions",
+                            "max_age_days",
+                            "render_on_stop",
+                        )
+                    }
+                )
+            except Exception:
+                log.exception("Failed to roll back timelapse defaults")
+        status = 400 if isinstance(exc, (TypeError, ValueError)) else 500
+        return jsonify({"error": str(exc)}), status
     return jsonify({"ok": True, "settings": defaults})
 
 

@@ -110,7 +110,7 @@ camera:
   framerate: auto
 ```
 
-BambuCam selects a mode from the detected camera capabilities and applies a hardware-tier FPS limit. Explicit values remain supported and are validated before the camera restarts. Multiple CSI cameras keep separate capability lists, and `camera.backend` can force `picamera2` or `v4l2`.
+BambuCam selects a mode from the detected camera capabilities. FPS is capped only by the selected camera mode; explicit user values are never silently reduced based on the Raspberry Pi model. Hardware tiers instead control fresh-install streaming defaults: RTSP in `auto` mode is disabled on Pi Zero/1/2 and enabled on Pi Zero 2 W, Pi 3, Pi 4, and Pi 5. Multiple CSI cameras keep separate capability lists, and `camera.backend` can force `picamera2` or `v4l2`.
 
 ## Authentication and HTTPS
 
@@ -162,6 +162,7 @@ GET    /config
 POST   /config
 GET    /system
 POST   /system/restart-camera
+POST   /system/restart
 
 GET    /update/status
 POST   /update/check
@@ -179,7 +180,7 @@ curl -u admin:password \
   http://<pi-ip>:8080/api/v1/camera/settings
 ```
 
-The configuration API validates ports, image quality, FPS, bitrate, stream names, authentication requirements, and section structure before atomically replacing the YAML file. Credentials are redacted from responses.
+The configuration API validates the complete typed schema, including unknown nested fields, paths, booleans, port conflicts, image controls, authentication requirements, and streaming limits. Runtime changes and YAML persistence are treated as one transaction: a failure restores the previous in-memory configuration and best-effort runtime state. Credentials are redacted from responses.
 
 ## Configuration
 
@@ -204,7 +205,12 @@ The protected WebUI can check, install, and downgrade releases. The updater:
 - verifies release SHA-256 checksums when available;
 - rejects path traversal, links, and device files in source archives;
 - checks that the installed package reports the expected version;
-- cleans temporary data and restarts the service.
+- backs up the installed package and runs a clean-process configuration/import health check;
+- re-executes the managed process and verifies the expected version through local `/health`;
+- automatically restores and restarts the previous package when installation or post-restart health verification fails;
+- cleans temporary update data after the guarded restart succeeds.
+
+Existing YAML settings are preserved across releases and migrated by the versioned configuration schema. Settings that require an application restart display a persistent WebUI banner with a restart action.
 
 The release workflow tests Python 3.9–3.12, runs Ruff, Black, ShellCheck, package builds, and publishes checksummed assets only after all checks pass.
 

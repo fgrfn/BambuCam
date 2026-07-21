@@ -2,10 +2,12 @@
 
 import io
 import tarfile
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bambucam.update_guard import _healthy as guard_healthy
 from bambucam.updater import (
     ReleaseInfo,
     Updater,
@@ -217,6 +219,98 @@ class TestDownloads:
         with patch("bambucam.updater.requests.get", side_effect=responses):
             with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
                 _updater()._download(release)
+
+
+class TestRollback:
+    def test_failed_health_check_restores_previous_installation(self, tmp_path):
+        update_root = tmp_path / "update"
+        update_root.mkdir()
+        package = update_root / "bambucam.whl"
+        package.write_bytes(b"wheel")
+        backup = (tmp_path / "site", update_root / "rollback")
+        updater = _updater()
+
+        with (
+            patch.object(updater, "_download", return_value=package),
+            patch.object(updater, "_backup_installation", return_value=backup),
+            patch.object(updater, "_install"),
+            patch.object(
+                updater,
+                "_health_check_installation",
+                side_effect=[RuntimeError("health failed"), None],
+            ),
+            patch.object(updater, "_restore_installation") as restore,
+            patch.object(updater, "_restart") as restart,
+        ):
+            updater._update_pipeline(_MOCK_RELEASE)
+
+        restore.assert_called_once_with(backup)
+        restart.assert_not_called()
+        assert updater.status.state == UpdateState.ERROR
+        assert updater.status.rollback_performed is True
+        assert "restored v0.1.0" in updater.status.error
+
+    def test_package_backup_can_be_restored(self, tmp_path):
+        site = tmp_path / "site-packages"
+        package = site / "bambucam"
+        metadata = site / "bambucam-1.2.2.dist-info"
+        package.mkdir(parents=True)
+        metadata.mkdir()
+        (package / "module.py").write_text("old", encoding="utf-8")
+        (metadata / "METADATA").write_text("Version: 1.2.2", encoding="utf-8")
+        distribution = SimpleNamespace(locate_file=lambda _name: site)
+
+        with patch("bambucam.updater.importlib.metadata.distribution", return_value=distribution):
+            backup = Updater._backup_installation(tmp_path / "backup")
+
+        (package / "module.py").write_text("new", encoding="utf-8")
+        Updater._restore_installation(backup)
+
+        assert (package / "module.py").read_text(encoding="utf-8") == "old"
+        assert (metadata / "METADATA").read_text(encoding="utf-8") == "Version: 1.2.2"
+
+    def test_post_restart_guard_is_launched_from_backup(self, tmp_path):
+        backup_dir = tmp_path / "backup"
+        script = backup_dir / "bambucam" / "update_guard.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# guard", encoding="utf-8")
+        process = MagicMock()
+        updater = _updater(health_url="http://127.0.0.1:9090/health")
+
+        with patch("bambucam.updater.subprocess.Popen", return_value=process) as popen:
+            result = updater._start_post_restart_guard(
+                (tmp_path / "site", backup_dir),
+                "1.3.0",
+                tmp_path / "update",
+            )
+
+        command = popen.call_args.args[0]
+        assert result is process
+        assert str(script) in command
+        assert "http://127.0.0.1:9090/health" in command
+        assert "1.3.0" in command
+
+
+class GuardResponse:
+    def __init__(self, payload):
+        import json
+
+        self.payload = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _limit):
+        return self.payload
+
+
+def test_guard_health_requires_expected_running_version():
+    with patch("bambucam.update_guard.urlopen", return_value=GuardResponse({"version": "1.3.0"})):
+        assert guard_healthy("http://127.0.0.1:8080/health", "1.3.0") is True
+        assert guard_healthy("http://127.0.0.1:8080/health", "1.2.2") is False
 
 
 class TestSafeTarExtraction:

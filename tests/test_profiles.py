@@ -1,12 +1,17 @@
 """Tests for model-aware camera profiles."""
 
+from copy import deepcopy
+
+import pytest
+
 from bambucam.camera.models import CameraModel, Resolution
 from bambucam.camera.profiles import CameraProfileService
+from bambucam.config import DEFAULTS
 
 
 class FakeConfig:
     def __init__(self):
-        self.data = {"camera": {"active_profile": "custom"}, "streaming": {}}
+        self.data = deepcopy(DEFAULTS)
         self.saved = 0
 
     def get(self, *keys, default=None):
@@ -33,6 +38,12 @@ class FakeConfig:
 
     def save(self):
         self.saved += 1
+
+    def as_dict(self):
+        return deepcopy(self.data)
+
+    def replace(self, data):
+        self.data = deepcopy(data)
 
 
 class FakeCamera:
@@ -63,12 +74,14 @@ class FakeCamera:
 
     def status(self):
         return {
+            "resolution": "1920x1080",
+            "framerate": 15,
             "available_resolutions": [
                 "640x480",
                 "1280x720",
                 "1920x1080",
                 "3840x2160",
-            ]
+            ],
         }
 
     def apply_settings(self, settings):
@@ -132,3 +145,20 @@ def test_unknown_profile_is_rejected():
         assert "Unknown camera profile" in str(exc)
     else:
         raise AssertionError("Unknown profile was accepted")
+
+
+def test_profile_save_failure_restores_config_and_runtime():
+    profiles = service()
+    original = profiles._config.as_dict()
+
+    def fail_save():
+        raise OSError("disk full")
+
+    profiles._config.save = fail_save
+    with pytest.raises(OSError, match="disk full"):
+        profiles.apply("low_latency")
+
+    assert profiles._config.data == original
+    assert profiles._camera.settings["resolution"] == "1920x1080"
+    assert profiles._camera.settings["framerate"] == 15
+    assert profiles._rtsp.settings["bitrate_kbps"] == 2000

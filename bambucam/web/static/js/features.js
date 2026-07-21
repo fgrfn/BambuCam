@@ -69,13 +69,22 @@
   }
 
   let profiles = [];
+  let recommendedProfile = "";
 
   async function loadProfiles() {
     const payload = await request("/api/v1/camera/profiles");
     profiles = payload.profiles || [];
+    recommendedProfile = payload.recommended || "";
+    const selectedProfile = payload.active && payload.active !== "custom"
+      ? payload.active
+      : recommendedProfile;
     const select = document.getElementById("feature-profile-select");
     select.innerHTML = profiles
-      .map((profile) => `<option value="${profile.name}" ${profile.active ? "selected" : ""}>${profile.label}</option>`)
+      .map((profile) => {
+        const recommended = profile.name === recommendedProfile ? " (Empfohlen)" : "";
+        const selected = profile.name === selectedProfile ? "selected" : "";
+        return `<option value="${profile.name}" ${selected}>${profile.label}${recommended}</option>`;
+      })
       .join("");
     updateProfileDescription();
   }
@@ -84,7 +93,7 @@
     const name = document.getElementById("feature-profile-select").value;
     const profile = profiles.find((item) => item.name === name);
     document.getElementById("feature-profile-description").textContent = profile
-      ? `${profile.description} ${profile.resolved.resolution} @ ${profile.resolved.framerate} FPS`
+      ? `${profile.description} ${profile.resolved.resolution} @ ${profile.resolved.framerate} FPS${profile.name === recommendedProfile ? " — für dieses System empfohlen" : ""}`
       : "";
   }
 
