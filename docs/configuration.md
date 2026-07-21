@@ -28,6 +28,7 @@ camera:
   contrast: 1.0              # 0.0 to 32.0
   saturation: 1.0            # 0.0 to 32.0
   sharpness: 1.0             # 0.0 to 16.0
+  zoom: 1.0                  # Picamera2 digital zoom, 1.0 to 8.0 (camera-dependent)
 
   exposure_mode: auto        # auto | sport | night
   awb_mode: auto             # auto | sunlight | cloudy | shade | tungsten | fluorescent
@@ -130,7 +131,8 @@ curl -X POST http://localhost:8080/api/v1/camera/settings \
 
 curl -X POST http://localhost:8080/api/v1/camera/settings \
   -H 'Content-Type: application/json' \
-  -d '{"vflip": true}'
+  -d '{"vflip": true, "zoom": 2.0}'
 ```
 
 Runtime changes are persisted atomically, so an interrupted write cannot leave a partially written YAML file.
+Applying a camera profile updates resolution, frame rate, JPEG quality, RTSP bitrate, and the image controls defined by that profile. Any later manual camera or stream change marks the active profile as `custom`.

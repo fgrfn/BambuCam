@@ -287,7 +287,7 @@
             <span data-i18n="stream.bitrate">RTSP bitrate</span>
             <span class="field-label-val"><span id="val-bitrate">2000</span> kbps</span>
           </div>
-          <input type="range" id="sl-bitrate" min="500" max="8000" step="500" value="2000"
+          <input type="range" id="sl-bitrate" min="100" max="100000" step="100" value="2000"
             oninput="document.getElementById('val-bitrate').textContent=this.value" />
         </div>
         <div class="btn-row">
@@ -335,6 +335,14 @@
           </div>
           <input type="range" id="sl-sharpness" min="0" max="1600" step="10" value="100"
             oninput="document.getElementById('val-sharpness').textContent=(this.value/100).toFixed(1)" />
+        </div>
+        <div class="field hidden" id="row-zoom">
+          <div class="field-label">
+            <span data-i18n="image.zoom">Digital zoom</span>
+            <span class="field-label-val" id="val-zoom">1.0×</span>
+          </div>
+          <input type="range" id="sl-zoom" min="1" max="8" step="0.1" value="1"
+            oninput="document.getElementById('val-zoom').textContent=Number(this.value).toFixed(1)+'×'" />
         </div>
 
         <div class="divider"></div>
@@ -538,6 +546,18 @@
         <button class="btn btn-secondary" id="btn-cfg-web" onclick="saveWebConfig()" data-i18n="common.save">Save</button>
       </div>
       <p class="hint" style="margin-top:6px" data-i18n="settings.restartHint">Port and authentication changes require a BambuCam restart.</p>
+
+      <div id="system-reboot-section" class="hidden">
+        <div class="divider"></div>
+
+        <div class="section-label" data-i18n="systemReboot.section">System</div>
+        <div class="btn-row">
+          <button class="btn btn-danger" id="btn-reboot-system" onclick="rebootSystem()">
+            <span data-i18n="systemReboot.action">Restart Raspberry Pi</span>
+          </button>
+        </div>
+        <p class="hint" style="margin-top:6px" data-i18n="systemReboot.hint">Restarts the operating system, not just BambuCam.</p>
+      </div>
 
     </div>
   </div>

@@ -110,3 +110,38 @@ def test_camera_control_capabilities_are_checked(caplog) -> None:
 
     picam.set_controls.assert_not_called()
     assert "Camera does not support control(s): HdrMode" in caplog.text
+
+
+def test_digital_zoom_uses_centered_scaler_crop() -> None:
+    backend = _backend()
+    picam = SimpleNamespace(
+        camera_controls={
+            "ScalerCrop": (
+                (0, 0, 64, 64),
+                (0, 0, 4608, 2592),
+                (0, 0, 4608, 2592),
+            )
+        },
+        set_controls=Mock(),
+    )
+    backend._picam = picam
+
+    backend.set_zoom(2.0)
+
+    assert backend.supports_zoom is True
+    assert backend.max_zoom == 8.0
+    picam.set_controls.assert_called_once_with({"ScalerCrop": (1152, 648, 2304, 1296)})
+
+
+def test_digital_zoom_is_hidden_when_scaler_crop_is_unavailable(caplog) -> None:
+    backend = _backend()
+    picam = SimpleNamespace(camera_controls={}, set_controls=Mock())
+    backend._picam = picam
+
+    with caplog.at_level(logging.WARNING):
+        backend.set_zoom(2.0)
+
+    assert backend.supports_zoom is False
+    assert backend.max_zoom == 1.0
+    picam.set_controls.assert_not_called()
+    assert "Digital zoom is not supported" in caplog.text

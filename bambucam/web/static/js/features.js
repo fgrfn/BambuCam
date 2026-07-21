@@ -74,6 +74,7 @@
 
   let profiles = [];
   let recommendedProfile = "";
+  let activeProfile = "custom";
   let lastSessions = [];
 
   function profileText(profile, field) {
@@ -82,40 +83,48 @@
     return translated === key ? profile[field] : translated;
   }
 
+  function renderProfileOptions(selectedProfile = activeProfile) {
+    const select = document.getElementById("feature-profile-select");
+    const customOption = activeProfile === "custom"
+      ? `<option value="custom"${selectedProfile === "custom" ? " selected" : ""}>${tr('profile.custom')}</option>`
+      : "";
+    const profileOptions = profiles.map((profile) => {
+      const recommended = profile.name === recommendedProfile ? ` (${tr('profile.recommended')})` : "";
+      const selected = profile.name === selectedProfile ? " selected" : "";
+      return `<option value="${profile.name}"${selected}>${profileText(profile, 'label')}${recommended}</option>`;
+    }).join("");
+    select.innerHTML = customOption + profileOptions;
+    updateProfileDescription();
+  }
+
   async function loadProfiles() {
     const payload = await request("/api/v1/camera/profiles");
     profiles = payload.profiles || [];
     recommendedProfile = payload.recommended || "";
-    const selectedProfile = payload.active && payload.active !== "custom"
-      ? payload.active
-      : recommendedProfile;
-    const select = document.getElementById("feature-profile-select");
-    select.innerHTML = profiles
-      .map((profile) => {
-        const recommended = profile.name === recommendedProfile ? ` (${tr('profile.recommended')})` : "";
-        const selected = profile.name === selectedProfile ? "selected" : "";
-        return `<option value="${profile.name}" ${selected}>${profileText(profile, 'label')}${recommended}</option>`;
-      })
-      .join("");
-    updateProfileDescription();
+    activeProfile = payload.active || "custom";
+    renderProfileOptions();
   }
 
   function updateProfileDescription() {
     const name = document.getElementById("feature-profile-select").value;
     const profile = profiles.find((item) => item.name === name);
-    document.getElementById("feature-profile-description").textContent = profile
-      ? `${profileText(profile, 'description')} ${profile.resolved.resolution} @ ${profile.resolved.framerate} FPS${profile.name === recommendedProfile ? ` ${tr('profile.recommendedSuffix')}` : ""}`
-      : "";
+    document.getElementById("feature-profile-apply").disabled = name === "custom";
+    document.getElementById("feature-profile-description").textContent = name === "custom"
+      ? tr("profile.customDescription")
+      : profile
+        ? `${profileText(profile, 'description')} ${profile.resolved.resolution} @ ${profile.resolved.framerate} FPS${profile.name === recommendedProfile ? ` ${tr('profile.recommendedSuffix')}` : ""}`
+        : "";
   }
 
   async function applyProfile() {
     const name = document.getElementById("feature-profile-select").value;
+    if (name === "custom") return;
     const button = document.getElementById("feature-profile-apply");
     button.disabled = true;
     try {
       const payload = await request(`/api/v1/camera/profiles/${encodeURIComponent(name)}`, { method: "POST" });
       toast(`${profileText({ ...payload.profile, name }, 'label')}: ${payload.profile.resolution} @ ${payload.profile.framerate} FPS`);
-      await loadProfiles();
+      window.dispatchEvent(new CustomEvent("bambucam:configurationchange"));
     } catch (error) {
       toast(error.message, true);
     } finally {
@@ -253,14 +262,13 @@
     if (!document.getElementById("timelapse-card")) return;
     if (profiles.length) {
       const selected = document.getElementById("feature-profile-select").value;
-      const select = document.getElementById("feature-profile-select");
-      select.innerHTML = profiles.map((profile) => {
-        const recommended = profile.name === recommendedProfile ? ` (${tr('profile.recommended')})` : "";
-        return `<option value="${profile.name}"${profile.name === selected ? " selected" : ""}>${profileText(profile, 'label')}${recommended}</option>`;
-      }).join("");
-      updateProfileDescription();
+      renderProfileOptions(selected);
     }
     renderSessions(lastSessions);
     refreshTimelapse();
+  });
+  window.addEventListener("bambucam:configurationchange", () => {
+    if (!document.getElementById("camera-profiles-card")) return;
+    loadProfiles().catch((error) => toast(error.message, true));
   });
 })();

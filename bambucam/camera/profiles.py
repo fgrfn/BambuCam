@@ -173,6 +173,7 @@ class CameraProfileService:
                     "contrast",
                     "saturation",
                     "sharpness",
+                    "zoom",
                     "exposure_mode",
                     "awb_mode",
                     "noise_reduction",

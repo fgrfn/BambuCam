@@ -110,10 +110,15 @@ command -v apt-get >/dev/null 2>&1 || error "apt-get not found — a Debian-base
 
 step "Installing system packages"
 apt-get update -qq
+if apt-cache show polkitd >/dev/null 2>&1; then
+  POLKIT_PACKAGE="polkitd"
+else
+  POLKIT_PACKAGE="policykit-1"
+fi
 apt-get install -y --no-install-recommends \
   ca-certificates curl git gcc \
   python3 python3-dev python3-pip python3-venv python3-opencv \
-  ffmpeg v4l-utils
+  ffmpeg v4l-utils "$POLKIT_PACKAGE"
 
 _RPI_PACKAGES=(python3-picamera2 libcamera-apps)
 _MISSING_PACKAGES=()
@@ -204,6 +209,7 @@ fi
 [[ -f "$SRC_DIR/pyproject.toml" ]] || error "Downloaded source does not contain pyproject.toml"
 [[ -f "$SRC_DIR/config/bambucam.yaml" ]] || error "Downloaded source lacks the default config"
 [[ -f "$SRC_DIR/systemd/bambucam.service" ]] || error "Downloaded source lacks the service unit"
+[[ -f "$SRC_DIR/systemd/bambucam-reboot.rules" ]] || error "Downloaded source lacks the reboot policy"
 
 ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
 case "$ARCH" in
@@ -269,6 +275,13 @@ ESCAPED_DIR=$(printf '%s' "$BAMBUCAM_DIR" | sed 's/[&|]/\\&/g')
 sed "s|/opt/bambucam|${ESCAPED_DIR}|g" "$SRC_DIR/systemd/bambucam.service" \
   > /etc/systemd/system/bambucam.service
 chmod 644 /etc/systemd/system/bambucam.service
+
+# Grant the dedicated service account only the logind reboot actions required
+# by the explicit WebUI host-reboot endpoint. No sudo permission is installed.
+install -d -o root -g root -m 755 /etc/polkit-1/rules.d
+install -o root -g root -m 644 \
+  "$SRC_DIR/systemd/bambucam-reboot.rules" \
+  /etc/polkit-1/rules.d/50-bambucam-reboot.rules
 
 SYSTEMD_OK=false
 if command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1; then

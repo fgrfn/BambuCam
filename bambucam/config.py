@@ -41,6 +41,7 @@ DEFAULTS: dict = {
         "contrast": 1.0,
         "saturation": 1.0,
         "sharpness": 1.0,
+        "zoom": 1.0,
         "exposure_mode": "auto",
         "awb_mode": "auto",
         "noise_reduction": "fast",
@@ -373,6 +374,7 @@ def validate_config(data: dict) -> None:
     _number(camera.get("brightness"), "camera.brightness", -1.0, 1.0)
     for key in ("contrast", "saturation", "sharpness"):
         _number(camera.get(key), f"camera.{key}", 0.0, 32.0)
+    _number(camera.get("zoom"), "camera.zoom", 1.0, 8.0)
     _choice(camera.get("exposure_mode"), "camera.exposure_mode", {"auto", "sport", "night"})
     _choice(
         camera.get("awb_mode"),

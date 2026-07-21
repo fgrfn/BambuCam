@@ -74,6 +74,10 @@ systemctl status bambucam
 journalctl -u bambucam -f
 ```
 
+The installer also adds a narrowly scoped Polkit rule for the WebUI's Raspberry Pi reboot button. It permits only the `bambucam` service account and only logind reboot actions; it does not grant passwordless `sudo` or general service-management rights. Enable WebUI authentication before exposing BambuCam outside a trusted network.
+
+If the reboot button remains hidden after updating through the WebUI, run the release installer once. In-app package updates cannot create the root-owned Polkit rule themselves.
+
 ## Verify the installation
 
 The executable lives inside the configured installation directory. With the default path:
@@ -129,6 +133,7 @@ bambucam --config ./config/bambucam.yaml
 ```bash
 sudo systemctl disable --now bambucam
 sudo rm -f /etc/systemd/system/bambucam.service
+sudo rm -f /etc/polkit-1/rules.d/50-bambucam-reboot.rules
 sudo systemctl daemon-reload
 sudo rm -rf /opt/bambucam             # adjust when BAMBUCAM_DIR was changed
 sudo rm -rf /etc/bambucam             # removes configuration and credentials

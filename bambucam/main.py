@@ -244,6 +244,7 @@ def main() -> None:
                         "contrast",
                         "saturation",
                         "sharpness",
+                        "zoom",
                         "exposure_mode",
                         "awb_mode",
                         "autofocus",

@@ -154,6 +154,7 @@ GET    /camera/detect
 POST   /camera/settings
 
 GET    /stream/status
+POST   /stream/settings
 POST   /stream/rtsp/start
 POST   /stream/rtsp/stop
 POST   /stream/rtsp/settings
@@ -168,6 +169,7 @@ POST   /config
 GET    /system
 POST   /system/restart-camera
 POST   /system/restart
+POST   /system/reboot
 
 GET    /update/status
 POST   /update/check

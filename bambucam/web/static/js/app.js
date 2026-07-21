@@ -48,6 +48,19 @@ async function restartApplication() {
   }
 }
 
+async function rebootSystem() {
+  if (!confirm(tr('systemReboot.confirm'))) return;
+  btnLoading('btn-reboot-system', true, tr('systemReboot.scheduling'));
+  try {
+    await api('POST', '/system/reboot', { confirm: 'reboot' });
+    closeSettings();
+    toast(tr('systemReboot.started'));
+  } catch (e) {
+    toast(tr('systemReboot.failed', { message: e.message }), 'error');
+    btnLoading('btn-reboot-system', false);
+  }
+}
+
 // ── Toast ──────────────────────────────────────────────────────────────────
 function toast(msg, type = 'success') {
   const el = document.createElement('div');
@@ -167,6 +180,13 @@ async function loadCameraStatus() {
     // Conditional controls
     toggleRow('row-autofocus', s.has_autofocus);
     toggleRow('row-hdr',       s.has_hdr);
+    toggleRow('row-zoom',      s.has_zoom);
+    if (s.has_zoom) {
+      const zoomSlider = document.getElementById('sl-zoom');
+      zoomSlider.max = String(s.max_zoom || 8);
+      zoomSlider.value = String(s.zoom || 1);
+      setText('val-zoom', Number(s.zoom || 1).toFixed(1) + '×');
+    }
 
     await loadModelCapabilities(s);
   } catch(e) {
@@ -298,6 +318,7 @@ async function loadSystemInfo() {
     setText('sys-host',   s.hostname  || '—');
     setText('sys-pi',     s.pi_model  || '—');
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
+    toggleRow('system-reboot-section', !!s.can_reboot);
   } catch(e) { /* ignore */ }
 }
 
@@ -310,6 +331,7 @@ async function loadNetworkConfig() {
     const cfg = await api('GET', '/config');
     const m = (cfg.streaming || {}).mjpeg || {};
     const r = (cfg.streaming || {}).rtsp  || {};
+    const c = cfg.camera || {};
     const w = cfg.web || {};
     const auth = w.auth || {};
 
@@ -321,6 +343,26 @@ async function loadNetworkConfig() {
     setVal('cfg-rtsp-name',  r.stream_name ?? 'cam');
     setChk('cfg-hls-enabled', r.enable_hls ?? true);
     setVal('cfg-hls-port',   r.hls_port    ?? 8888);
+    setVal('sl-bitrate',     r.bitrate_kbps ?? 2000);
+    setText('val-bitrate',   r.bitrate_kbps ?? 2000);
+
+    setVal('sl-brightness', Math.round((c.brightness ?? 0) * 100));
+    setText('val-brightness', Number(c.brightness ?? 0).toFixed(2));
+    setVal('sl-contrast', Math.round((c.contrast ?? 1) * 100));
+    setText('val-contrast', Number(c.contrast ?? 1).toFixed(1));
+    setVal('sl-saturation', Math.round((c.saturation ?? 1) * 100));
+    setText('val-saturation', Number(c.saturation ?? 1).toFixed(1));
+    setVal('sl-sharpness', Math.round((c.sharpness ?? 1) * 100));
+    setText('val-sharpness', Number(c.sharpness ?? 1).toFixed(1));
+    setVal('sl-zoom', c.zoom ?? 1);
+    setText('val-zoom', Number(c.zoom ?? 1).toFixed(1) + '×');
+    setVal('sel-exposure', c.exposure_mode ?? 'auto');
+    setVal('sel-awb', c.awb_mode ?? 'auto');
+    setVal('sel-noise-reduction', c.noise_reduction ?? 'fast');
+    setChk('chk-vflip', c.vflip ?? false);
+    setChk('chk-hflip', c.hflip ?? false);
+    setChk('chk-autofocus', c.autofocus ?? true);
+    setChk('chk-hdr', c.hdr ?? false);
 
     setVal('cfg-web-port',   w.port ?? 8080);
     setChk('cfg-auth-enabled', auth.enabled ?? false);
@@ -456,15 +498,16 @@ async function applyStreamSettings() {
 
   btnLoading('btn-stream-apply', true, tr('stream.applying'));
   try {
-    const result = await api('POST', '/camera/settings', { resolution, framerate });
-    await api('POST', '/config', { streaming: { mjpeg: { fps: framerate } } });
-    await api('POST', '/stream/rtsp/settings', { resolution, framerate, bitrate_kbps });
+    const result = await api('POST', '/stream/settings', {
+      resolution, framerate, bitrate_kbps,
+    });
 
     const img = document.getElementById('stream-img');
     img.src = '/stream?' + Date.now();
 
     toast(tr('stream.applied'));
     if (result.restarted) toast(tr('stream.cameraRestarted'));
+    window.dispatchEvent(new CustomEvent('bambucam:configurationchange'));
   } catch(e) {
     toast(tr('common.error', { message: e.message }), 'error');
   } finally {
@@ -478,6 +521,7 @@ async function applyImageSettings() {
   const contrast      = parseInt(document.getElementById('sl-contrast').value) / 100;
   const saturation    = parseInt(document.getElementById('sl-saturation').value) / 100;
   const sharpness     = parseInt(document.getElementById('sl-sharpness').value) / 100;
+  const zoom          = Number(document.getElementById('sl-zoom').value);
   const exposure_mode    = document.getElementById('sel-exposure').value;
   const awb_mode         = document.getElementById('sel-awb').value;
   const noise_reduction  = document.getElementById('sel-noise-reduction').value;
@@ -488,12 +532,17 @@ async function applyImageSettings() {
 
   btnLoading('btn-img-apply', true, tr('stream.applying'));
   try {
-    const result = await api('POST', '/camera/settings', {
+    const imageSettings = {
       brightness, contrast, saturation, sharpness,
       exposure_mode, awb_mode, noise_reduction, vflip, hflip, autofocus, hdr,
-    });
+    };
+    if (!document.getElementById('row-zoom').classList.contains('hidden')) {
+      imageSettings.zoom = zoom;
+    }
+    const result = await api('POST', '/camera/settings', imageSettings);
     toast(tr('image.applied'));
     if (result.restarted) toast(tr('stream.cameraRestarted'));
+    window.dispatchEvent(new CustomEvent('bambucam:configurationchange'));
   } catch(e) {
     toast(tr('common.error', { message: e.message }), 'error');
   } finally {
@@ -773,6 +822,14 @@ window.addEventListener('bambucam:languagechange', () => {
       releasesPanel.style.display === 'none' ? 'update.historyClosed' : 'update.historyOpen'
     );
   }
+});
+
+window.addEventListener('bambucam:configurationchange', () => {
+  Promise.allSettled([
+    loadCameraStatus(),
+    loadStreamStatus(),
+    loadNetworkConfig(),
+  ]);
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────
