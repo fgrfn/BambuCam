@@ -4,6 +4,8 @@
 
 BambuCam turns a Raspberry Pi or compatible Debian computer into a dedicated camera server for a 3D printer. It provides RTSP, MJPEG, HLS, optional WebRTC, snapshots, a responsive WebUI, and a documented REST API.
 
+![BambuCam WebUI showing the live camera stream, system status, stream settings, image controls, snapshots, and timelapse tools](docs/images/bambucam-webui.png)
+
 ## Highlights
 
 | Feature | Status |
