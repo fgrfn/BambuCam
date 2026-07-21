@@ -253,6 +253,19 @@ def rtsp_stop():
 def rtsp_settings():
     try:
         data = _json_object()
+        persistent_keys = {
+            "bitrate_kbps",
+            "stream_name",
+            "port",
+            "hls_port",
+            "webrtc_port",
+            "enable_hls",
+            "enable_webrtc",
+        }
+        persistent_settings = {key: value for key, value in data.items() if key in persistent_keys}
+        if persistent_settings:
+            _validate_config_update({"streaming": {"rtsp": persistent_settings}})
+
         _rtsp().update_settings(
             resolution=data.get("resolution"),
             framerate=data.get("framerate"),
@@ -264,9 +277,12 @@ def rtsp_settings():
             enable_hls=data.get("enable_hls"),
             enable_webrtc=data.get("enable_webrtc"),
         )
+        if persistent_settings:
+            _cfg().update_section("streaming", {"rtsp": persistent_settings})
+            _cfg().save()
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "persisted": sorted(persistent_settings)})
 
 
 @api_bp.get("/snapshot")

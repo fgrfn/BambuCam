@@ -99,6 +99,59 @@ def test_invalid_port_is_rejected_without_saving():
     assert config.saved == 0
 
 
+def test_rtsp_runtime_settings_are_persisted():
+    config = MemoryConfig()
+    app, _camera, _mjpeg, rtsp = _app(config)
+
+    response = app.test_client().post(
+        "/api/v1/stream/rtsp/settings",
+        json={
+            "resolution": "1280x720",
+            "framerate": 15,
+            "bitrate_kbps": 1200,
+            "stream_name": "printer",
+            "enable_hls": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["persisted"] == [
+        "bitrate_kbps",
+        "enable_hls",
+        "stream_name",
+    ]
+    assert config.data["streaming"]["rtsp"]["bitrate_kbps"] == 1200
+    assert config.data["streaming"]["rtsp"]["stream_name"] == "printer"
+    assert config.data["streaming"]["rtsp"]["enable_hls"] is False
+    assert config.saved == 1
+    rtsp.update_settings.assert_called_once_with(
+        resolution="1280x720",
+        framerate=15,
+        bitrate_kbps=1200,
+        stream_name="printer",
+        rtsp_port=None,
+        hls_port=None,
+        webrtc_port=None,
+        enable_hls=False,
+        enable_webrtc=None,
+    )
+
+
+def test_invalid_rtsp_runtime_settings_are_not_applied_or_persisted():
+    config = MemoryConfig()
+    app, _camera, _mjpeg, rtsp = _app(config)
+
+    response = app.test_client().post(
+        "/api/v1/stream/rtsp/settings",
+        json={"bitrate_kbps": 99},
+    )
+
+    assert response.status_code == 400
+    assert "between 100 and 100000" in response.get_json()["error"]
+    assert config.saved == 0
+    rtsp.update_settings.assert_not_called()
+
+
 def test_config_response_redacts_all_credentials():
     config = MemoryConfig()
     config.data["web"]["auth"].update({"password": "hash", "api_token": "token"})
