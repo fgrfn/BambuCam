@@ -1,6 +1,6 @@
 """Tests for camera selection and mode validation."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -58,3 +58,13 @@ def test_invalid_mode_is_rejected_before_backend_creation():
             resolution=Resolution(1234, 567),
             framerate=15,
         )
+
+
+def test_zoom_is_rejected_by_backends_without_scaler_crop():
+    manager = CameraManager()
+    backend = MagicMock()
+    backend.supports_zoom = False
+    manager._backend = backend
+
+    with pytest.raises(ValueError, match="Digital zoom is not supported"):
+        manager.apply_settings({"zoom": 2.0})

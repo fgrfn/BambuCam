@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bambucam.system_info import pi_capability_tier
+from bambucam.system_info import pi_capability_tier, system_summary
 
 
 @pytest.mark.parametrize(
@@ -29,3 +29,11 @@ from bambucam.system_info import pi_capability_tier
 def test_pi_capability_tier(model_string, expected_tier):
     with patch("bambucam.system_info.raspberry_pi_model", return_value=model_string):
         assert pi_capability_tier() == expected_tier
+
+
+def test_system_summary_reports_reboot_capability():
+    with (
+        patch("bambucam.system_control.system_reboot_available", return_value=True),
+        patch("bambucam.system_info.cpu_usage", return_value=0.0),
+    ):
+        assert system_summary()["can_reboot"] is True

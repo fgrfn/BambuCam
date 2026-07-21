@@ -56,3 +56,24 @@ def test_language_detection_and_persistence_are_present():
     assert "localStorage.getItem(STORAGE_KEY)" in source
     assert "localStorage.setItem(STORAGE_KEY, language)" in source
     assert 'CustomEvent("bambucam:languagechange"' in source
+
+
+def test_camera_controls_restore_config_and_use_atomic_stream_endpoint():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    source = (STATIC_JS / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="row-zoom"' in template
+    assert 'id="sl-bitrate" min="100" max="100000" step="100"' in template
+    assert "setVal('sl-brightness'," in source
+    assert "setVal('sl-zoom'," in source
+    assert "api('POST', '/stream/settings'" in source
+
+
+def test_raspberry_pi_reboot_requires_confirmation_in_the_webui():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    source = (STATIC_JS / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="system-reboot-section" class="hidden"' in template
+    assert 'id="btn-reboot-system"' in template
+    assert "confirm(tr('systemReboot.confirm'))" in source
+    assert "api('POST', '/system/reboot', { confirm: 'reboot' })" in source

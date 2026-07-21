@@ -1,0 +1,8 @@
+// Permit only the BambuCam service account to request a host reboot through logind.
+// No passwordless sudo or general systemd unit-management permission is granted.
+polkit.addRule(function(action, subject) {
+    if (subject.user === "bambucam" &&
+        action.id.indexOf("org.freedesktop.login1.reboot") === 0) {
+        return polkit.Result.YES;
+    }
+});

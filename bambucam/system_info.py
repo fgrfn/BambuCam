@@ -115,6 +115,8 @@ def hardware_recommendations(tier: Optional[int] = None) -> dict:
 
 
 def system_summary() -> dict:
+    from bambucam.system_control import system_reboot_available
+
     tier = pi_capability_tier()
     return {
         "hostname": platform.node(),
@@ -128,4 +130,5 @@ def system_summary() -> dict:
         "memory": memory_info(),
         "disk": disk_info(),
         "uptime_seconds": uptime_seconds(),
+        "can_reboot": system_reboot_available(),
     }

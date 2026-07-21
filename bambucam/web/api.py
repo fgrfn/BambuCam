@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from bambucam.config import validate_config_update
 from bambucam.main import _effective_mjpeg_fps
+from bambucam.system_control import schedule_system_reboot
 from bambucam.system_info import hardware_recommendations, system_summary
 from bambucam.web.security import hash_password
 
@@ -94,6 +95,7 @@ def _rollback_runtime(
                     "contrast",
                     "saturation",
                     "sharpness",
+                    "zoom",
                     "exposure_mode",
                     "awb_mode",
                     "noise_reduction",
@@ -172,6 +174,15 @@ def _restart_reasons(data: dict) -> list[str]:
     return sorted(set(reasons))
 
 
+def _overrides_camera_profile(data: dict) -> bool:
+    """Return whether a config update changes values owned by camera profiles."""
+    camera_keys = set(data.get("camera", {})) - {"active_profile"}
+    streaming = data.get("streaming", {})
+    mjpeg_keys = set(streaming.get("mjpeg", {})) & {"quality", "fps"}
+    rtsp_keys = set(streaming.get("rtsp", {})) & {"bitrate_kbps"}
+    return bool(camera_keys or mjpeg_keys or rtsp_keys)
+
+
 @api_bp.get("/camera/status")
 def camera_status():
     return jsonify(_camera().status())
@@ -243,6 +254,99 @@ def camera_settings():
             "ok": True,
             "applied": data,
             "restarted": bool(restart_keys & data.keys()),
+        }
+    )
+
+
+@api_bp.post("/stream/settings")
+def stream_settings():
+    """Apply camera mode and stream encoding values as one transaction."""
+    snapshot = _cfg().as_dict()
+    old_camera_status = _camera().status()
+    old_mjpeg_running = bool(_mjpeg().is_running)
+    old_rtsp_running = bool(_rtsp().is_running)
+    camera_applied = False
+    mjpeg_applied = False
+    rtsp_applied = False
+    try:
+        data = _json_object()
+        allowed = {"resolution", "framerate", "bitrate_kbps"}
+        unknown = set(data) - allowed
+        if unknown:
+            raise ValueError(f"Unknown stream setting(s): {', '.join(sorted(unknown))}")
+        if not data:
+            raise ValueError("At least one stream setting is required")
+
+        camera_data = {key: data[key] for key in ("resolution", "framerate") if key in data}
+        config_update: dict = {}
+        if camera_data:
+            config_update["camera"] = camera_data
+        streaming_update: dict = {}
+        if "framerate" in data:
+            streaming_update["mjpeg"] = {"fps": data["framerate"]}
+        if "bitrate_kbps" in data:
+            streaming_update["rtsp"] = {"bitrate_kbps": data["bitrate_kbps"]}
+        if streaming_update:
+            config_update["streaming"] = streaming_update
+        _validate_config_update(config_update)
+
+        if camera_data:
+            camera_applied = True
+            _camera().apply_settings(camera_data)
+
+        resolution_value = (
+            data.get("resolution")
+            or _camera().current_resolution
+            or old_camera_status.get("resolution")
+        )
+        framerate_value = (
+            data.get("framerate")
+            or _camera().current_framerate
+            or old_camera_status.get("framerate")
+        )
+        resolution = str(resolution_value) if resolution_value is not None else None
+        framerate = int(framerate_value) if framerate_value is not None else None
+        if "framerate" in data:
+            mjpeg_applied = True
+            mjpeg_config = snapshot["streaming"]["mjpeg"] | {"fps": int(framerate)}
+            _mjpeg().update_fps(_effective_mjpeg_fps(int(framerate), mjpeg_config))
+
+        rtsp_applied = True
+        _rtsp().update_settings(
+            resolution=resolution,
+            framerate=framerate,
+            bitrate_kbps=data.get("bitrate_kbps"),
+        )
+
+        if camera_data:
+            _cfg().update_section("camera", {**camera_data, "active_profile": "custom"})
+        else:
+            _cfg().update_section("camera", {"active_profile": "custom"})
+        if streaming_update:
+            _cfg().update_section("streaming", streaming_update)
+        _cfg().save()
+    except Exception as exc:
+        log.exception("Failed to apply stream settings")
+        _restore_config(snapshot)
+        if camera_applied or mjpeg_applied or rtsp_applied:
+            _rollback_runtime(
+                snapshot,
+                camera=camera_applied,
+                mjpeg=mjpeg_applied,
+                rtsp=rtsp_applied,
+                camera_status=old_camera_status,
+                mjpeg_running=old_mjpeg_running,
+                rtsp_running=old_rtsp_running,
+            )
+        return jsonify({"error": str(exc)}), 400
+
+    restart_keys = {"resolution", "framerate"}
+    return jsonify(
+        {
+            "ok": True,
+            "applied": data,
+            "restarted": bool(restart_keys & data.keys()),
+            "active_profile": "custom",
         }
     )
 
@@ -356,6 +460,8 @@ def rtsp_settings():
         )
         if persistent_settings:
             _cfg().update_section("streaming", {"rtsp": persistent_settings})
+            if "bitrate_kbps" in persistent_settings:
+                _cfg().update_section("camera", {"active_profile": "custom"})
             _cfg().save()
     except Exception as exc:
         _restore_config(snapshot)
@@ -412,6 +518,7 @@ def set_config():
     rtsp_applied = False
     try:
         data = _normalise_config_update(_json_object())
+        profile_overridden = _overrides_camera_profile(data)
         _validate_config_update(data)
         streaming = data.get("streaming", {})
         mjpeg_data = streaming.get("mjpeg", {})
@@ -460,6 +567,8 @@ def set_config():
                 _rtsp().stop()
         for section, values in data.items():
             _cfg().update_section(section, values)
+        if profile_overridden:
+            _cfg().update_section("camera", {"active_profile": "custom"})
         _cfg().save()
     except Exception as exc:
         log.exception("Failed to update config")
@@ -503,6 +612,23 @@ def restart_application():
     if not _updater().restart_service():
         return jsonify({"error": "A software update is currently active"}), 409
     return jsonify({"ok": True, "message": "BambuCam restart scheduled"}), 202
+
+
+@api_bp.post("/system/reboot")
+def reboot_system():
+    if request.headers.get("X-BambuCam-CSRF") != "1":
+        return jsonify({"error": "CSRF validation failed"}), 403
+    try:
+        data = _json_object()
+        if data.get("confirm") != "reboot":
+            raise ValueError("Explicit reboot confirmation is required")
+        if not schedule_system_reboot():
+            return jsonify({"error": "A system reboot is already pending"}), 409
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"ok": True, "message": "Raspberry Pi reboot scheduled"}), 202
 
 
 @api_bp.get("/update/status")

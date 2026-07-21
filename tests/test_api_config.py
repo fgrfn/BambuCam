@@ -1,7 +1,7 @@
 """Tests for REST configuration validation and runtime application."""
 
 from copy import deepcopy
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from flask import Flask
 
@@ -131,6 +131,7 @@ def test_rtsp_runtime_settings_are_persisted():
     assert config.data["streaming"]["rtsp"]["bitrate_kbps"] == 1200
     assert config.data["streaming"]["rtsp"]["stream_name"] == "printer"
     assert config.data["streaming"]["rtsp"]["enable_hls"] is False
+    assert config.data["camera"]["active_profile"] == "custom"
     assert config.saved == 1
     rtsp.update_settings.assert_called_once_with(
         resolution="1280x720",
@@ -158,6 +159,97 @@ def test_invalid_rtsp_runtime_settings_are_not_applied_or_persisted():
     assert "between 100 and 100000" in response.get_json()["error"]
     assert config.saved == 0
     rtsp.update_settings.assert_not_called()
+
+
+def test_stream_settings_are_applied_and_persisted_as_one_transaction():
+    config = MemoryConfig()
+    config.data["camera"]["active_profile"] = "balanced"
+    app, camera, mjpeg, rtsp = _app(config)
+
+    response = app.test_client().post(
+        "/api/v1/stream/settings",
+        json={
+            "resolution": "1280x720",
+            "framerate": 15,
+            "bitrate_kbps": 1200,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["active_profile"] == "custom"
+    assert config.data["camera"]["resolution"] == "1280x720"
+    assert config.data["camera"]["framerate"] == 15
+    assert config.data["camera"]["active_profile"] == "custom"
+    assert config.data["streaming"]["mjpeg"]["fps"] == 15
+    assert config.data["streaming"]["rtsp"]["bitrate_kbps"] == 1200
+    assert config.saved == 1
+    camera.apply_settings.assert_called_once_with({"resolution": "1280x720", "framerate": 15})
+    mjpeg.update_fps.assert_called_once_with(15)
+    rtsp.update_settings.assert_called_once_with(
+        resolution="1280x720",
+        framerate=15,
+        bitrate_kbps=1200,
+    )
+
+
+def test_camera_controls_including_zoom_are_persisted():
+    config = MemoryConfig()
+    config.data["camera"]["active_profile"] = "balanced"
+    app, camera, _mjpeg, _rtsp = _app(config)
+
+    response = app.test_client().post(
+        "/api/v1/camera/settings",
+        json={"brightness": 0.25, "zoom": 2.0},
+    )
+
+    assert response.status_code == 200
+    assert config.data["camera"]["brightness"] == 0.25
+    assert config.data["camera"]["zoom"] == 2.0
+    assert config.data["camera"]["active_profile"] == "custom"
+    assert config.saved == 1
+    camera.apply_settings.assert_called_once_with({"brightness": 0.25, "zoom": 2.0})
+
+
+def test_stream_settings_failure_rolls_back_runtime_and_config():
+    config = MemoryConfig()
+    config.data["camera"]["active_profile"] = "balanced"
+    original = deepcopy(config.data)
+    app, camera, _mjpeg, rtsp = _app(config)
+    camera.status.return_value = {
+        "resolution": "1920x1080",
+        "framerate": 30,
+    }
+    rtsp.update_settings.side_effect = [RuntimeError("publisher failed"), None]
+
+    response = app.test_client().post(
+        "/api/v1/stream/settings",
+        json={
+            "resolution": "1280x720",
+            "framerate": 15,
+            "bitrate_kbps": 1200,
+        },
+    )
+
+    assert response.status_code == 400
+    assert config.data == original
+    assert config.saved == 0
+    assert camera.apply_settings.call_count == 2
+    assert rtsp.update_settings.call_count == 2
+
+
+def test_profile_owned_config_change_marks_profile_as_custom():
+    config = MemoryConfig()
+    config.data["camera"]["active_profile"] = "balanced"
+    app, _camera, _mjpeg, _rtsp = _app(config)
+
+    response = app.test_client().post(
+        "/api/v1/config",
+        json={"streaming": {"mjpeg": {"quality": 75}}},
+    )
+
+    assert response.status_code == 200
+    assert config.data["camera"]["active_profile"] == "custom"
+    assert config.saved == 1
 
 
 def test_config_response_redacts_all_credentials():
@@ -258,3 +350,52 @@ def test_application_restart_endpoint_schedules_restart():
 
     assert response.status_code == 202
     updater.restart_service.assert_called_once_with()
+
+
+def test_system_reboot_requires_csrf_and_explicit_confirmation():
+    config = MemoryConfig()
+    app, *_ = _app(config)
+    client = app.test_client()
+
+    with patch("bambucam.web.api.schedule_system_reboot") as reboot:
+        assert client.post("/api/v1/system/reboot", json={"confirm": "reboot"}).status_code == 403
+        assert (
+            client.post(
+                "/api/v1/system/reboot",
+                json={"confirm": "no"},
+                headers={"X-BambuCam-CSRF": "1"},
+            ).status_code
+            == 400
+        )
+
+    reboot.assert_not_called()
+
+
+def test_system_reboot_endpoint_schedules_host_reboot():
+    config = MemoryConfig()
+    app, *_ = _app(config)
+
+    with patch("bambucam.web.api.schedule_system_reboot", return_value=True) as reboot:
+        response = app.test_client().post(
+            "/api/v1/system/reboot",
+            json={"confirm": "reboot"},
+            headers={"X-BambuCam-CSRF": "1"},
+        )
+
+    assert response.status_code == 202
+    assert response.get_json()["ok"] is True
+    reboot.assert_called_once_with()
+
+
+def test_duplicate_system_reboot_request_is_rejected():
+    config = MemoryConfig()
+    app, *_ = _app(config)
+
+    with patch("bambucam.web.api.schedule_system_reboot", return_value=False):
+        response = app.test_client().post(
+            "/api/v1/system/reboot",
+            json={"confirm": "reboot"},
+            headers={"X-BambuCam-CSRF": "1"},
+        )
+
+    assert response.status_code == 409

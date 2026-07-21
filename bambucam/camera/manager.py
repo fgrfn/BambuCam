@@ -242,6 +242,9 @@ class CameraManager:
         if self._detected is not None and next_resolution is not None:
             self._validate_mode(next_resolution, next_framerate, self._detected)
 
+        if "zoom" in new_settings and self._backend is not None and not self._backend.supports_zoom:
+            raise ValueError("Digital zoom is not supported by the active camera backend")
+
         if "vflip" in new_settings and bool(new_settings["vflip"]) != bool(
             self._settings.get("vflip", False)
         ):
@@ -267,6 +270,7 @@ class CameraManager:
                 "contrast": lambda value: backend.set_contrast(float(value)),
                 "saturation": lambda value: backend.set_saturation(float(value)),
                 "sharpness": lambda value: backend.set_sharpness(float(value)),
+                "zoom": lambda value: backend.set_zoom(float(value)),
                 "exposure_mode": backend.set_exposure_mode,
                 "awb_mode": backend.set_awb_mode,
                 "iso": lambda value: backend.set_iso(int(value)),
@@ -323,6 +327,9 @@ class CameraManager:
             ),
             "has_autofocus": self.model.has_autofocus if self.model else False,
             "has_hdr": self.model.has_hdr if self.model else False,
+            "has_zoom": self._backend.supports_zoom if self._backend else False,
+            "max_zoom": self._backend.max_zoom if self._backend else 1.0,
+            "zoom": float(self._settings.get("zoom", 1.0)),
             "is_noir": self.model.is_noir if self.model else False,
             "has_global_shutter": self.model.has_global_shutter if self.model else False,
         }

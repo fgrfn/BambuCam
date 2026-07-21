@@ -142,5 +142,10 @@ def test_schema_rejects_port_conflicts():
         validate_config_update({"streaming": {"rtsp": {"port": 8080}}})
 
 
+def test_schema_rejects_zoom_outside_supported_range():
+    with pytest.raises(ValueError, match="camera.zoom must be between 1.0 and 8.0"):
+        validate_config_update({"camera": {"zoom": 8.1}})
+
+
 def test_fresh_install_uses_hardware_aware_rtsp_default():
     assert DEFAULTS["streaming"]["rtsp"]["enabled"] == "auto"

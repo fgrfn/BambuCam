@@ -22,6 +22,22 @@ def _resolve_control_enum(controls_module, enum_name: str):
     return getattr(getattr(controls_module, "draft", None), enum_name, None)
 
 
+def _rectangle_tuple(value) -> Optional[tuple[int, int, int, int]]:
+    """Normalise libcamera Rectangle objects and tuple-like values."""
+    if value is None:
+        return None
+    attributes = ("x", "y", "width", "height")
+    if all(hasattr(value, attribute) for attribute in attributes):
+        return tuple(int(getattr(value, attribute)) for attribute in attributes)
+    try:
+        values = tuple(int(item) for item in value)
+    except (TypeError, ValueError):
+        return None
+    if len(values) != 4:
+        return None
+    return values[0], values[1], values[2], values[3]
+
+
 class Picamera2Backend(CameraBackend):
     """Camera backend using the picamera2 / libcamera stack."""
 
@@ -56,6 +72,7 @@ class Picamera2Backend(CameraBackend):
         self._framerate: int = 30
         self._vflip: bool = False
         self._hflip: bool = False
+        self._zoom: float = 1.0
         self._pending_controls: dict = {}
         self._initial_settings: dict = {}  # non-geometry settings, applied after start()
         self._jpeg_quality: int = 85
@@ -218,6 +235,66 @@ class Picamera2Backend(CameraBackend):
 
     def set_sharpness(self, value: float) -> None:
         self._set_control(Sharpness=max(0.0, min(16.0, value)))
+
+    def _scaler_crop_limits(
+        self,
+    ) -> Optional[tuple[tuple[int, int, int, int], tuple[int, int, int, int]]]:
+        if self._picam is None:
+            return None
+        controls = getattr(self._picam, "camera_controls", {}) or {}
+        info = controls.get("ScalerCrop")
+        if info is None:
+            return None
+        if all(hasattr(info, attribute) for attribute in ("min", "max", "default")):
+            minimum, maximum, default = info.min, info.max, info.default
+        else:
+            try:
+                minimum, maximum, default = info[:3]
+            except (TypeError, ValueError):
+                return None
+        minimum_rect = _rectangle_tuple(minimum)
+        maximum_rect = _rectangle_tuple(maximum)
+        default_rect = _rectangle_tuple(default)
+        bounds = default_rect or maximum_rect
+        if bounds is None or minimum_rect is None or bounds[2] <= 0 or bounds[3] <= 0:
+            return None
+        return bounds, minimum_rect
+
+    @property
+    def supports_zoom(self) -> bool:
+        if self._picam is None:
+            return True
+        controls = getattr(self._picam, "camera_controls", {}) or {}
+        return "ScalerCrop" in controls
+
+    @property
+    def max_zoom(self) -> float:
+        limits = self._scaler_crop_limits()
+        if limits is None:
+            return 8.0 if self._picam is None else 1.0
+        bounds, minimum = limits
+        if minimum[2] <= 0 or minimum[3] <= 0:
+            return 8.0
+        return max(1.0, min(8.0, bounds[2] / minimum[2], bounds[3] / minimum[3]))
+
+    def set_zoom(self, value: float) -> None:
+        requested = max(1.0, min(8.0, float(value)))
+        self._zoom = requested
+        if self._picam is None:
+            return
+        limits = self._scaler_crop_limits()
+        if limits is None:
+            log.warning("Digital zoom is not supported by this camera/libcamera version")
+            return
+        bounds, _minimum = limits
+        zoom = min(requested, self.max_zoom)
+        width = max(2, int(bounds[2] / zoom))
+        height = max(2, int(bounds[3] / zoom))
+        width -= width % 2
+        height -= height % 2
+        x = bounds[0] + (bounds[2] - width) // 2
+        y = bounds[1] + (bounds[3] - height) // 2
+        self._set_control(ScalerCrop=(x, y, width, height))
 
     def set_exposure_mode(self, mode: str) -> None:
         from libcamera import controls as lc
