@@ -97,7 +97,11 @@ The preferred method is **WebUI → Software Update**. The updater:
 - verifies `SHA256SUMS` when provided;
 - rejects unsafe paths and special files in source archives;
 - verifies that the installed package reports the expected release version;
-- restarts the systemd service or re-executes the process.
+- backs up the installed package and runs an isolated import/configuration health check;
+- re-executes the process and verifies the expected version through local `/health`;
+- restores and restarts the previous installed version automatically if installation or post-restart health verification fails.
+
+Configuration files are not replaced by upgrades. The versioned configuration schema migrates older files while preserving explicit camera, bitrate, stream, authentication, and retention settings.
 
 Re-running the release installer is also supported and preserves the existing configuration:
 

@@ -6,13 +6,13 @@ from copy import deepcopy
 
 from flask import Blueprint, current_app, jsonify, request
 
+from bambucam.config import validate_config_update
 from bambucam.main import _effective_mjpeg_fps
-from bambucam.system_info import system_summary
+from bambucam.system_info import hardware_recommendations, system_summary
 from bambucam.web.security import hash_password
 
 log = logging.getLogger(__name__)
 api_bp = Blueprint("api", __name__)
-_ALLOWED_SECTIONS = {"camera", "streaming", "web", "system"}
 
 
 def _camera():
@@ -46,64 +46,84 @@ def _json_object() -> dict:
     return data
 
 
-def _integer(value, name: str, minimum: int, maximum: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be an integer") from exc
-    if not minimum <= parsed <= maximum:
-        raise ValueError(f"{name} must be between {minimum} and {maximum}")
-    return parsed
-
-
 def _validate_config_update(data: dict) -> None:
-    unknown = set(data) - _ALLOWED_SECTIONS
-    if unknown:
-        raise ValueError(f"Unknown config section(s): {', '.join(sorted(unknown))}")
-    if any(not isinstance(value, dict) for value in data.values()):
-        raise ValueError("Every config section must be an object")
+    validate_config_update(data, _cfg().as_dict())
 
-    streaming = data.get("streaming", {})
-    mjpeg = streaming.get("mjpeg", {})
-    if mjpeg and not isinstance(mjpeg, dict):
-        raise ValueError("streaming.mjpeg must be an object")
-    if "port" in mjpeg:
-        _integer(mjpeg["port"], "MJPEG/Web port", 1, 65535)
-    if "quality" in mjpeg:
-        _integer(mjpeg["quality"], "MJPEG quality", 1, 100)
-    if "fps" in mjpeg:
-        _integer(mjpeg["fps"], "MJPEG FPS", 1, 120)
 
-    rtsp = streaming.get("rtsp", {})
-    if rtsp and not isinstance(rtsp, dict):
-        raise ValueError("streaming.rtsp must be an object")
-    for key, label in (
-        ("port", "RTSP port"),
-        ("hls_port", "HLS port"),
-        ("webrtc_port", "WebRTC port"),
-    ):
-        if key in rtsp:
-            _integer(rtsp[key], label, 1, 65535)
-    if "bitrate_kbps" in rtsp:
-        _integer(rtsp["bitrate_kbps"], "RTSP bitrate", 100, 100000)
-    if "stream_name" in rtsp:
-        name = str(rtsp["stream_name"]).strip()
-        if not name or any(char in name for char in " /?#"):
-            raise ValueError("Invalid RTSP stream name")
+def _restore_config(snapshot: dict) -> None:
+    """Restore only in-memory config; atomic saves leave the old file intact on failure."""
+    config = _cfg()
+    if hasattr(config, "replace"):
+        config.replace(snapshot)
+    elif hasattr(config, "data"):  # Lightweight test/config adapters.
+        config.data = deepcopy(snapshot)
 
-    web = data.get("web", {})
-    if "port" in web:
-        _integer(web["port"], "Web port", 1, 65535)
-    auth = web.get("auth", {})
-    if auth and not isinstance(auth, dict):
-        raise ValueError("web.auth must be an object")
-    if auth.get("enabled") and not (
-        auth.get("password")
-        or auth.get("api_token")
-        or _cfg().get("web", "auth", "password")
-        or _cfg().get("web", "auth", "api_token")
-    ):
-        raise ValueError("Authentication requires a password or API token")
+
+def _rtsp_runtime_settings(config: dict) -> dict:
+    rtsp = config["streaming"]["rtsp"]
+    return {
+        "bitrate_kbps": rtsp["bitrate_kbps"],
+        "stream_name": rtsp["stream_name"],
+        "rtsp_port": rtsp["port"],
+        "hls_port": rtsp["hls_port"],
+        "webrtc_port": rtsp["webrtc_port"],
+        "enable_hls": rtsp["enable_hls"],
+        "enable_webrtc": rtsp["enable_webrtc"],
+    }
+
+
+def _rollback_runtime(
+    config: dict,
+    *,
+    camera=False,
+    mjpeg=False,
+    rtsp=False,
+    camera_status=None,
+    mjpeg_running=None,
+    rtsp_running=None,
+) -> None:
+    """Best-effort runtime rollback used after a failed transactional update."""
+    try:
+        if camera:
+            status = camera_status or _camera().status()
+            old_camera = config["camera"]
+            settings = {
+                key: old_camera[key]
+                for key in (
+                    "brightness",
+                    "contrast",
+                    "saturation",
+                    "sharpness",
+                    "exposure_mode",
+                    "awb_mode",
+                    "noise_reduction",
+                    "vflip",
+                    "hflip",
+                    "autofocus",
+                    "hdr",
+                )
+            }
+            if status.get("resolution"):
+                settings["resolution"] = status["resolution"]
+            if status.get("framerate"):
+                settings["framerate"] = status["framerate"]
+            _camera().apply_settings(settings)
+        if mjpeg:
+            old_mjpeg = config["streaming"]["mjpeg"]
+            _camera().set_jpeg_quality(int(old_mjpeg["quality"]))
+            _mjpeg().update_fps(int(old_mjpeg["fps"]))
+            if mjpeg_running is True and not _mjpeg().is_running:
+                _mjpeg().start()
+            elif mjpeg_running is False and _mjpeg().is_running:
+                _mjpeg().stop()
+        if rtsp:
+            _rtsp().update_settings(**_rtsp_runtime_settings(config))
+            if rtsp_running is True and not _rtsp().is_running:
+                _rtsp().start()
+            elif rtsp_running is False and _rtsp().is_running:
+                _rtsp().stop()
+    except Exception:
+        log.exception("Runtime rollback failed")
 
 
 def _normalise_config_update(data: dict) -> dict:
@@ -127,6 +147,29 @@ def _normalise_config_update(data: dict) -> dict:
         else:
             auth["password"] = hash_password(str(auth["password"]))
     return update
+
+
+def _restart_reasons(data: dict) -> list[str]:
+    reasons = []
+    web = data.get("web", {})
+    if {"port", "host", "auth", "https", "trust_proxy"} & web.keys():
+        reasons.append("web")
+    if data.get("camera"):
+        reasons.append("camera")
+    if data.get("system"):
+        reasons.append("system")
+    streaming = data.get("streaming", {})
+    mjpeg = streaming.get("mjpeg", {})
+    if "path" in mjpeg:
+        reasons.append("mjpeg")
+    rtsp = streaming.get("rtsp", {})
+    if "auth" in rtsp:
+        reasons.append("rtsp_auth")
+    if streaming.get("snapshot"):
+        reasons.append("snapshot")
+    if streaming.get("timelapse"):
+        reasons.append("timelapse")
+    return sorted(set(reasons))
 
 
 @api_bp.get("/camera/status")
@@ -166,11 +209,12 @@ def camera_models():
 
 @api_bp.post("/camera/settings")
 def camera_settings():
+    snapshot = _cfg().as_dict()
+    old_camera_status = _camera().status()
     try:
         data = _json_object()
+        _validate_config_update({"camera": data})
         _camera().apply_settings(data)
-        _cfg().update_section("camera", data)
-        _cfg().save()
 
         if "resolution" in data or "framerate" in data:
             _rtsp().update_settings(
@@ -179,8 +223,18 @@ def camera_settings():
             )
             mjpeg_config = _cfg().get("streaming", "mjpeg", default={}) or {}
             _mjpeg().update_fps(_effective_mjpeg_fps(_camera().current_framerate, mjpeg_config))
+        _cfg().update_section("camera", {**data, "active_profile": "custom"})
+        _cfg().save()
     except Exception as exc:
         log.exception("Failed to apply camera settings")
+        _restore_config(snapshot)
+        _rollback_runtime(
+            snapshot,
+            camera=True,
+            mjpeg=True,
+            rtsp=True,
+            camera_status=old_camera_status,
+        )
         return jsonify({"error": str(exc)}), 400
 
     restart_keys = {"resolution", "framerate", "vflip", "hflip"}
@@ -236,21 +290,43 @@ def stream_status():
 
 @api_bp.post("/stream/rtsp/start")
 def rtsp_start():
+    snapshot = _cfg().as_dict()
+    was_running = bool(_rtsp().is_running)
     try:
         _rtsp().start()
+        _cfg().update_section("streaming", {"rtsp": {"enabled": True}})
+        _cfg().save()
     except Exception as exc:
+        _restore_config(snapshot)
+        if not was_running:
+            _rtsp().stop()
         return jsonify({"error": str(exc)}), 500
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "persisted": True})
 
 
 @api_bp.post("/stream/rtsp/stop")
 def rtsp_stop():
-    _rtsp().stop()
-    return jsonify({"ok": True})
+    snapshot = _cfg().as_dict()
+    was_running = bool(_rtsp().is_running)
+    try:
+        _rtsp().stop()
+        _cfg().update_section("streaming", {"rtsp": {"enabled": False}})
+        _cfg().save()
+    except Exception as exc:
+        _restore_config(snapshot)
+        if was_running:
+            try:
+                _rtsp().start()
+            except Exception:
+                log.exception("Failed to restore RTSP after persistence failure")
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "persisted": True})
 
 
 @api_bp.post("/stream/rtsp/settings")
 def rtsp_settings():
+    snapshot = _cfg().as_dict()
+    runtime_applied = False
     try:
         data = _json_object()
         persistent_keys = {
@@ -266,6 +342,7 @@ def rtsp_settings():
         if persistent_settings:
             _validate_config_update({"streaming": {"rtsp": persistent_settings}})
 
+        runtime_applied = True
         _rtsp().update_settings(
             resolution=data.get("resolution"),
             framerate=data.get("framerate"),
@@ -281,6 +358,9 @@ def rtsp_settings():
             _cfg().update_section("streaming", {"rtsp": persistent_settings})
             _cfg().save()
     except Exception as exc:
+        _restore_config(snapshot)
+        if runtime_applied:
+            _rollback_runtime(snapshot, rtsp=True)
         return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True, "persisted": sorted(persistent_settings)})
 
@@ -325,35 +405,41 @@ def get_config():
 
 @api_bp.post("/config")
 def set_config():
+    snapshot = _cfg().as_dict()
+    old_mjpeg_running = bool(_mjpeg().is_running)
+    old_rtsp_running = bool(_rtsp().is_running)
+    mjpeg_applied = False
+    rtsp_applied = False
     try:
         data = _normalise_config_update(_json_object())
         _validate_config_update(data)
-        for section, values in data.items():
-            _cfg().update_section(section, values)
-        _cfg().save()
-    except Exception as exc:
-        log.exception("Failed to update config")
-        return jsonify({"error": str(exc)}), 400
+        streaming = data.get("streaming", {})
+        mjpeg_data = streaming.get("mjpeg", {})
+        if "quality" in mjpeg_data:
+            mjpeg_applied = True
+            _camera().set_jpeg_quality(int(mjpeg_data["quality"]))
+        if "fps" in mjpeg_data:
+            mjpeg_applied = True
+            _mjpeg().update_fps(_effective_mjpeg_fps(_camera().current_framerate, mjpeg_data))
+        if "enabled" in mjpeg_data:
+            mjpeg_applied = True
+            if mjpeg_data["enabled"]:
+                _mjpeg().start()
+            else:
+                _mjpeg().stop()
 
-    streaming = data.get("streaming", {})
-    mjpeg_data = streaming.get("mjpeg", {})
-    if "quality" in mjpeg_data:
-        _camera().set_jpeg_quality(int(mjpeg_data["quality"]))
-    if "fps" in mjpeg_data:
-        _mjpeg().update_fps(_effective_mjpeg_fps(_camera().current_framerate, mjpeg_data))
-
-    rtsp_data = streaming.get("rtsp", {})
-    runtime_rtsp_keys = {
-        "bitrate_kbps",
-        "stream_name",
-        "port",
-        "hls_port",
-        "webrtc_port",
-        "enable_hls",
-        "enable_webrtc",
-    }
-    if runtime_rtsp_keys & rtsp_data.keys():
-        try:
+        rtsp_data = streaming.get("rtsp", {})
+        runtime_rtsp_keys = {
+            "bitrate_kbps",
+            "stream_name",
+            "port",
+            "hls_port",
+            "webrtc_port",
+            "enable_hls",
+            "enable_webrtc",
+        }
+        if runtime_rtsp_keys & rtsp_data.keys():
+            rtsp_applied = True
             _rtsp().update_settings(
                 bitrate_kbps=rtsp_data.get("bitrate_kbps"),
                 stream_name=rtsp_data.get("stream_name"),
@@ -363,13 +449,39 @@ def set_config():
                 enable_hls=rtsp_data.get("enable_hls"),
                 enable_webrtc=rtsp_data.get("enable_webrtc"),
             )
-        except Exception as exc:
-            log.warning("Saved RTSP settings but failed to apply them: %s", exc)
-            return jsonify({"error": f"Settings saved but runtime apply failed: {exc}"}), 500
+        if "enabled" in rtsp_data:
+            rtsp_applied = True
+            enabled = rtsp_data["enabled"]
+            if enabled == "auto":
+                enabled = hardware_recommendations()["rtsp_enabled"]
+            if enabled is True:
+                _rtsp().start()
+            elif enabled is False:
+                _rtsp().stop()
+        for section, values in data.items():
+            _cfg().update_section(section, values)
+        _cfg().save()
+    except Exception as exc:
+        log.exception("Failed to update config")
+        _restore_config(snapshot)
+        if mjpeg_applied or rtsp_applied:
+            _rollback_runtime(
+                snapshot,
+                mjpeg=mjpeg_applied,
+                rtsp=rtsp_applied,
+                mjpeg_running=old_mjpeg_running,
+                rtsp_running=old_rtsp_running,
+            )
+        return jsonify({"error": str(exc)}), 400
 
-    web_data = data.get("web", {})
-    restart_required = bool({"port", "host", "auth", "https", "trust_proxy"} & web_data.keys())
-    return jsonify({"ok": True, "restart_required": restart_required})
+    restart_reasons = _restart_reasons(data)
+    return jsonify(
+        {
+            "ok": True,
+            "restart_required": bool(restart_reasons),
+            "restart_reasons": restart_reasons,
+        }
+    )
 
 
 @api_bp.get("/system")
@@ -384,6 +496,13 @@ def restart_camera():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({"ok": True})
+
+
+@api_bp.post("/system/restart")
+def restart_application():
+    if not _updater().restart_service():
+        return jsonify({"error": "A software update is currently active"}), 409
+    return jsonify({"ok": True, "message": "BambuCam restart scheduled"}), 202
 
 
 @api_bp.get("/update/status")

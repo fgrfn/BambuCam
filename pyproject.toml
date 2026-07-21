@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bambucam"
-version = "1.0.16"
+dynamic = ["version"]
 description = "Raspberry Pi camera streaming software for BambuBuddy and BambuStudio"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -50,6 +50,9 @@ include = ["bambucam*"]
 
 [tool.setuptools.package-data]
 bambucam = ["web/templates/*.html", "web/static/**/*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "bambucam._version.__version__" }
 
 [tool.black]
 line-length = 100

@@ -46,7 +46,7 @@ streaming:
     fps: 15                  # Target, capped to current camera FPS
 
   rtsp:
-    enabled: true
+    enabled: auto            # false on Pi Zero/1/2; true on Pi Zero 2 W/3/4/5
     port: 8554
     stream_name: cam
     bitrate_kbps: 2000
@@ -85,6 +85,7 @@ web:
     key: /etc/ssl/bambucam.key
 
 system:
+  config_version: 1
   log_level: INFO
   mediamtx_path: /usr/local/bin/mediamtx
   ffmpeg_path: ffmpeg
@@ -93,9 +94,15 @@ system:
 
 ## Automatic camera modes
 
-With `resolution: auto` and `framerate: auto`, BambuCam selects a mode from the detected camera capabilities and applies the Raspberry Pi hardware-tier FPS cap. For generic USB webcams, the largest mode actually reported by V4L2 is preferred instead of assuming a Raspberry Pi camera mode.
+With `resolution: auto` and `framerate: auto`, BambuCam selects a mode from the detected camera capabilities. For generic USB webcams, the largest mode actually reported by V4L2 is preferred instead of assuming a Raspberry Pi camera mode.
 
-Explicit settings are validated before the backend starts. Unsupported resolutions are rejected and excessive frame rates are capped to the effective model and hardware limit.
+Explicit settings are validated before the backend starts. Unsupported resolutions are rejected and excessive frame rates are capped to the selected camera mode's actual limit. Hardware tiers do not override an explicit FPS choice.
+
+`streaming.rtsp.enabled: auto` provides hardware-aware defaults without overwriting user choices: it disables the more expensive RTSP stack on the original Pi Zero, Pi 1, and Pi 2, while enabling it on Pi Zero 2 W, Pi 3, Pi 4, Pi 5, and non-Pi systems. The WebUI also exposes the appropriate `low_power` or `balanced` profile recommendation.
+
+## Schema and persistence
+
+`system.config_version` is migrated automatically. Existing explicit settings are retained. The complete schema is validated before saving, including nested field names, value types, ranges, URL paths, credentials, and port conflicts. Live changes are applied transactionally; if runtime application or the atomic YAML write fails, BambuCam restores the previous configuration and runtime values where possible.
 
 ## Camera resolution guide
 

@@ -35,7 +35,7 @@ streaming:
     fps: 15                  # Default target; stream selection can set this up to camera FPS
 
   rtsp:
-    enabled: true
+    enabled: auto              # disabled on Pi Zero/1/2, enabled on Pi Zero 2 W/3+
     port: 8554               # RTSP port (rtsp://<ip>:8554/cam)
     stream_name: cam         # Stream path name
     bitrate_kbps: 2000       # H.264 target bitrate
@@ -80,7 +80,9 @@ web:
     key: ""                  # Path to SSL private key
 
 system:
+  config_version: 1          # Managed automatically; do not edit manually
   log_level: INFO            # DEBUG | INFO | WARNING | ERROR
   mediamtx_path: /usr/local/bin/mediamtx
   ffmpeg_path: ffmpeg
   diagnostics_log_lines: 300  # Recent in-memory log lines in support bundles
+  update_include_prerelease: false

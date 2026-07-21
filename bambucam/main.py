@@ -130,6 +130,13 @@ def _effective_mjpeg_fps(camera_fps: int, mjpeg_cfg: dict, tier_fps_cap=None) ->
     return max(1, effective_fps)
 
 
+def _resolve_auto_bool(value, automatic: bool) -> bool:
+    """Resolve a true/false/auto configuration switch."""
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return bool(automatic)
+    return bool(value)
+
+
 def main() -> None:
     args = _parse_args()
     _setup_logging("INFO")
@@ -217,7 +224,9 @@ def main() -> None:
 
     rtsp_config = streaming_config.get("rtsp", {})
     will_use_rtsp = (
-        camera_ok and not args.no_rtsp and rtsp_config.get("enabled", rtsp_default_enabled)
+        camera_ok
+        and not args.no_rtsp
+        and _resolve_auto_bool(rtsp_config.get("enabled", "auto"), rtsp_default_enabled)
     )
 
     if camera_ok and detected is not None and selected_resolution is not None:
@@ -311,6 +320,10 @@ def main() -> None:
     updater = Updater(
         current_version=__version__,
         include_prerelease=cfg.get("system", "update_include_prerelease", default=False),
+        health_url=(
+            f"{'https' if cfg.get('web', 'https', 'enabled', default=False) else 'http'}"
+            f"://127.0.0.1:{int(web_config.get('port', 8080))}/health"
+        ),
     )
 
     host = args.host or web_config.get("host", "0.0.0.0")

@@ -134,7 +134,7 @@ def diagnostics_payload(config, camera, mjpeg, rtsp, snapshot, updater) -> dict:
         "snapshots": {
             "count": len(snapshots),
             "bytes": snapshot_bytes,
-            "directory": str(snapshot.snapshot_dir),
+            "directory": snapshot.snapshot_dir.as_posix(),
         },
         "updater": updater.status.as_dict(),
         "config": redact(config.as_dict()),

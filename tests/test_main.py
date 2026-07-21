@@ -3,7 +3,8 @@
 import pytest
 
 from bambucam.camera.models import CAMERA_V2, Resolution
-from bambucam.main import _effective_mjpeg_fps, _resolve_camera_mode
+from bambucam.main import _effective_mjpeg_fps, _resolve_auto_bool, _resolve_camera_mode
+from bambucam.system_info import hardware_recommendations
 
 
 class TestEffectiveMjpegFps:
@@ -24,6 +25,22 @@ class TestEffectiveMjpegFps:
 
     def test_never_returns_less_than_one(self):
         assert _effective_mjpeg_fps(30, {"fps": 0}) == 1
+
+
+def test_auto_rtsp_switch_uses_hardware_default_but_preserves_explicit_choice():
+    assert _resolve_auto_bool("auto", False) is False
+    assert _resolve_auto_bool("auto", True) is True
+    assert _resolve_auto_bool(True, False) is True
+    assert _resolve_auto_bool(False, True) is False
+
+
+def test_pi_zero_recommendations_are_conservative():
+    assert hardware_recommendations(1) == {
+        "rtsp_enabled": False,
+        "recommended_profile": "low_power",
+    }
+    assert hardware_recommendations(2)["rtsp_enabled"] is True
+    assert hardware_recommendations(2)["recommended_profile"] == "balanced"
 
 
 class TestResolveCameraMode:

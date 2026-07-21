@@ -132,6 +132,16 @@ class FakeConfig:
     def save(self):
         pass
 
+    def as_dict(self):
+        import copy
+
+        return copy.deepcopy(self.data)
+
+    def replace(self, data):
+        import copy
+
+        self.data = copy.deepcopy(data)
+
 
 class FakeProfiles:
     def list_profiles(self):
@@ -179,6 +189,7 @@ def test_feature_api_profiles_and_settings(feature_client):
     response = client.get("/api/v1/camera/profiles")
     assert response.status_code == 200
     assert response.get_json()["profiles"][0]["name"] == "balanced"
+    assert response.get_json()["recommended"] == "balanced"
 
     response = client.post("/api/v1/camera/profiles/balanced")
     assert response.status_code == 200

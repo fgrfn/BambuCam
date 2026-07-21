@@ -121,40 +121,84 @@ class CameraProfileService:
 
     def apply(self, name: str) -> dict:
         resolved = self.resolve(name)
+        snapshot = self._config.as_dict()
+        old_status = self._camera.status()
         camera_settings = {
             "resolution": resolved["resolution"],
             "framerate": resolved["framerate"],
             **resolved["image_settings"],
         }
-        self._camera.apply_settings(camera_settings)
-        self._camera.set_jpeg_quality(resolved["mjpeg_quality"])
-        self._mjpeg.update_fps(resolved["framerate"])
-        self._rtsp.update_settings(
-            resolution=resolved["resolution"],
-            framerate=resolved["framerate"],
-            bitrate_kbps=resolved["bitrate_kbps"],
-        )
+        try:
+            self._camera.apply_settings(camera_settings)
+            self._camera.set_jpeg_quality(resolved["mjpeg_quality"])
+            self._mjpeg.update_fps(resolved["framerate"])
+            self._rtsp.update_settings(
+                resolution=resolved["resolution"],
+                framerate=resolved["framerate"],
+                bitrate_kbps=resolved["bitrate_kbps"],
+            )
 
-        self._config.update_section(
-            "camera",
-            {
-                **camera_settings,
-                "active_profile": name,
-            },
-        )
-        self._config.update_section(
-            "streaming",
-            {
-                "mjpeg": {
-                    "quality": resolved["mjpeg_quality"],
-                    "fps": resolved["framerate"],
+            self._config.update_section(
+                "camera",
+                {
+                    **camera_settings,
+                    "active_profile": name,
                 },
-                "rtsp": {"bitrate_kbps": resolved["bitrate_kbps"]},
-            },
-        )
-        self._config.save()
+            )
+            self._config.update_section(
+                "streaming",
+                {
+                    "mjpeg": {
+                        "quality": resolved["mjpeg_quality"],
+                        "fps": resolved["framerate"],
+                    },
+                    "rtsp": {"bitrate_kbps": resolved["bitrate_kbps"]},
+                },
+            )
+            self._config.save()
+        except Exception:
+            self._config.replace(snapshot)
+            self._rollback_runtime(snapshot, old_status)
+            raise
         log.info("Applied camera profile %s: %s", name, resolved)
         return resolved
+
+    def _rollback_runtime(self, config: dict, old_status: dict) -> None:
+        try:
+            old_camera = config["camera"]
+            camera_settings = {
+                key: old_camera[key]
+                for key in (
+                    "brightness",
+                    "contrast",
+                    "saturation",
+                    "sharpness",
+                    "exposure_mode",
+                    "awb_mode",
+                    "noise_reduction",
+                    "vflip",
+                    "hflip",
+                    "autofocus",
+                    "hdr",
+                )
+                if key in old_camera
+            }
+            if old_status.get("resolution"):
+                camera_settings["resolution"] = old_status["resolution"]
+            if old_status.get("framerate"):
+                camera_settings["framerate"] = old_status["framerate"]
+            self._camera.apply_settings(camera_settings)
+            mjpeg = config["streaming"]["mjpeg"]
+            self._camera.set_jpeg_quality(int(mjpeg["quality"]))
+            self._mjpeg.update_fps(int(mjpeg["fps"]))
+            rtsp = config["streaming"]["rtsp"]
+            self._rtsp.update_settings(
+                resolution=old_status.get("resolution"),
+                framerate=old_status.get("framerate"),
+                bitrate_kbps=int(rtsp["bitrate_kbps"]),
+            )
+        except Exception:
+            log.exception("Failed to roll back camera profile runtime state")
 
     def mark_custom(self) -> None:
         """Mark the active configuration as custom after a manual change."""

@@ -2,6 +2,9 @@
 
 import copy
 import hashlib
+import importlib.metadata
+import inspect
+import json
 import logging
 import os
 import shutil
@@ -68,6 +71,7 @@ class UpdateStatus:
     error: str = ""
     update_available: bool = False
     checked_at: Optional[float] = None
+    rollback_performed: bool = False
 
     def as_dict(self) -> dict:
         result = {
@@ -79,6 +83,7 @@ class UpdateStatus:
             "error": self.error,
             "update_available": self.update_available,
             "checked_at": self.checked_at,
+            "rollback_performed": self.rollback_performed,
         }
         if self.latest_release:
             result["latest_release"] = {
@@ -108,12 +113,14 @@ class Updater:
         pip_path: Path = VENV_PIP,
         auto_check: bool = True,
         max_package_bytes: int = MAX_PACKAGE_BYTES,
+        health_url: str = "http://127.0.0.1:8080/health",
     ):
         self._current = current_version
         self._repo = repo
         self._include_prerelease = include_prerelease
         self._pip_path = Path(pip_path)
         self._max_package_bytes = int(max_package_bytes)
+        self._health_url = str(health_url)
         self._status = UpdateStatus(current_version=current_version)
         self._lock = threading.RLock()
         self._worker: Optional[threading.Thread] = None
@@ -138,6 +145,7 @@ class Updater:
             self._status.state = UpdateState.CHECKING
             self._status.message = "Prüfe auf Updates…"
             self._status.error = ""
+            self._status.rollback_performed = False
 
         try:
             release = self._fetch_latest_release()
@@ -199,6 +207,7 @@ class Updater:
             self._status.progress = 1
             self._status.message = "Bereite Update vor…"
             self._status.error = ""
+            self._status.rollback_performed = False
 
         if target_version is not None:
             release = self._find_release(target_version)
@@ -225,6 +234,25 @@ class Updater:
         """Stop only the optional auto-check loop; an active install is not aborted."""
         self._stop_event.set()
 
+    def restart_service(self) -> bool:
+        """Schedule an application restart after the current HTTP response is sent."""
+        with self._lock:
+            if self._is_update_active():
+                return False
+        threading.Thread(
+            target=self._delayed_restart,
+            daemon=True,
+            name="bambucam-restart",
+        ).start()
+        return True
+
+    def _delayed_restart(self) -> None:
+        time.sleep(0.5)
+        try:
+            self._restart()
+        except Exception:
+            log.exception("Requested application restart failed")
+
     @property
     def status(self) -> UpdateStatus:
         with self._lock:
@@ -235,15 +263,23 @@ class Updater:
 
     def _update_pipeline(self, release: ReleaseInfo) -> None:
         temp_root: Optional[Path] = None
+        backup: Optional[tuple[Path, Path]] = None
+        install_attempted = False
+        guard: Optional[subprocess.Popen] = None
         try:
             self._set_state(UpdateState.DOWNLOADING, "Lade Update herunter…", 5)
             package_path = self._download(release)
             temp_root = package_path.parent
+            backup = self._backup_installation(temp_root / "rollback")
 
             self._set_state(UpdateState.INSTALLING, "Installiere Update…", 50)
+            install_attempted = True
             self._install(package_path, expected_version=release.version)
+            self._health_check_installation(expected_version=release.version)
 
             self._set_state(UpdateState.RESTARTING, "Starte BambuCam neu…", 90)
+            assert backup is not None and temp_root is not None
+            guard = self._start_post_restart_guard(backup, release.version, temp_root)
             self._restart()
 
             with self._lock:
@@ -257,7 +293,29 @@ class Updater:
                 )
         except Exception as exc:
             log.exception("Update pipeline failed")
-            self._set_error(str(exc))
+            if guard is not None:
+                guard.terminate()
+                try:
+                    guard.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    guard.kill()
+            rollback_error = None
+            if install_attempted and backup is not None:
+                try:
+                    self._restore_installation(backup)
+                    self._health_check_installation(expected_version=self._current)
+                    with self._lock:
+                        self._status.rollback_performed = True
+                    log.warning("Restored BambuCam v%s after failed update", self._current)
+                except Exception as restore_exc:
+                    rollback_error = restore_exc
+                    log.exception("Automatic update rollback failed")
+            message = str(exc)
+            if rollback_error is not None:
+                message += f"; rollback failed: {rollback_error}"
+            elif install_attempted and backup is not None:
+                message += f"; restored v{self._current}"
+            self._set_error(message)
         finally:
             if temp_root is not None:
                 shutil.rmtree(temp_root, ignore_errors=True)
@@ -435,6 +493,98 @@ class Updater:
         self._set_progress(85, "Installation geprüft und abgeschlossen.")
 
     @staticmethod
+    def _backup_installation(destination: Path) -> tuple[Path, Path]:
+        """Copy installed package files and metadata before replacing them."""
+        distribution = importlib.metadata.distribution("bambucam")
+        site_packages = Path(distribution.locate_file("")).resolve()
+        package_dir = site_packages / "bambucam"
+        if not package_dir.is_dir():
+            raise RuntimeError(f"Installed BambuCam package directory not found: {package_dir}")
+
+        destination.mkdir(parents=True, exist_ok=False)
+        shutil.copytree(package_dir, destination / "bambucam")
+        metadata_dirs = list(site_packages.glob("bambucam-*.dist-info"))
+        if not metadata_dirs:
+            raise RuntimeError("Installed BambuCam package metadata was not found")
+        for metadata_dir in metadata_dirs:
+            shutil.copytree(metadata_dir, destination / metadata_dir.name)
+        return site_packages, destination
+
+    @staticmethod
+    def _restore_installation(backup: tuple[Path, Path]) -> None:
+        """Restore the exact package files captured before an update attempt."""
+        site_packages, source = backup
+        package_dir = site_packages / "bambucam"
+        if package_dir.exists():
+            shutil.rmtree(package_dir)
+        for metadata_dir in site_packages.glob("bambucam-*.dist-info"):
+            shutil.rmtree(metadata_dir)
+        shutil.copytree(source / "bambucam", package_dir)
+        for metadata_dir in source.glob("bambucam-*.dist-info"):
+            shutil.copytree(metadata_dir, site_packages / metadata_dir.name)
+
+    def _health_check_installation(self, expected_version: str) -> None:
+        """Run import, version, and configuration checks in a clean process."""
+        pip = self._pip_path if self._pip_path.exists() else Path(sys.executable).parent / "pip"
+        python = pip.parent / "python"
+        if not python.exists():
+            python = Path(sys.executable)
+        script = (
+            "from importlib.metadata import version; "
+            "from bambucam.config import DEFAULTS, validate_config; "
+            "validate_config(DEFAULTS); print(version('bambucam'))"
+        )
+        result = subprocess.run(
+            [str(python), "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        installed = result.stdout.strip()
+        if result.returncode != 0:
+            raise RuntimeError(f"Installed BambuCam health check failed: {result.stderr[-2000:]}")
+        if installed != expected_version:
+            raise RuntimeError(
+                f"Installed health-check version mismatch: expected {expected_version}, "
+                f"found {installed}"
+            )
+
+    def _start_post_restart_guard(
+        self,
+        backup: tuple[Path, Path],
+        expected_version: str,
+        temp_root: Path,
+    ) -> subprocess.Popen:
+        """Launch the pre-update guard before replacing this running process."""
+        site_packages, backup_dir = backup
+        script = backup_dir / "bambucam" / "update_guard.py"
+        if not script.is_file():
+            raise RuntimeError("Update rollback guard is missing from the installed package")
+        python = self._pip_path.parent / "python"
+        if not python.exists():
+            python = Path(sys.executable)
+        command = [
+            str(python),
+            str(script),
+            self._health_url,
+            expected_version,
+            str(site_packages),
+            str(backup_dir),
+            str(os.getpid()),
+            str(temp_root),
+            str(python),
+            json.dumps(sys.argv),
+        ]
+        return subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+
+    @staticmethod
     def _verify_installed_package(pip: Path, expected_version: Optional[str]) -> None:
         python = pip.parent / "python"
         if not python.exists():
@@ -455,19 +605,7 @@ class Updater:
 
     def _restart(self) -> None:
         self._set_progress(92, "Neustart wird eingeleitet…")
-        if shutil.which("systemctl"):
-            result = subprocess.run(
-                ["systemctl", "restart", "bambucam"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if result.returncode == 0:
-                log.info("systemd restart triggered")
-                return
-            log.warning("systemd restart failed: %s", result.stderr.strip())
-
-        log.warning("systemctl restart unavailable — re-execing process")
+        log.info("Re-executing BambuCam process")
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
@@ -613,7 +751,10 @@ def _safe_extract_tar(archive: Path, destination: Path) -> None:
                 raise RuntimeError(f"Unsafe path in source archive: {member.name}")
             if member.issym() or member.islnk() or member.isdev():
                 raise RuntimeError(f"Unsupported special file in source archive: {member.name}")
-        tar.extractall(root, members=members)
+        extraction_options = {}
+        if "filter" in inspect.signature(tar.extractall).parameters:
+            extraction_options["filter"] = "data"
+        tar.extractall(root, members=members, **extraction_options)
 
 
 def secrets_compare(left: str, right: str) -> bool:

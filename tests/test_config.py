@@ -3,9 +3,16 @@
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
-from bambucam.config import DEFAULTS, Config, _deep_merge
+from bambucam.config import (
+    CURRENT_CONFIG_VERSION,
+    DEFAULTS,
+    Config,
+    _deep_merge,
+    validate_config_update,
+)
 
 
 class TestDeepMerge:
@@ -23,6 +30,12 @@ class TestDeepMerge:
     def test_new_keys_added(self):
         result = _deep_merge({"a": 1}, {"b": 2})
         assert result == {"a": 1, "b": 2}
+
+    def test_nested_values_do_not_alias_the_source(self):
+        source = {"section": {"value": 1}}
+        result = _deep_merge({}, source)
+        result["section"]["value"] = 2
+        assert source["section"]["value"] == 1
 
 
 class TestConfig:
@@ -70,8 +83,8 @@ class TestConfig:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.yaml"
             cfg = Config()
-            cfg._user_config_path = path
             cfg.load()
+            cfg._user_config_path = path
             cfg.set("camera", "framerate", value=60)
             cfg.save()
 
@@ -98,3 +111,36 @@ class TestConfig:
         d = cfg.as_dict()
         d["camera"]["framerate"] = 999
         assert cfg.get("camera", "framerate") != 999
+
+    def test_legacy_file_is_migrated_without_changing_explicit_rtsp_choice(self, tmp_path):
+        path = tmp_path / "legacy.yaml"
+        path.write_text("streaming:\n  rtsp:\n    enabled: true\n", encoding="utf-8")
+
+        cfg = Config()
+        cfg.load(path)
+
+        assert cfg.get("streaming", "rtsp", "enabled") is True
+        assert cfg.get("system", "config_version") == CURRENT_CONFIG_VERSION
+        persisted = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert persisted["system"]["config_version"] == CURRENT_CONFIG_VERSION
+
+    def test_future_config_version_is_rejected(self, tmp_path):
+        path = tmp_path / "future.yaml"
+        path.write_text("system:\n  config_version: 999\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="newer than supported"):
+            Config().load(path)
+
+
+def test_schema_rejects_unknown_nested_settings():
+    with pytest.raises(ValueError, match="Unknown camera setting"):
+        validate_config_update({"camera": {"turbo_mode": True}})
+
+
+def test_schema_rejects_port_conflicts():
+    with pytest.raises(ValueError, match="Port conflict"):
+        validate_config_update({"streaming": {"rtsp": {"port": 8080}}})
+
+
+def test_fresh_install_uses_hardware_aware_rtsp_default():
+    assert DEFAULTS["streaming"]["rtsp"]["enabled"] == "auto"
