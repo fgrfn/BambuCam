@@ -1,9 +1,17 @@
 """Tests for application startup helpers."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from bambucam.camera.models import CAMERA_V2, Resolution
-from bambucam.main import _effective_mjpeg_fps, _resolve_auto_bool, _resolve_camera_mode
+from bambucam.main import (
+    RTSP_BITRATE_CEILING_KBPS,
+    _clamp_rtsp_bitrate,
+    _effective_mjpeg_fps,
+    _resolve_auto_bool,
+    _resolve_camera_mode,
+)
 from bambucam.system_info import hardware_recommendations
 
 
@@ -78,3 +86,33 @@ class TestResolveCameraMode:
                 CAMERA_V2,
                 {"resolution": "1920x1080", "framerate": "fast"},
             )
+
+
+class TestClampRtspBitrate:
+    def test_value_within_tier_limit_is_unchanged(self):
+        assert _clamp_rtsp_bitrate(2000, 1) == 2000
+        assert _clamp_rtsp_bitrate(8000, 2) == 8000
+
+    def test_value_above_tier_limit_is_clamped(self):
+        assert _clamp_rtsp_bitrate(100000, 1) == RTSP_BITRATE_CEILING_KBPS[1]
+        assert _clamp_rtsp_bitrate(20000, 2) == RTSP_BITRATE_CEILING_KBPS[2]
+
+    def test_top_tier_is_capped_too(self):
+        assert _clamp_rtsp_bitrate(100000, 3) == 20000
+
+    def test_unknown_tier_falls_back_to_sane_ceiling(self):
+        assert _clamp_rtsp_bitrate(100000, 99) == 20000
+        assert _clamp_rtsp_bitrate(5000, None) == 5000
+
+    def test_invalid_value_falls_back_to_default(self):
+        assert _clamp_rtsp_bitrate("not-a-number", 1) == 2000
+
+    def test_clamping_is_logged(self):
+        logger = MagicMock()
+        _clamp_rtsp_bitrate(100000, 1, logger)
+        assert logger.warning.called
+
+    def test_allowed_value_is_not_logged(self):
+        logger = MagicMock()
+        _clamp_rtsp_bitrate(2000, 1, logger)
+        logger.warning.assert_not_called()
