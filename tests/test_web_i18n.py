@@ -63,7 +63,7 @@ def test_camera_controls_restore_config_and_use_atomic_stream_endpoint():
     source = (STATIC_JS / "app.js").read_text(encoding="utf-8")
 
     assert 'id="row-zoom"' in template
-    assert 'id="sl-bitrate" min="100" max="100000" step="100"' in template
+    assert 'id="sl-bitrate" min="100" max="20000" step="100"' in template
     assert "setVal('sl-brightness'," in source
     assert "setVal('sl-zoom'," in source
     assert "api('POST', '/stream/settings'" in source

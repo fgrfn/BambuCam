@@ -9,6 +9,7 @@ import yaml
 from bambucam.config import (
     CURRENT_CONFIG_VERSION,
     DEFAULTS,
+    RTSP_BITRATE_MAX_KBPS,
     Config,
     _deep_merge,
     validate_config_update,
@@ -147,6 +148,17 @@ class TestConfig:
         assert cfg.get("system", "config_version") == CURRENT_CONFIG_VERSION
         persisted = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert persisted["system"]["config_version"] == CURRENT_CONFIG_VERSION
+
+    def test_legacy_excessive_bitrate_is_clamped_instead_of_blocking_startup(self, tmp_path):
+        path = tmp_path / "legacy_bitrate.yaml"
+        path.write_text("streaming:\n  rtsp:\n    bitrate_kbps: 100000\n", encoding="utf-8")
+
+        cfg = Config()
+        cfg.load(path)
+
+        assert cfg.get("streaming", "rtsp", "bitrate_kbps") == RTSP_BITRATE_MAX_KBPS
+        persisted = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert persisted["streaming"]["rtsp"]["bitrate_kbps"] == RTSP_BITRATE_MAX_KBPS
 
     def test_future_config_version_is_rejected(self, tmp_path):
         path = tmp_path / "future.yaml"
