@@ -1,6 +1,7 @@
 """System information helpers (CPU temp, memory, uptime, etc.)."""
 
 import platform
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -84,12 +85,28 @@ def raspberry_pi_model() -> Optional[str]:
         return None
 
 
+def _compute_module_tier(model: str) -> Optional[int]:
+    """Map a Compute Module model string to its tier, or None for other boards."""
+    if "compute module" not in model:
+        return None
+    generation = re.search(r"compute module (\d+)", model)
+    if generation is None:
+        # CM1 is the only module without a number: "Raspberry Pi Compute Module Rev 1.1".
+        return 1
+    number = int(generation.group(1))
+    if number <= 1:
+        return 1  # CM1 — BCM2835, Pi 1 class
+    if number <= 3:
+        return 2  # CM3 / CM3+ — BCM2837, Pi 3 class
+    return 3  # CM4 / CM4S / CM5 and newer — BCM2711 and up, Pi 4 class or better
+
+
 def pi_capability_tier() -> int:
     """
     Return a hardware capability tier for adaptive defaults:
-      1 — Pi Zero (orig), Pi 1, Pi 2  → MJPEG-only, no lores stream
-      2 — Pi Zero 2 W, Pi 3           → RTSP + MJPEG
-      3 — Pi 4, Pi 5, non-Pi          → full stack
+      1 — Pi Zero (orig), Pi 1, Pi 2, CM1        → MJPEG-only, no lores stream
+      2 — Pi Zero 2 W, Pi 3, CM3/CM3+            → RTSP + MJPEG
+      3 — Pi 4, Pi 5, CM4/CM4S/CM5, non-Pi       → full stack
 
     Tiers select streaming defaults only and never cap a configured frame rate.
     """
@@ -97,6 +114,10 @@ def pi_capability_tier() -> int:
     if model is None:
         return 3  # non-Pi hardware, assume capable
     m = model.lower()
+    # Compute Modules name no "Pi <n>", so they are classified by module generation.
+    module_tier = _compute_module_tier(m)
+    if module_tier is not None:
+        return module_tier
     # Zero 2 W has 4× Cortex-A53 cores (same die as Pi 3) — check before "pi zero"
     if any(x in m for x in ("pi zero 2", "pi 3 ", "pi 3b", "pi 3a")):
         return 2

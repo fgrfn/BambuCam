@@ -99,7 +99,7 @@ With `resolution: auto` and `framerate: auto`, BambuCam selects a mode from the 
 
 Explicit settings are validated before the backend starts. Unsupported resolutions are rejected and excessive frame rates are capped to the selected camera mode's actual limit. Hardware tiers do not override an explicit FPS choice.
 
-`streaming.rtsp.enabled: auto` provides hardware-aware defaults without overwriting user choices: it disables the more expensive RTSP stack on the original Pi Zero, Pi 1, and Pi 2, while enabling it on Pi Zero 2 W, Pi 3, Pi 4, Pi 5, and non-Pi systems. The WebUI also exposes the appropriate `low_power` or `balanced` profile recommendation.
+`streaming.rtsp.enabled: auto` provides hardware-aware defaults without overwriting user choices: it disables the more expensive RTSP stack on the original Pi Zero, Pi 1, Pi 2, and Compute Module 1, while enabling it on Pi Zero 2 W, Pi 3, Pi 4, Pi 5, Compute Module 3 and newer, and non-Pi systems. The WebUI also exposes the appropriate `low_power` or `balanced` profile recommendation.
 
 ## Schema and persistence
 

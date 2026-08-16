@@ -36,6 +36,7 @@ BambuCam turns a Raspberry Pi or compatible Debian computer into a dedicated cam
 
 - Raspberry Pi Zero 2 W
 - Raspberry Pi 2, 3, 3B+, 4, and 5
+- Raspberry Pi Compute Module 3, 3+, 4, 4S, and 5
 - Debian-based x86-64 or ARM systems with a V4L2 USB webcam
 
 Lower-powered systems automatically receive conservative streaming limits. Raspberry Pi 4 or 5 is recommended for simultaneous high-resolution MJPEG and RTSP/HLS.
@@ -117,7 +118,7 @@ camera:
   framerate: auto
 ```
 
-BambuCam selects a mode from the detected camera capabilities. FPS is capped only by the selected camera mode; explicit user values are never silently reduced based on the Raspberry Pi model. Hardware tiers instead control fresh-install streaming defaults: RTSP in `auto` mode is disabled on Pi Zero/1/2 and enabled on Pi Zero 2 W, Pi 3, Pi 4, and Pi 5. Multiple CSI cameras keep separate capability lists, and `camera.backend` can force `picamera2` or `v4l2`.
+BambuCam selects a mode from the detected camera capabilities. FPS is capped only by the selected camera mode; explicit user values are never silently reduced based on the Raspberry Pi model. Hardware tiers instead control fresh-install streaming defaults: RTSP in `auto` mode is disabled on Pi Zero/1/2 and CM1, and enabled on Pi Zero 2 W, Pi 3, Pi 4, Pi 5, and Compute Module 3 and newer. Multiple CSI cameras keep separate capability lists, and `camera.backend` can force `picamera2` or `v4l2`.
 
 ## Authentication and HTTPS
 
