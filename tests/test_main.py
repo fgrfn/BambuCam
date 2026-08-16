@@ -11,6 +11,7 @@ from bambucam.main import (
     _effective_mjpeg_fps,
     _resolve_auto_bool,
     _resolve_camera_mode,
+    _resolve_hw_encoder,
 )
 from bambucam.system_info import hardware_recommendations
 
@@ -116,3 +117,14 @@ class TestClampRtspBitrate:
         logger = MagicMock()
         _clamp_rtsp_bitrate(2000, 1, logger)
         logger.warning.assert_not_called()
+
+
+class TestResolveHwEncoder:
+    def test_auto_defers_to_runtime_detection(self):
+        assert _resolve_hw_encoder("auto") is None
+        assert _resolve_hw_encoder(None) is None
+        assert _resolve_hw_encoder("") is None
+
+    def test_explicit_choice_is_honoured(self):
+        assert _resolve_hw_encoder(True) is True
+        assert _resolve_hw_encoder(False) is False

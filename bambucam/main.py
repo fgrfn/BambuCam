@@ -161,6 +161,13 @@ def _clamp_rtsp_bitrate(configured_kbps, tier, log=None) -> int:
     return ceiling
 
 
+def _resolve_hw_encoder(value):
+    """Map the hardware_encoder setting to the streamer's tri-state flag."""
+    if _is_auto(value):
+        return None  # let the streamer probe ffmpeg
+    return bool(value)
+
+
 def _resolve_auto_bool(value, automatic: bool) -> bool:
     """Resolve a true/false/auto configuration switch."""
     if isinstance(value, str) and value.strip().lower() == "auto":
@@ -329,6 +336,7 @@ def main() -> None:
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
         camera_backend=picamera2_backend,
         capture_fn=(camera.capture_jpeg if camera_ok and picamera2_backend is None else None),
+        hw_encoder=_resolve_hw_encoder(rtsp_config.get("hardware_encoder", "auto")),
     )
     if will_use_rtsp:
         try:

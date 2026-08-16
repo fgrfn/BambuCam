@@ -51,6 +51,7 @@ streaming:
     port: 8554
     stream_name: cam
     bitrate_kbps: 2000
+    hardware_encoder: auto
 
     enable_hls: true
     hls_port: 8888
