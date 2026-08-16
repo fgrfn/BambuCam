@@ -430,7 +430,9 @@ class Picamera2Backend(CameraBackend):
         # name="lores" encodes the YUV420 lores stream, leaving the RGB888
         # main stream free for concurrent MJPEG capture_file() calls.
         try:
-            self._picam.start_recording(self._h264_encoder, output, name="lores")
+            # start_encoder(), not start_recording(): the camera is already running
+            # here, and start_recording() would additionally (re-)start it.
+            self._picam.start_encoder(self._h264_encoder, output, name="lores")
         except Exception as e:
             self._h264_encoder = None
             raise RuntimeError(f"H264 recording failed to start: {e}") from e
@@ -439,7 +441,11 @@ class Picamera2Backend(CameraBackend):
     def stop_rtsp_recording(self, clear_url: bool = False) -> None:
         if self._picam is not None and self._h264_encoder is not None:
             try:
-                self._picam.stop_recording()
+                # stop_encoder(), not stop_recording(): the latter is stop() plus
+                # stop_encoder(None), so it would stop the camera itself and every
+                # other encoder along with it. Ending an RTSP session must leave
+                # the camera running for MJPEG, snapshots, and timelapse.
+                self._picam.stop_encoder(self._h264_encoder)
             except Exception as e:
                 log.warning("Error stopping H264 recording: %s", e)
         self._h264_encoder = None

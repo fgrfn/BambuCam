@@ -145,3 +145,51 @@ def test_digital_zoom_is_hidden_when_scaler_crop_is_unavailable(caplog) -> None:
     assert backend.max_zoom == 1.0
     picam.set_controls.assert_not_called()
     assert "Digital zoom is not supported" in caplog.text
+
+
+def _running_backend() -> tuple:
+    """Return a started backend plus its mocked Picamera2 handle."""
+    backend = _backend()
+    picam = Mock()
+    picam.recording = True
+    backend._picam = picam
+    backend._running = True
+    backend._framerate = 15
+    return backend, picam
+
+
+def _encoder_modules() -> dict:
+    """Minimal picamera2.encoders / picamera2.outputs stand-ins."""
+    encoders = ModuleType("picamera2.encoders")
+    encoders.H264Encoder = Mock(return_value="h264-encoder")
+    outputs = ModuleType("picamera2.outputs")
+    outputs.FfmpegOutput = Mock(return_value="ffmpeg-output")
+    package = ModuleType("picamera2")
+    package.encoders = encoders
+    package.outputs = outputs
+    return {"picamera2": package, "picamera2.encoders": encoders, "picamera2.outputs": outputs}
+
+
+def test_rtsp_recording_attaches_encoder_without_restarting_the_camera() -> None:
+    backend, picam = _running_backend()
+
+    with patch.dict(sys.modules, _encoder_modules()):
+        backend.start_rtsp_recording("rtsp://127.0.0.1:8554/cam", 2000)
+
+    picam.start_encoder.assert_called_once()
+    assert picam.start_encoder.call_args.kwargs == {"name": "lores"}
+    # start_recording() would also (re-)start the camera.
+    picam.start_recording.assert_not_called()
+
+
+def test_stopping_rtsp_recording_leaves_the_camera_running() -> None:
+    """Regression: stop_recording() stops the camera and every other encoder."""
+    backend, picam = _running_backend()
+    backend._h264_encoder = "h264-encoder"
+
+    backend.stop_rtsp_recording()
+
+    picam.stop_encoder.assert_called_once_with("h264-encoder")
+    picam.stop_recording.assert_not_called()
+    picam.stop.assert_not_called()
+    assert backend._h264_encoder is None
