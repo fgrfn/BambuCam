@@ -40,10 +40,17 @@ class MJPEGStreamer:
         self,
         capture_fn: Callable[[], bytes],
         target_fps: int = 15,
+        on_resume: Optional[Callable[[], None]] = None,
+        on_pause: Optional[Callable[[], None]] = None,
     ):
         self._capture_fn = capture_fn
         self._target_fps = target_fps
         self._frame_interval = 1.0 / target_fps
+        # Optional hooks for a frame source that has to be switched on and off with
+        # demand — a camera-side encoder keeps running (and costs CPU) otherwise,
+        # which would defeat the idle pause below.
+        self._on_resume = on_resume
+        self._on_pause = on_pause
 
         self._latest_frame: Optional[bytes] = None
         self._frame_lock = threading.Condition()
@@ -83,6 +90,7 @@ class MJPEGStreamer:
         if self._capture_thread is not None:
             self._capture_thread.join(timeout=3)
         self._idle = False
+        self._notify_source(self._on_pause, "stop")
         log.info("MJPEG streamer stopped")
 
     def update_fps(self, fps: int) -> None:
@@ -116,13 +124,24 @@ class MJPEGStreamer:
         finally:
             self._idle = False
 
+    def _notify_source(self, hook: Optional[Callable[[], None]], action: str) -> None:
+        """Run a frame-source hook; a failing source must never kill the capture thread."""
+        if hook is None:
+            return
+        try:
+            hook()
+        except Exception as exc:
+            log.warning("MJPEG frame source failed to %s: %s", action, exc)
+
     def _capture_loop(self) -> None:
         last_seen_client = time.monotonic()
+        self._notify_source(self._on_resume, "start")
         while self._running:
             if self._has_clients():
                 last_seen_client = time.monotonic()
             elif time.monotonic() - last_seen_client >= self.IDLE_GRACE_SECONDS:
                 self._idle = True
+                self._notify_source(self._on_pause, "pause")
                 # Drop the measurement window so actual_fps reports None while paused
                 # instead of the rate that was current when the last client left.
                 self._frame_times.clear()
@@ -134,15 +153,20 @@ class MJPEGStreamer:
                 log.debug("MJPEG capture paused (no clients)")
                 if not self._wait_for_clients():
                     break
+                self._notify_source(self._on_resume, "resume")
                 last_seen_client = time.monotonic()
 
             t0 = time.monotonic()
             try:
                 frame = self._capture_fn()
-                with self._frame_lock:
-                    self._latest_frame = frame
-                    self._frame_lock.notify_all()
-                self._frame_times.append(t0)
+                # A source that yields nothing — an encoder that has not produced its
+                # first frame yet — must not overwrite the last good frame. Fall through
+                # to the pacing below rather than retrying immediately.
+                if frame:
+                    with self._frame_lock:
+                        self._latest_frame = frame
+                        self._frame_lock.notify_all()
+                    self._frame_times.append(t0)
             except Exception as e:
                 log.warning("MJPEG capture error: %s", e)
                 time.sleep(0.5)

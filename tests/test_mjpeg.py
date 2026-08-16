@@ -241,3 +241,109 @@ def test_generate_releases_pending_clients_that_never_got_a_frame(streamer):
     assert streamer.client_count == 0
     assert streamer._waiting_count == 0
     assert _wait_until(lambda: streamer.idle), "loop never went idle again"
+
+
+class RecordingSource:
+    """Records resume/pause hook calls from the capture thread."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.events = []
+
+    def resume(self) -> None:
+        with self._lock:
+            self.events.append("resume")
+
+    def pause(self) -> None:
+        with self._lock:
+            self.events.append("pause")
+
+    @property
+    def log(self) -> list:
+        with self._lock:
+            return list(self.events)
+
+
+def _hooked_streamer(capture=None):
+    source = RecordingSource()
+    streamer = MJPEGStreamer(
+        capture or FakeCapture(),
+        target_fps=_FAST_FPS,
+        on_resume=source.resume,
+        on_pause=source.pause,
+    )
+    streamer.IDLE_GRACE_SECONDS = _GRACE
+    return streamer, source
+
+
+def test_source_is_paused_and_resumed_with_demand():
+    streamer, source = _hooked_streamer()
+    try:
+        streamer.start()
+        assert _wait_until(lambda: source.log == ["resume", "pause"]), source.log
+
+        client = FakeClient(streamer)
+        try:
+            assert client.wait_for_chunks(1)
+            assert _wait_until(lambda: source.log[-1] == "resume"), source.log
+        finally:
+            client.close()
+    finally:
+        streamer.stop()
+
+
+def test_source_is_paused_on_stop():
+    streamer, source = _hooked_streamer()
+    streamer.start()
+    client = FakeClient(streamer)
+    assert client.wait_for_chunks(1)
+    client.close()
+    streamer.stop()
+
+    assert source.log[-1] == "pause"
+
+
+def test_failing_source_hook_does_not_kill_the_capture_thread():
+    def explode():
+        raise RuntimeError("encoder unavailable")
+
+    capture = FakeCapture()
+    streamer = MJPEGStreamer(capture, target_fps=_FAST_FPS, on_resume=explode)
+    streamer.IDLE_GRACE_SECONDS = _GRACE
+    try:
+        streamer.start()
+        client = FakeClient(streamer)
+        try:
+            assert client.wait_for_chunks(1), "capture thread died with the failing hook"
+        finally:
+            client.close()
+    finally:
+        streamer.stop()
+
+
+def test_empty_frames_do_not_replace_the_last_good_one(streamer):
+    """A source that yields nothing yet must not blank out the frame already held."""
+    sent = []
+
+    def capture():
+        # One real frame, then nothing — an encoder that stopped producing.
+        if not sent:
+            sent.append(True)
+            return b"good-frame"
+        return None
+
+    streamer._capture_fn = capture
+    # Idle immediately, so the single good frame is not consumed before a client
+    # is there to receive it.
+    streamer.IDLE_GRACE_SECONDS = 0
+    streamer.start()
+    client = FakeClient(streamer)
+    try:
+        assert client.wait_for_chunks(1)
+        assert b"good-frame" in client.chunks[0]
+        # The empty results that follow are dropped, not forwarded.
+        time.sleep(0.1)
+        assert len(client.chunks) == 1
+        assert streamer._latest_frame == b"good-frame"
+    finally:
+        client.close()
