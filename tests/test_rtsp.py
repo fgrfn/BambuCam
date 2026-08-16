@@ -1,5 +1,7 @@
 """Tests for RTSP runtime configuration."""
 
+import logging
+import subprocess
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -136,3 +138,158 @@ def test_runtime_network_update_changes_urls_when_stopped():
         "rtsp": "rtsp://pi:10554/side",
         "hls": "http://pi:10888/side/index.m3u8",
     }
+
+
+_ENCODERS_WITH_HW = (
+    b"Encoders:\n"
+    b" V....D h264_omx             OpenMAX IL H.264 video encoder\n"
+    b" V..... h264_v4l2m2m         V4L2 mem2mem H.264 encoder wrapper (codec h264)\n"
+    b" V..... libx264              libx264 H.264 / AVC / MPEG-4 AVC\n"
+)
+_ENCODERS_WITHOUT_HW = b"Encoders:\n V..... libx264              libx264 H.264 / AVC / MPEG-4 AVC\n"
+
+
+def _start_and_capture(streamer, run_mock=None):
+    """Run _start_ffmpeg with mocked subprocess and return the ffmpeg argv."""
+    process = MagicMock()
+    process.poll.return_value = None
+    with patch("bambucam.streaming.rtsp.subprocess.Popen", return_value=process) as popen:
+        if run_mock is None:
+            streamer._start_ffmpeg()
+        else:
+            with patch("bambucam.streaming.rtsp.subprocess.run", run_mock):
+                streamer._start_ffmpeg()
+    return popen.call_args.args[0]
+
+
+def _run_result(stdout: bytes, returncode: int = 0) -> MagicMock:
+    return MagicMock(returncode=returncode, stdout=stdout)
+
+
+def test_hardware_encoder_used_when_ffmpeg_advertises_it():
+    streamer = _streamer()
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITH_HW))
+    command = _start_and_capture(streamer, run)
+
+    assert "h264_v4l2m2m" in command
+    assert "libx264" not in command
+    # libx264-private options must never reach the V4L2 encoder.
+    assert "-preset" not in command
+    assert "ultrafast" not in command
+    assert "-tune" not in command
+    assert "zerolatency" not in command
+    # The V4L2 wrapper ignores HRD rate control, so it is dropped as well.
+    assert "-maxrate" not in command
+    assert "-bufsize" not in command
+    assert command[command.index("-b:v") + 1] == "2500k"
+    assert command[command.index("-num_output_buffers") + 1] == "32"
+    assert command[command.index("-num_capture_buffers") + 1] == "16"
+    assert command[command.index("-pix_fmt") + 1] == "yuv420p"
+    # Keyframe interval stays at 2 seconds, as with libx264.
+    assert command[command.index("-g") + 1] == "60"
+
+
+def test_probe_command_targets_configured_ffmpeg_binary():
+    streamer = _streamer()
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITH_HW))
+    _start_and_capture(streamer, run)
+
+    assert run.call_args.args[0] == ["/opt/ffmpeg", "-hide_banner", "-encoders"]
+    assert run.call_args.kwargs["timeout"] > 0
+
+
+def test_software_encoder_used_when_hardware_encoder_absent():
+    streamer = _streamer()
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITHOUT_HW))
+    command = _start_and_capture(streamer, run)
+
+    assert "libx264" in command
+    assert "h264_v4l2m2m" not in command
+    assert command[command.index("-preset") + 1] == "ultrafast"
+    assert command[command.index("-tune") + 1] == "zerolatency"
+    assert command[command.index("-b:v") + 1] == "2500k"
+    assert command[command.index("-maxrate") + 1] == "2500k"
+    assert command[command.index("-bufsize") + 1] == "5000k"
+    assert command[command.index("-pix_fmt") + 1] == "yuv420p"
+    assert command[command.index("-g") + 1] == "60"
+
+
+def test_non_zero_probe_exit_falls_back_to_software_encoder():
+    streamer = _streamer()
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITH_HW, returncode=1))
+    command = _start_and_capture(streamer, run)
+
+    assert "libx264" in command
+    assert "h264_v4l2m2m" not in command
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        FileNotFoundError("no such file: /opt/ffmpeg"),
+        OSError("permission denied"),
+        subprocess.TimeoutExpired(cmd="ffmpeg", timeout=3.0),
+        subprocess.SubprocessError("boom"),
+    ],
+)
+def test_probe_failures_fall_back_to_software_encoder(failure):
+    streamer = _streamer()
+    run = MagicMock(side_effect=failure)
+    command = _start_and_capture(streamer, run)
+
+    assert "libx264" in command
+    assert "h264_v4l2m2m" not in command
+
+
+def test_encoder_detection_runs_only_once_across_restarts():
+    streamer = _streamer()
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITH_HW))
+
+    first = _start_and_capture(streamer, run)
+    second = _start_and_capture(streamer, run)
+
+    assert run.call_count == 1
+    assert first == second
+    assert "h264_v4l2m2m" in second
+
+
+def test_failed_detection_is_cached_and_not_retried():
+    streamer = _streamer()
+    run = MagicMock(side_effect=OSError("gone"))
+
+    _start_and_capture(streamer, run)
+    command = _start_and_capture(streamer, run)
+
+    assert run.call_count == 1
+    assert "libx264" in command
+
+
+def test_hw_encoder_false_skips_detection_entirely():
+    streamer = _streamer(hw_encoder=False)
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITH_HW))
+    command = _start_and_capture(streamer, run)
+
+    assert run.call_count == 0
+    assert "libx264" in command
+    assert command[command.index("-preset") + 1] == "ultrafast"
+
+
+def test_hw_encoder_true_forces_hardware_without_detection():
+    streamer = _streamer(hw_encoder=True)
+    run = MagicMock(return_value=_run_result(_ENCODERS_WITHOUT_HW))
+    command = _start_and_capture(streamer, run)
+
+    assert run.call_count == 0
+    assert "h264_v4l2m2m" in command
+    assert "-preset" not in command
+
+
+def test_selected_encoder_is_logged_once(caplog):
+    streamer = _streamer(hw_encoder=True)
+    with caplog.at_level(logging.INFO, logger="bambucam.streaming.rtsp"):
+        _start_and_capture(streamer)
+        _start_and_capture(streamer)
+
+    messages = [record.getMessage() for record in caplog.records if "video encoder" in record.msg]
+    assert len(messages) == 1
+    assert "h264_v4l2m2m" in messages[0]

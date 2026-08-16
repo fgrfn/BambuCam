@@ -21,6 +21,18 @@ RTSP_PORT = 8554
 HLS_PORT = 8888
 WEBRTC_PORT = 8889
 
+SOFTWARE_ENCODER = "libx264"
+# V4L2 stateful H.264 encoder: Raspberry Pi up to and including the Pi 4 / CM4
+# expose one through /dev/video11. The Pi 5 dropped it, so this is detected
+# rather than assumed.
+HARDWARE_ENCODER = "h264_v4l2m2m"
+ENCODER_PROBE_TIMEOUT = 3.0
+# ffmpeg's v4l2_m2m wrapper defaults to 16 output and 4 capture buffers, which
+# is too tight for 1080p live capture and shows up as dropped frames or a
+# deadlocked device. Raising both is the standard Raspberry Pi recommendation.
+HW_OUTPUT_BUFFERS = 32
+HW_CAPTURE_BUFFERS = 16
+
 
 class RTSPStreamer:
     """Manage MediaMTX and one camera publisher process."""
@@ -51,6 +63,7 @@ class RTSPStreamer:
         rtsp_auth_pass: Optional[str] = None,
         camera_backend=None,
         capture_fn: Optional[Callable[[], bytes]] = None,
+        hw_encoder: Optional[bool] = None,
     ):
         self._device = v4l2_device
         self._resolution = resolution
@@ -68,6 +81,10 @@ class RTSPStreamer:
         self._auth_pass = rtsp_auth_pass or None
         self._camera_backend = camera_backend
         self._capture_fn = capture_fn
+        # None = auto-detect, False = always libx264, True = force h264_v4l2m2m.
+        self._hw_encoder_pref = hw_encoder
+        self._hw_encoder_available: Optional[bool] = None
+        self._encoder_logged = False
 
         self._mediamtx_proc: Optional[subprocess.Popen] = None
         self._ffmpeg_proc: Optional[subprocess.Popen] = None
@@ -330,6 +347,103 @@ class RTSPStreamer:
                 time.sleep(0.1)
         raise RuntimeError(f"MediaMTX did not bind RTSP port {port} within {timeout:.1f}s")
 
+    def _hardware_encoder_available(self) -> bool:
+        """Report whether the configured ffmpeg binary was built with h264_v4l2m2m.
+
+        The probe shells out once per streamer and the answer is cached: the
+        publisher crash-restart path calls _start_ffmpeg() repeatedly and must
+        not spawn an ffmpeg probe every time. A missing binary, a non-zero exit,
+        a timeout, or any other OS error all mean "not available".
+
+        Caveat: ffmpeg listing the encoder is necessary but not sufficient. The
+        V4L2 device may be absent (Pi 5), busy, or refuse the requested format,
+        and that only shows up when the publisher actually starts. Probing the
+        device here would compete with the running publisher for it, so we do
+        not; users hitting that can pass hw_encoder=False to force libx264.
+        """
+        if self._hw_encoder_available is not None:
+            return self._hw_encoder_available
+
+        available = False
+        try:
+            result = subprocess.run(
+                [self._ffmpeg_path, "-hide_banner", "-encoders"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=ENCODER_PROBE_TIMEOUT,
+                check=False,
+            )
+            if result.returncode == 0:
+                output = result.stdout or b""
+                if isinstance(output, bytes):
+                    output = output.decode("utf-8", "replace")
+                available = HARDWARE_ENCODER in output
+        except Exception as exc:
+            # Missing binary, non-zero exit, timeout, OSError — every failure
+            # mode means "assume no hardware encoder" and never propagates:
+            # the probe must not be able to stop the publisher from starting.
+            log.debug("ffmpeg encoder probe failed: %s", exc)
+            available = False
+
+        self._hw_encoder_available = available
+        return available
+
+    def _select_encoder(self) -> str:
+        """Pick the video encoder, logging the choice and its reason once."""
+        if self._hw_encoder_pref is False:
+            encoder, reason = SOFTWARE_ENCODER, "hardware encoding disabled by configuration"
+        elif self._hw_encoder_pref is True:
+            encoder, reason = HARDWARE_ENCODER, "forced by configuration"
+        elif self._hardware_encoder_available():
+            encoder, reason = HARDWARE_ENCODER, f"advertised by {self._ffmpeg_path}"
+        else:
+            encoder, reason = SOFTWARE_ENCODER, f"{HARDWARE_ENCODER} unavailable in ffmpeg"
+
+        if not self._encoder_logged:
+            log.info("RTSP video encoder: %s (%s)", encoder, reason)
+            self._encoder_logged = True
+        return encoder
+
+    def _encoder_args(self) -> list[str]:
+        keyframe_interval = str(self._framerate * 2)
+        encoder = self._select_encoder()
+        if encoder == HARDWARE_ENCODER:
+            # -preset/-tune are libx264-private options; ffmpeg aborts if they
+            # reach h264_v4l2m2m. The V4L2 wrapper only forwards bitrate and GOP
+            # size to the driver, so -maxrate/-bufsize would be dead weight.
+            return [
+                "-c:v",
+                HARDWARE_ENCODER,
+                "-b:v",
+                f"{self._bitrate}k",
+                "-num_output_buffers",
+                str(HW_OUTPUT_BUFFERS),
+                "-num_capture_buffers",
+                str(HW_CAPTURE_BUFFERS),
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                keyframe_interval,
+            ]
+        return [
+            "-c:v",
+            SOFTWARE_ENCODER,
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "zerolatency",
+            "-b:v",
+            f"{self._bitrate}k",
+            "-maxrate",
+            f"{self._bitrate}k",
+            "-bufsize",
+            f"{self._bitrate * 2}k",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            keyframe_interval,
+        ]
+
     def _start_ffmpeg(self) -> None:
         if "x" not in self._resolution:
             raise ValueError(f"Invalid resolution format: {self._resolution!r} (expected WxH)")
@@ -362,25 +476,10 @@ class RTSPStreamer:
                 ]
             )
 
+        command.append("-an")
+        command.extend(self._encoder_args())
         command.extend(
             [
-                "-an",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-tune",
-                "zerolatency",
-                "-b:v",
-                f"{self._bitrate}k",
-                "-maxrate",
-                f"{self._bitrate}k",
-                "-bufsize",
-                f"{self._bitrate * 2}k",
-                "-pix_fmt",
-                "yuv420p",
-                "-g",
-                str(self._framerate * 2),
                 "-f",
                 "rtsp",
                 "-rtsp_transport",
