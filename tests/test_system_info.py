@@ -22,6 +22,14 @@ from bambucam.system_info import pi_capability_tier, system_summary
         # Tier 3 — Pi 4, Pi 5, unknown
         ("Raspberry Pi 4 Model B Rev 1.4", 3),
         ("Raspberry Pi 5 Model B Rev 1.0", 3),
+        ("Raspberry Pi 400 Rev 1.0", 3),
+        # Compute Modules carry no "Pi <n>" and are classified by generation
+        ("Raspberry Pi Compute Module Rev 1.1", 1),
+        ("Raspberry Pi Compute Module 3 Rev 1.0", 2),
+        ("Raspberry Pi Compute Module 3 Plus Rev 1.0", 2),
+        ("Raspberry Pi Compute Module 4 Rev 1.1", 3),
+        ("Raspberry Pi Compute Module 4S Rev 1.0", 3),
+        ("Raspberry Pi Compute Module 5 Rev 1.0", 3),
         # Non-Pi hardware → assume capable
         (None, 3),
     ],

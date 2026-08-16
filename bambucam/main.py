@@ -221,9 +221,9 @@ def main() -> None:
 
     tier = pi_capability_tier()
     tier_label = {
-        1: "low (Pi Zero/1/2) — MJPEG-only",
-        2: "mid (Pi Zero 2 W / Pi 3) — RTSP + MJPEG",
-        3: "high (Pi 4/5+) — full stack",
+        1: "low (Pi Zero/1/2, CM1) — MJPEG-only",
+        2: "mid (Pi Zero 2 W / Pi 3, CM3) — RTSP + MJPEG",
+        3: "high (Pi 4/5+, CM4/CM5) — full stack",
     }.get(tier, str(tier))
     log.info("Hardware capability tier %d: %s", tier, tier_label)
 
