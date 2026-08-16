@@ -25,6 +25,14 @@ WEBRTC_PORT = 8889
 class RTSPStreamer:
     """Manage MediaMTX and one camera publisher process."""
 
+    # Circuit breaker for publisher crash loops: more than
+    # _RESTART_BACKOFF_THRESHOLD restarts inside _RESTART_BACKOFF_WINDOW
+    # seconds means the publisher cannot cope with the configured settings,
+    # so back off instead of respawning encoders every few seconds.
+    _RESTART_BACKOFF_THRESHOLD = 5
+    _RESTART_BACKOFF_WINDOW = 60.0
+    _RESTART_BACKOFF_DELAY = 30.0
+
     def __init__(
         self,
         v4l2_device: str,
@@ -69,6 +77,7 @@ class RTSPStreamer:
         self._feeder_thread: Optional[threading.Thread] = None
         self._feeder_running = False
         self._lock = threading.RLock()
+        self._restart_timestamps: list[float] = []
 
         self._validate_settings()
 
@@ -135,6 +144,12 @@ class RTSPStreamer:
         self._feeder_thread = None
         self._kill(process, "ffmpeg")
         self._ffmpeg_proc = None
+
+    def _publisher_crash_looping(self) -> bool:
+        """Drop restarts outside the window and report whether we are in a crash loop."""
+        cutoff = time.monotonic() - self._RESTART_BACKOFF_WINDOW
+        self._restart_timestamps = [ts for ts in self._restart_timestamps if ts > cutoff]
+        return len(self._restart_timestamps) >= self._RESTART_BACKOFF_THRESHOLD
 
     def _publisher_alive(self) -> bool:
         if self._uses_picamera2():
@@ -446,9 +461,22 @@ class RTSPStreamer:
                     log.error("Failed to recover MediaMTX: %s", exc)
                 continue
             if not self._publisher_alive():
+                if self._publisher_crash_looping():
+                    log.error(
+                        "RTSP publisher crashed %d times in %.0fs — pausing restarts for %.0fs. "
+                        "The encoder cannot keep up with the current settings; check "
+                        "streaming.rtsp.bitrate_kbps, resolution, and framerate.",
+                        len(self._restart_timestamps),
+                        self._RESTART_BACKOFF_WINDOW,
+                        self._RESTART_BACKOFF_DELAY,
+                    )
+                    time.sleep(self._RESTART_BACKOFF_DELAY)
+                    continue
                 log.warning("RTSP publisher stopped unexpectedly, restarting…")
+                self._restart_timestamps.append(time.monotonic())
                 try:
                     with self._lock:
+                        self._stop_publisher(clear_url=False)
                         self._start_publisher()
                 except Exception as exc:
                     log.error("Failed to restart RTSP publisher: %s", exc)

@@ -26,6 +26,11 @@ log = logging.getLogger(__name__)
 
 CURRENT_CONFIG_VERSION = 1
 
+# Beyond ~20 Mbit/s H.264 gains no visible quality at the resolutions BambuCam
+# supports, while an overloaded encoder makes the RTSP publisher crash-loop.
+RTSP_BITRATE_MIN_KBPS = 100
+RTSP_BITRATE_MAX_KBPS = 20000
+
 
 DEFAULTS: dict = {
     "camera": {
@@ -332,6 +337,21 @@ def migrate_config(data: dict) -> tuple[dict, bool]:
 
     # Version 1 records the schema version. Explicit stream choices, including
     # an enabled RTSP stream, intentionally remain untouched.
+
+    # The accepted bitrate range shrank to a value H.264 can actually use.
+    # Clamp legacy values instead of refusing to start with an invalid config.
+    rtsp = migrated.get("streaming", {}).get("rtsp", {})
+    if isinstance(rtsp, dict) and isinstance(rtsp.get("bitrate_kbps"), int):
+        if rtsp["bitrate_kbps"] > RTSP_BITRATE_MAX_KBPS:
+            log.warning(
+                "streaming.rtsp.bitrate_kbps %d is above the supported maximum — "
+                "reduced to %d kbps",
+                rtsp["bitrate_kbps"],
+                RTSP_BITRATE_MAX_KBPS,
+            )
+            rtsp["bitrate_kbps"] = RTSP_BITRATE_MAX_KBPS
+            changed = True
+
     system["config_version"] = CURRENT_CONFIG_VERSION
     return migrated, changed
 
@@ -413,7 +433,12 @@ def validate_config(data: dict) -> None:
     _boolean_or_auto(rtsp.get("enabled"), "streaming.rtsp.enabled")
     for key in ("port", "hls_port", "webrtc_port"):
         _integer(rtsp.get(key), f"streaming.rtsp.{key}", 1, 65535)
-    _integer(rtsp.get("bitrate_kbps"), "streaming.rtsp.bitrate_kbps", 100, 100000)
+    _integer(
+        rtsp.get("bitrate_kbps"),
+        "streaming.rtsp.bitrate_kbps",
+        RTSP_BITRATE_MIN_KBPS,
+        RTSP_BITRATE_MAX_KBPS,
+    )
     stream_name = _string(rtsp.get("stream_name"), "streaming.rtsp.stream_name")
     if any(char in stream_name for char in " /?#"):
         raise ValueError("Invalid RTSP stream name")

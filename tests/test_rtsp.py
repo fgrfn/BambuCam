@@ -1,5 +1,6 @@
 """Tests for RTSP runtime configuration."""
 
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -72,6 +73,54 @@ def test_ffmpeg_command_uses_configured_binary_and_publish_port():
 def test_capture_function_selects_frame_pipe_mode():
     streamer = _streamer(capture_fn=lambda: b"jpeg")
     assert streamer._uses_frame_pipe() is True
+
+
+def test_crash_loop_not_detected_below_threshold():
+    streamer = _streamer()
+    now = time.monotonic()
+    streamer._restart_timestamps = [now - 1, now - 2, now - 3, now - 4]
+    assert streamer._publisher_crash_looping() is False
+    assert len(streamer._restart_timestamps) == 4
+
+
+def test_crash_loop_detected_at_threshold():
+    streamer = _streamer()
+    now = time.monotonic()
+    streamer._restart_timestamps = [now - offset for offset in range(5)]
+    assert streamer._publisher_crash_looping() is True
+
+
+def test_crash_loop_prunes_timestamps_outside_window():
+    streamer = _streamer()
+    now = time.monotonic()
+    window = RTSPStreamer._RESTART_BACKOFF_WINDOW
+    streamer._restart_timestamps = [now - window - offset for offset in range(1, 6)] + [now - 1]
+    assert streamer._publisher_crash_looping() is False
+    assert streamer._restart_timestamps == [now - 1]
+
+
+def test_crashed_publisher_is_stopped_before_restart():
+    """Regression: restarting without stopping leaked ffmpeg/encoder resources."""
+    streamer = _streamer()
+    streamer._running = True
+    streamer._mediamtx_proc = MagicMock(**{"poll.return_value": None})
+
+    calls = []
+    streamer._publisher_alive = MagicMock(return_value=False)
+    streamer._stop_publisher = MagicMock(side_effect=lambda **kw: calls.append("stop"))
+    streamer._start_publisher = MagicMock(side_effect=lambda: calls.append("start"))
+
+    def _stop_after_one_iteration(_seconds):
+        # First sleep starts the iteration, the second one ends the loop.
+        if calls:
+            streamer._running = False
+
+    with patch("bambucam.streaming.rtsp.time.sleep", side_effect=_stop_after_one_iteration):
+        streamer._monitor_loop()
+
+    assert calls == ["stop", "start"]
+    assert streamer._stop_publisher.call_args.kwargs == {"clear_url": False}
+    assert len(streamer._restart_timestamps) == 1
 
 
 def test_runtime_network_update_changes_urls_when_stopped():

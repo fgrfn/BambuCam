@@ -156,7 +156,7 @@ def test_invalid_rtsp_runtime_settings_are_not_applied_or_persisted():
     )
 
     assert response.status_code == 400
-    assert "between 100 and 100000" in response.get_json()["error"]
+    assert "between 100 and 20000" in response.get_json()["error"]
     assert config.saved == 0
     rtsp.update_settings.assert_not_called()
 

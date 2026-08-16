@@ -130,6 +130,37 @@ def _effective_mjpeg_fps(camera_fps: int, mjpeg_cfg: dict, tier_fps_cap=None) ->
     return max(1, effective_fps)
 
 
+# Highest useful H.264 bitrate per hardware tier. Beyond these values the
+# encoder burns CPU without any visible quality gain at BambuCam's resolutions,
+# and on weak hardware it makes the publisher crash and restart in a loop.
+RTSP_BITRATE_CEILING_KBPS = {1: 3000, 2: 8000, 3: 20000}
+RTSP_BITRATE_CEILING_FALLBACK_KBPS = 20000
+
+
+def _clamp_rtsp_bitrate(configured_kbps, tier, log=None) -> int:
+    """Cap the configured RTSP bitrate at what the detected hardware can encode."""
+    try:
+        bitrate = int(configured_kbps)
+    except (TypeError, ValueError):
+        bitrate = 2000
+
+    ceiling = RTSP_BITRATE_CEILING_KBPS.get(tier, RTSP_BITRATE_CEILING_FALLBACK_KBPS)
+    if bitrate <= ceiling:
+        return bitrate
+
+    if log is not None:
+        log.warning(
+            "RTSP bitrate %d kbps exceeds the limit of %d kbps for hardware tier %s — "
+            "using %d kbps. Higher bitrates add no visible quality at these resolutions "
+            "and can overload the encoder.",
+            bitrate,
+            ceiling,
+            tier,
+            ceiling,
+        )
+    return ceiling
+
+
 def _resolve_auto_bool(value, automatic: bool) -> bool:
     """Resolve a true/false/auto configuration switch."""
     if isinstance(value, str) and value.strip().lower() == "auto":
@@ -285,7 +316,7 @@ def main() -> None:
         v4l2_device=(camera.v4l2_device if camera_ok else None) or "/dev/video0",
         resolution=str(selected_resolution or "1920x1080"),
         framerate=selected_fps,
-        bitrate_kbps=rtsp_config.get("bitrate_kbps", 2000),
+        bitrate_kbps=_clamp_rtsp_bitrate(rtsp_config.get("bitrate_kbps", 2000), tier, log),
         stream_name=rtsp_config.get("stream_name", "cam"),
         mediamtx_path=Path(cfg.system.get("mediamtx_path", "/usr/local/bin/mediamtx")),
         ffmpeg_path=cfg.system.get("ffmpeg_path", "ffmpeg"),
