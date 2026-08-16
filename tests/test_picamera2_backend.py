@@ -6,7 +6,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 from bambucam.camera.backends.picamera2_backend import Picamera2Backend
-from bambucam.camera.models import CAMERA_V3
+from bambucam.camera.models import CAMERA_V3, Resolution
 
 
 def _backend() -> Picamera2Backend:
@@ -193,3 +193,66 @@ def test_stopping_rtsp_recording_leaves_the_camera_running() -> None:
     picam.stop_recording.assert_not_called()
     picam.stop.assert_not_called()
     assert backend._h264_encoder is None
+
+
+def _started_config(backend: Picamera2Backend, resolution) -> dict:
+    """Run start() against a mocked Picamera2 and return the stream configuration."""
+    picam = Mock()
+    picam.create_video_configuration = Mock(return_value={"config": True})
+    picam.options = {}  # a real dict: start() assigns the JPEG quality into it
+    backend._resolution = resolution
+    modules = {
+        "picamera2": ModuleType("picamera2"),
+        "libcamera": ModuleType("libcamera"),
+    }
+    modules["picamera2"].Picamera2 = Mock(return_value=picam)
+    modules["libcamera"].Transform = Mock(return_value="transform")
+    with patch.dict(sys.modules, modules):
+        backend.start()
+    return picam.create_video_configuration.call_args.kwargs
+
+
+def test_encode_stream_defaults_to_a_preview_size() -> None:
+    backend = _backend()
+    config = _started_config(backend, Resolution(1920, 1080))
+
+    assert config["lores"]["size"] == (640, 360)
+    assert config["lores"]["format"] == "YUV420"
+    assert backend.encode_resolution == (640, 360)
+
+
+def test_requested_encode_size_is_used() -> None:
+    backend = Picamera2Backend(CAMERA_V3, "libcamera:0", encode_size=(1280, 720))
+    config = _started_config(backend, Resolution(1920, 1080))
+
+    assert config["lores"]["size"] == (1280, 720)
+
+
+def test_encode_size_is_capped_by_the_hardware_encoder_limit() -> None:
+    """The V4L2 codec silently clamps above 1920, so oversized requests are refused here."""
+    backend = Picamera2Backend(CAMERA_V3, "libcamera:0", encode_size=(4608, 2592))
+    config = _started_config(backend, Resolution(4608, 2592))
+
+    assert config["lores"]["size"] == (1920, 1920)
+
+
+def test_encode_size_never_exceeds_the_main_stream() -> None:
+    backend = Picamera2Backend(CAMERA_V3, "libcamera:0", encode_size=(1920, 1080))
+    config = _started_config(backend, Resolution(1280, 720))
+
+    assert config["lores"]["size"] == (1280, 720)
+
+
+def test_encode_size_is_rounded_to_even_dimensions() -> None:
+    backend = Picamera2Backend(CAMERA_V3, "libcamera:0", encode_size=(641, 361))
+    config = _started_config(backend, Resolution(1920, 1080))
+
+    assert config["lores"]["size"] == (640, 360)
+
+
+def test_no_encode_stream_without_lores() -> None:
+    backend = Picamera2Backend(CAMERA_V3, "libcamera:0", enable_lores=False)
+    config = _started_config(backend, Resolution(1920, 1080))
+
+    assert config["lores"] is None
+    assert backend.encode_resolution is None

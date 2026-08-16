@@ -13,6 +13,15 @@ from bambucam.camera.models import CameraModel, Resolution
 
 log = logging.getLogger(__name__)
 
+# The VC4 H.264 hardware encoder is capped at 1920 in each dimension
+# (MAX_W_CODEC/MAX_H_CODEC in bcm2835-v4l2-codec.c). The driver silently clamps
+# anything larger instead of failing, which surfaces as corrupt output or a
+# stalled encoder — so the size is validated here rather than left to the driver.
+H264_MAX_DIMENSION = 1920
+
+# Fallback size for the encode stream when the caller does not choose one.
+DEFAULT_ENCODE_SIZE = (640, 360)
+
 
 def _resolve_control_enum(controls_module, enum_name: str):
     """Resolve a libcamera enum across stable and draft API layouts."""
@@ -61,11 +70,18 @@ class Picamera2Backend(CameraBackend):
     }
 
     def __init__(
-        self, model: CameraModel, device: str, camera_index: int = 0, enable_lores: bool = True
+        self,
+        model: CameraModel,
+        device: str,
+        camera_index: int = 0,
+        enable_lores: bool = True,
+        encode_size: Optional[tuple[int, int]] = None,
     ):
         super().__init__(model, device)
         self._camera_index = camera_index
         self._enable_lores = enable_lores  # False → skip lores stream (no RTSP H264 possible)
+        self._requested_encode_size = encode_size
+        self._encode_size: Optional[tuple[int, int]] = None
         self._picam = None
         self._lock = threading.Lock()
         self._resolution: Optional[Resolution] = None
@@ -79,6 +95,36 @@ class Picamera2Backend(CameraBackend):
         self._h264_encoder = None  # active H264Encoder when RTSP recording is running
         self._rtsp_url: Optional[str] = None  # stored so restart() can re-start recording
         self._rtsp_bitrate: int = 2000
+
+    def _resolve_encode_size(self, main: Resolution) -> tuple[int, int]:
+        """
+        Pick the size of the H264 encode stream.
+
+        The requested size is capped by what the hardware encoder accepts, by the
+        main stream (libcamera rejects a larger lores), and rounded down to even
+        dimensions for YUV420. Without a request, fall back to a small preview-sized
+        stream, which is what slower Pi models can sustain.
+        """
+        requested = self._requested_encode_size or DEFAULT_ENCODE_SIZE
+        width = min(int(requested[0]), main.width, H264_MAX_DIMENSION) & ~1
+        height = min(int(requested[1]), main.height, H264_MAX_DIMENSION) & ~1
+        if (width, height) != tuple(int(value) for value in requested):
+            log.info(
+                "H264 encode stream reduced from %dx%d to %dx%d "
+                "(camera mode %s, encoder limit %d)",
+                int(requested[0]),
+                int(requested[1]),
+                width,
+                height,
+                main,
+                H264_MAX_DIMENSION,
+            )
+        return max(32, width), max(32, height)
+
+    @property
+    def encode_resolution(self) -> Optional[tuple[int, int]]:
+        """Size of the stream the H264 encoder publishes, once the camera started."""
+        return self._encode_size
 
     def configure(self, resolution: Resolution, framerate: int, **kwargs) -> None:
         self._resolution = resolution
@@ -115,19 +161,14 @@ class Picamera2Backend(CameraBackend):
 
         self._picam = Picamera2(self._camera_index)
 
-        # lores stream (YUV420) — only when RTSP/H264 is needed.
-        # Use half the main resolution (preserves aspect ratio, reduces ISP/GPU
-        # load significantly on slower Pi models), capped at 640×360.
-        # Must be strictly smaller than main; YUV420 requires even dimensions.
+        # lores stream (YUV420) — the H264 encode source, only set up when
+        # RTSP/H264 is needed. YUV420 requires even dimensions and libcamera
+        # requires lores to be no larger than main.
         lores_stream = None
         if self._enable_lores:
-            lores_w = min((res.width // 2) & ~1, 640)
-            lores_h = min((res.height // 2) & ~1, 360)
-            if lores_w >= res.width:
-                lores_w = max(2, res.width - 2) & ~1
-            if lores_h >= res.height:
-                lores_h = max(2, res.height - 2) & ~1
-            lores_stream = {"size": (lores_w, lores_h), "format": "YUV420"}
+            self._encode_size = self._resolve_encode_size(res)
+            lores_stream = {"size": self._encode_size, "format": "YUV420"}
+            log.info("H264 encode stream: %dx%d", *self._encode_size)
 
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},

@@ -293,3 +293,19 @@ def test_selected_encoder_is_logged_once(caplog):
     messages = [record.getMessage() for record in caplog.records if "video encoder" in record.msg]
     assert len(messages) == 1
     assert "h264_v4l2m2m" in messages[0]
+
+
+def test_status_reports_the_encode_stream_resolution_for_picamera2():
+    """The WebUI must not claim the still-capture resolution goes out over RTSP."""
+    backend = MagicMock()
+    backend.encode_resolution = (1280, 720)
+    backend.is_rtsp_recording = True
+    streamer = _streamer(resolution="1920x1080", camera_backend=backend)
+
+    assert streamer.status()["resolution"] == "1280x720"
+
+
+def test_status_reports_the_configured_resolution_without_picamera2():
+    streamer = _streamer(resolution="1920x1080", capture_fn=lambda: b"jpeg")
+
+    assert streamer.status()["resolution"] == "1920x1080"

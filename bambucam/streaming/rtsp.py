@@ -592,6 +592,19 @@ class RTSPStreamer:
             urls["webrtc"] = f"http://{host}:{self._webrtc_port}/{self._stream_name}"
         return urls
 
+    def _published_resolution(self) -> str:
+        """
+        The resolution subscribers actually receive.
+
+        With picamera2 the publisher encodes the camera's separate encode stream,
+        which is smaller than the still-capture resolution — reporting the latter
+        would tell the WebUI a resolution that never goes out over RTSP.
+        """
+        encode_size = getattr(self._camera_backend, "encode_resolution", None)
+        if self._uses_picamera2() and encode_size:
+            return f"{encode_size[0]}x{encode_size[1]}"
+        return self._resolution
+
     def status(self) -> dict:
         mediamtx_ok = self._mediamtx_proc is not None and self._mediamtx_proc.poll() is None
         return {
@@ -604,7 +617,7 @@ class RTSPStreamer:
                 else "frame_pipe" if self._uses_frame_pipe() else "v4l2"
             ),
             "device": self._device,
-            "resolution": self._resolution,
+            "resolution": self._published_resolution(),
             "framerate": self._framerate,
             "bitrate_kbps": self._bitrate,
             "stream_name": self._stream_name,

@@ -161,6 +161,22 @@ def _clamp_rtsp_bitrate(configured_kbps, tier, log=None) -> int:
     return ceiling
 
 
+# Ceiling for the H264 encode stream per hardware tier. With a CSI camera the
+# publisher encodes this stream, so it is what BambuBuddy and OBS actually
+# receive — independent of the (often larger) still-capture resolution.
+RTSP_ENCODE_CEILING = {1: (640, 360), 2: (1280, 720), 3: (1920, 1080)}
+RTSP_ENCODE_CEILING_FALLBACK = (1280, 720)
+
+
+def _rtsp_encode_size(resolution, tier) -> tuple:
+    """Fit the camera's aspect ratio into the tier's encode-stream ceiling."""
+    ceiling = RTSP_ENCODE_CEILING.get(tier, RTSP_ENCODE_CEILING_FALLBACK)
+    width, height = int(resolution.width), int(resolution.height)
+    # Scale down only — never upscale a small camera mode to fill the ceiling.
+    scale = min(1.0, ceiling[0] / width, ceiling[1] / height)
+    return max(32, int(width * scale) & ~1), max(32, int(height * scale) & ~1)
+
+
 def _resolve_hw_encoder(value):
     """Map the hardware_encoder setting to the streamer's tri-state flag."""
     if _is_auto(value):
@@ -292,6 +308,9 @@ def main() -> None:
                     if key in camera_config
                 },
                 enable_lores=will_use_rtsp,
+                encode_size=(
+                    _rtsp_encode_size(selected_resolution, tier) if will_use_rtsp else None
+                ),
             )
             camera.start()
         except Exception as exc:

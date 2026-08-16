@@ -12,6 +12,7 @@ from bambucam.main import (
     _resolve_auto_bool,
     _resolve_camera_mode,
     _resolve_hw_encoder,
+    _rtsp_encode_size,
 )
 from bambucam.system_info import hardware_recommendations
 
@@ -128,3 +129,21 @@ class TestResolveHwEncoder:
     def test_explicit_choice_is_honoured(self):
         assert _resolve_hw_encoder(True) is True
         assert _resolve_hw_encoder(False) is False
+
+
+class TestRtspEncodeSize:
+    def test_tier_one_gets_a_small_encode_stream(self):
+        assert _rtsp_encode_size(Resolution(1920, 1080), 1) == (640, 360)
+
+    def test_tier_three_allows_full_hd(self):
+        assert _rtsp_encode_size(Resolution(1920, 1080), 3) == (1920, 1080)
+
+    def test_aspect_ratio_is_preserved(self):
+        # 4:3 sensor must not be stretched into the 16:9 ceiling.
+        assert _rtsp_encode_size(Resolution(2592, 1944), 2) == (960, 720)
+
+    def test_small_camera_modes_are_never_upscaled(self):
+        assert _rtsp_encode_size(Resolution(640, 480), 3) == (640, 480)
+
+    def test_unknown_tier_falls_back(self):
+        assert _rtsp_encode_size(Resolution(1920, 1080), 99) == (1280, 720)
