@@ -70,6 +70,8 @@ DEFAULTS: dict = {
             "port": 8554,
             "stream_name": "cam",
             "bitrate_kbps": 2000,
+            # auto = use the V4L2 hardware H.264 encoder when ffmpeg offers one.
+            "hardware_encoder": "auto",
             "enable_hls": True,
             "hls_port": 8888,
             "enable_webrtc": False,
@@ -444,6 +446,7 @@ def validate_config(data: dict) -> None:
         raise ValueError("Invalid RTSP stream name")
     for key in ("enable_hls", "enable_webrtc"):
         _boolean(rtsp.get(key), f"streaming.rtsp.{key}")
+    _boolean_or_auto(rtsp.get("hardware_encoder"), "streaming.rtsp.hardware_encoder")
     rtsp_auth = _mapping(rtsp, "auth")
     _reject_unknown(rtsp_auth, DEFAULTS["streaming"]["rtsp"]["auth"], "streaming.rtsp.auth")
     _boolean(rtsp_auth.get("enabled"), "streaming.rtsp.auth.enabled")

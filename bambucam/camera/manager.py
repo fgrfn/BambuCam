@@ -82,6 +82,7 @@ class CameraManager:
         framerate: int = 30,
         settings: Optional[dict] = None,
         enable_lores: bool = True,
+        encode_size=None,
     ) -> None:
         """Create and configure the backend for the selected camera."""
         detected = detected or self._detected
@@ -96,11 +97,13 @@ class CameraManager:
         self._framerate = int(framerate)
         self._settings = settings or {}
 
-        backend = self._create_backend(detected, enable_lores=enable_lores)
+        backend = self._create_backend(detected, enable_lores=enable_lores, encode_size=encode_size)
         backend.configure(self._resolution, self._framerate, **self._settings)
         self._backend = backend
 
-    def _create_backend(self, detected: DetectedCamera, enable_lores: bool = True) -> CameraBackend:
+    def _create_backend(
+        self, detected: DetectedCamera, enable_lores: bool = True, encode_size=None
+    ) -> CameraBackend:
         if detected.backend == "picamera2":
             from bambucam.camera.backends.picamera2_backend import Picamera2Backend
 
@@ -109,6 +112,7 @@ class CameraManager:
                 device=detected.device,
                 camera_index=detected.index,
                 enable_lores=enable_lores,
+                encode_size=encode_size,
             )
         if detected.backend == "v4l2":
             from bambucam.camera.backends.v4l2_backend import V4L2Backend

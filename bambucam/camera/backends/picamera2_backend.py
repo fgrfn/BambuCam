@@ -13,6 +13,15 @@ from bambucam.camera.models import CameraModel, Resolution
 
 log = logging.getLogger(__name__)
 
+# The VC4 H.264 hardware encoder is capped at 1920 in each dimension
+# (MAX_W_CODEC/MAX_H_CODEC in bcm2835-v4l2-codec.c). The driver silently clamps
+# anything larger instead of failing, which surfaces as corrupt output or a
+# stalled encoder — so the size is validated here rather than left to the driver.
+H264_MAX_DIMENSION = 1920
+
+# Fallback size for the encode stream when the caller does not choose one.
+DEFAULT_ENCODE_SIZE = (640, 360)
+
 
 def _resolve_control_enum(controls_module, enum_name: str):
     """Resolve a libcamera enum across stable and draft API layouts."""
@@ -38,6 +47,79 @@ def _rectangle_tuple(value) -> Optional[tuple[int, int, int, int]]:
     return values[0], values[1], values[2], values[3]
 
 
+class MJPEGFrameBuffer(io.BufferedIOBase):
+    """
+    Single-slot, thread-safe sink for the frames of picamera2's MJPEG encoder.
+
+    picamera2's FileOutput insists on an io.BufferedIOBase ("Must pass
+    io.BufferedIOBase") and calls write() once per finished JPEG frame, followed
+    by flush(). Only the newest frame is kept: a consumer that reads slower than
+    the encoder produces must miss frames, never grow a queue — an unbounded
+    backlog here is exactly the kind of leak this buffer has to avoid.
+
+    Frames are numbered with a monotonically increasing sequence so that a
+    reader can block until a frame it has not seen yet arrives.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._condition = threading.Condition()
+        self._frame: Optional[bytes] = None
+        self._sequence: int = 0
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, b) -> int:
+        # One call == one complete JPEG frame (FileOutput writes whole frames).
+        frame = bytes(b)
+        with self._condition:
+            self._frame = frame
+            self._sequence += 1
+            self._condition.notify_all()
+        return len(frame)
+
+    def flush(self) -> None:
+        # Nothing is held back in write(), so there is nothing to flush.
+        pass
+
+    def clear(self) -> None:
+        """Drop the buffered frame so no consumer can read a stale image."""
+        with self._condition:
+            self._frame = None
+            self._sequence += 1
+            self._condition.notify_all()
+
+    @property
+    def sequence(self) -> int:
+        with self._condition:
+            return self._sequence
+
+    def latest(self) -> tuple[Optional[bytes], int]:
+        """Return the buffered frame and its sequence number without blocking."""
+        with self._condition:
+            return self._frame, self._sequence
+
+    def wait_for_frame(
+        self, timeout: Optional[float] = 1.0, after_sequence: Optional[int] = None
+    ) -> tuple[Optional[bytes], int]:
+        """
+        Return (frame, sequence) for the newest frame past ``after_sequence``.
+
+        Returns (None, sequence) when the timeout expires without a new frame.
+        """
+
+        def ready() -> bool:
+            return self._frame is not None and (
+                after_sequence is None or self._sequence > after_sequence
+            )
+
+        with self._condition:
+            if self._condition.wait_for(ready, timeout):
+                return self._frame, self._sequence
+            return None, self._sequence
+
+
 class Picamera2Backend(CameraBackend):
     """Camera backend using the picamera2 / libcamera stack."""
 
@@ -61,11 +143,18 @@ class Picamera2Backend(CameraBackend):
     }
 
     def __init__(
-        self, model: CameraModel, device: str, camera_index: int = 0, enable_lores: bool = True
+        self,
+        model: CameraModel,
+        device: str,
+        camera_index: int = 0,
+        enable_lores: bool = True,
+        encode_size: Optional[tuple[int, int]] = None,
     ):
         super().__init__(model, device)
         self._camera_index = camera_index
         self._enable_lores = enable_lores  # False → skip lores stream (no RTSP H264 possible)
+        self._requested_encode_size = encode_size
+        self._encode_size: Optional[tuple[int, int]] = None
         self._picam = None
         self._lock = threading.Lock()
         self._resolution: Optional[Resolution] = None
@@ -79,6 +168,45 @@ class Picamera2Backend(CameraBackend):
         self._h264_encoder = None  # active H264Encoder when RTSP recording is running
         self._rtsp_url: Optional[str] = None  # stored so restart() can re-start recording
         self._rtsp_bitrate: int = 2000
+        self._h264_output = None  # kept so liveness can see a broken ffmpeg output
+        self._mjpeg_encoder = None  # active MJPEGEncoder when the MJPEG stream is running
+        self._mjpeg_buffer: Optional[MJPEGFrameBuffer] = None
+        self._mjpeg_stream_name: Optional[str] = None
+        self._mjpeg_active: bool = False  # stored so start() can re-attach after a restart
+        self._mjpeg_bitrate: int = 4000
+        # Per-caller "newest frame already handed out", so every consumer thread
+        # gets each frame once instead of re-reading the same one.
+        self._mjpeg_seen = threading.local()
+
+    def _resolve_encode_size(self, main: Resolution) -> tuple[int, int]:
+        """
+        Pick the size of the H264 encode stream.
+
+        The requested size is capped by what the hardware encoder accepts, by the
+        main stream (libcamera rejects a larger lores), and rounded down to even
+        dimensions for YUV420. Without a request, fall back to a small preview-sized
+        stream, which is what slower Pi models can sustain.
+        """
+        requested = self._requested_encode_size or DEFAULT_ENCODE_SIZE
+        width = min(int(requested[0]), main.width, H264_MAX_DIMENSION) & ~1
+        height = min(int(requested[1]), main.height, H264_MAX_DIMENSION) & ~1
+        if (width, height) != tuple(int(value) for value in requested):
+            log.info(
+                "H264 encode stream reduced from %dx%d to %dx%d "
+                "(camera mode %s, encoder limit %d)",
+                int(requested[0]),
+                int(requested[1]),
+                width,
+                height,
+                main,
+                H264_MAX_DIMENSION,
+            )
+        return max(32, width), max(32, height)
+
+    @property
+    def encode_resolution(self) -> Optional[tuple[int, int]]:
+        """Size of the stream the H264 encoder publishes, once the camera started."""
+        return self._encode_size
 
     def configure(self, resolution: Resolution, framerate: int, **kwargs) -> None:
         self._resolution = resolution
@@ -115,19 +243,14 @@ class Picamera2Backend(CameraBackend):
 
         self._picam = Picamera2(self._camera_index)
 
-        # lores stream (YUV420) — only when RTSP/H264 is needed.
-        # Use half the main resolution (preserves aspect ratio, reduces ISP/GPU
-        # load significantly on slower Pi models), capped at 640×360.
-        # Must be strictly smaller than main; YUV420 requires even dimensions.
+        # lores stream (YUV420) — the H264 encode source, only set up when
+        # RTSP/H264 is needed. YUV420 requires even dimensions and libcamera
+        # requires lores to be no larger than main.
         lores_stream = None
         if self._enable_lores:
-            lores_w = min((res.width // 2) & ~1, 640)
-            lores_h = min((res.height // 2) & ~1, 360)
-            if lores_w >= res.width:
-                lores_w = max(2, res.width - 2) & ~1
-            if lores_h >= res.height:
-                lores_h = max(2, res.height - 2) & ~1
-            lores_stream = {"size": (lores_w, lores_h), "format": "YUV420"}
+            self._encode_size = self._resolve_encode_size(res)
+            lores_stream = {"size": self._encode_size, "format": "YUV420"}
+            log.info("H264 encode stream: %dx%d", *self._encode_size)
 
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
@@ -160,6 +283,17 @@ class Picamera2Backend(CameraBackend):
             except Exception as e:
                 log.warning("Failed to restart H264 recording after camera restart: %s", e)
 
+        # Re-attach the MJPEG encoder if it was active before a camera restart
+        if self._mjpeg_active:
+            # Any encoder left over belongs to the previous Picamera2 instance and
+            # is dead with it — drop it so the re-attach is not treated as a no-op.
+            self._mjpeg_encoder = None
+            self._mjpeg_buffer = None
+            try:
+                self.start_mjpeg_stream(self._mjpeg_bitrate)
+            except Exception as e:
+                log.warning("Failed to restart MJPEG streaming after camera restart: %s", e)
+
         log.info("picamera2 started")
 
     def stop(self) -> None:
@@ -171,6 +305,15 @@ class Picamera2Backend(CameraBackend):
                 self.stop_rtsp_recording(clear_url=True)
             except Exception as e:
                 log.warning("Error stopping RTSP recording during shutdown: %s", e)
+            # Detach the MJPEG encoder, but remember that it was running: unlike
+            # RTSP there is no external monitor re-attaching it, so start() has to
+            # bring the stream back after a restart() or watchdog restart.
+            was_streaming = self._mjpeg_active
+            try:
+                self.stop_mjpeg_stream()
+            except Exception as e:
+                log.warning("Error stopping MJPEG stream during shutdown: %s", e)
+            self._mjpeg_active = was_streaming
             try:
                 self._picam.stop()
             except Exception as e:
@@ -426,11 +569,13 @@ class Picamera2Backend(CameraBackend):
             bitrate=bitrate_kbps * 1000,
             iperiod=self._framerate * 2,  # keyframe every 2 s
         )
-        output = FfmpegOutput(f"-f rtsp {rtsp_url}")
+        self._h264_output = FfmpegOutput(f"-f rtsp {rtsp_url}")
         # name="lores" encodes the YUV420 lores stream, leaving the RGB888
         # main stream free for concurrent MJPEG capture_file() calls.
         try:
-            self._picam.start_recording(self._h264_encoder, output, name="lores")
+            # start_encoder(), not start_recording(): the camera is already running
+            # here, and start_recording() would additionally (re-)start it.
+            self._picam.start_encoder(self._h264_encoder, self._h264_output, name="lores")
         except Exception as e:
             self._h264_encoder = None
             raise RuntimeError(f"H264 recording failed to start: {e}") from e
@@ -439,20 +584,153 @@ class Picamera2Backend(CameraBackend):
     def stop_rtsp_recording(self, clear_url: bool = False) -> None:
         if self._picam is not None and self._h264_encoder is not None:
             try:
-                self._picam.stop_recording()
+                # stop_encoder(), not stop_recording(): the latter is stop() plus
+                # stop_encoder(None), so it would stop the camera itself and every
+                # other encoder along with it. Ending an RTSP session must leave
+                # the camera running for MJPEG, snapshots, and timelapse.
+                self._picam.stop_encoder(self._h264_encoder)
             except Exception as e:
-                log.warning("Error stopping H264 recording: %s", e)
+                # Encoder.stop() raises when it was already stopped, which is
+                # expected if the encoder died on its own before we got here.
+                log.debug("H264 encoder was already detached: %s", e)
         self._h264_encoder = None
+        self._h264_output = None
         if clear_url:
             self._rtsp_url = None
 
+    def _encoder_active(self, encoder, output=None) -> bool:
+        """
+        Report whether an encoder is attached to a running camera and producing.
+
+        Picamera2 has no `recording` attribute — the flag of that name lives on
+        Output, not on the camera — so asking the camera object was always False.
+        The camera's own `started` flag plus the encoder's membership in
+        `picam.encoders` and its `running` flag are the real signals. Membership
+        and `running` are checked together because stop_encoder() clears `running`
+        before it removes the encoder from the set.
+        """
+        if self._picam is None or encoder is None:
+            return False
+        if not getattr(self._picam, "started", False):
+            return False
+        encoders = getattr(self._picam, "encoders", None)
+        try:
+            attached = encoder in encoders
+        except TypeError:  # not a container — treat as detached rather than guess
+            return False
+        if not (attached and getattr(encoder, "running", False)):
+            return False
+        # An FfmpegOutput whose subprocess died keeps dropping frames while the
+        # encoder still reports itself as running, so the publisher looks healthy
+        # while nothing reaches the server.
+        return not getattr(output, "output_broken", False)
+
     @property
     def is_rtsp_recording(self) -> bool:
-        return (
-            self._picam is not None
-            and self._h264_encoder is not None
-            and getattr(self._picam, "recording", False)
-        )
+        return self._encoder_active(self._h264_encoder, self._h264_output)
+
+    # ---------------------------------------------------------------------------
+    # MJPEG via picamera2 MJPEGEncoder (replaces per-frame capture_file())
+    # ---------------------------------------------------------------------------
+
+    def start_mjpeg_stream(self, bitrate_kbps: int = 4000) -> None:
+        """
+        Encode MJPEG in-process and push finished frames into a one-slot buffer.
+
+        This replaces the per-frame capture_file() round-trip plus software JPEG
+        encode for live streaming; capture_jpeg() stays in place for snapshots and
+        timelapse, which need full-resolution stills from the main stream.
+        """
+        try:
+            from picamera2.encoders import MJPEGEncoder
+            from picamera2.outputs import FileOutput
+        except ImportError:
+            raise RuntimeError("picamera2 MJPEGEncoder not available")
+
+        if not self._running or self._picam is None:
+            raise RuntimeError("Camera must be started before MJPEG streaming")
+
+        if self._mjpeg_encoder is not None:
+            log.debug("MJPEG stream already active — ignoring start request")
+            return
+
+        self._mjpeg_bitrate = bitrate_kbps
+        # Encode the lores stream when there is one — it is smaller and leaves the
+        # RGB888 main stream free for snapshots — otherwise encode main directly.
+        stream_name = "lores" if self._encode_size is not None else "main"
+
+        # MJPEGEncoder is the V4L2 hardware encoder on Pi 0-4/CM4 and is silently
+        # aliased to the software LibavMjpegEncoder on Pi 5. Their keyword
+        # signatures differ; only the first positional argument (bitrate) is
+        # common to both, so it must be passed positionally and without keywords.
+        self._mjpeg_encoder = MJPEGEncoder(bitrate_kbps * 1000)
+        self._mjpeg_buffer = MJPEGFrameBuffer()
+        output = FileOutput(self._mjpeg_buffer)
+        try:
+            # start_encoder(), not start_recording(): the camera is already running
+            # here, and start_recording() would additionally (re-)start it.
+            self._picam.start_encoder(self._mjpeg_encoder, output, name=stream_name)
+        except Exception as e:
+            self._mjpeg_encoder = None
+            self._mjpeg_buffer = None
+            raise RuntimeError(f"MJPEG streaming failed to start: {e}") from e
+        self._mjpeg_stream_name = stream_name
+        self._mjpeg_active = True
+        log.info("MJPEG stream started on the %s stream at %d kbps", stream_name, bitrate_kbps)
+
+    def stop_mjpeg_stream(self) -> None:
+        if self._picam is not None and self._mjpeg_encoder is not None:
+            try:
+                # stop_encoder(), not stop_recording(): the latter is stop() plus
+                # stop_encoder(None), so it would stop the camera itself and every
+                # other encoder — including the H264/RTSP one — along with it.
+                self._picam.stop_encoder(self._mjpeg_encoder)
+            except Exception as e:
+                # Encoder.stop() raises when it was already stopped, which is
+                # expected if the encoder died on its own before we got here.
+                log.debug("MJPEG encoder was already detached: %s", e)
+        self._mjpeg_encoder = None
+        self._mjpeg_stream_name = None
+        self._mjpeg_active = False
+        if self._mjpeg_buffer is not None:
+            # Drop the last frame so a later consumer cannot read a stale image.
+            self._mjpeg_buffer.clear()
+            self._mjpeg_buffer = None
+
+    def latest_jpeg(self, timeout: float = 1.0) -> Optional[bytes]:
+        """
+        Return the newest encoded JPEG frame this caller has not seen yet.
+
+        Blocks until such a frame arrives or the timeout expires; returns None on
+        timeout and when the MJPEG stream is not running. Safe to call from any
+        number of threads — each caller thread is served every frame once.
+        """
+        buffer = self._mjpeg_buffer
+        if buffer is None:
+            return None
+        seen = getattr(self._mjpeg_seen, "state", None)
+        # The buffer is recreated per stream, so its sequence restarts at 0;
+        # tracking the buffer alongside the number keeps stale counts harmless.
+        after_sequence = seen[1] if seen is not None and seen[0] is buffer else None
+        frame, sequence = buffer.wait_for_frame(timeout, after_sequence)
+        if frame is None:
+            return None
+        self._mjpeg_seen.state = (buffer, sequence)
+        return frame
+
+    @property
+    def is_mjpeg_streaming(self) -> bool:
+        return self._encoder_active(self._mjpeg_encoder)
+
+    @property
+    def mjpeg_resolution(self) -> Optional[tuple[int, int]]:
+        """Size of the stream the MJPEG encoder reads, while streaming."""
+        if self._mjpeg_encoder is None:
+            return None
+        if self._mjpeg_stream_name == "lores" and self._encode_size is not None:
+            return self._encode_size
+        res = self._resolution or self.model.max_resolution
+        return (int(res.width), int(res.height))
 
     def get_v4l2_device(self):
         # CSI cameras appear as /dev/videoN; index 0 → /dev/video0 typically

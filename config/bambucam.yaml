@@ -40,6 +40,7 @@ streaming:
     port: 8554               # RTSP port (rtsp://<ip>:8554/cam)
     stream_name: cam         # Stream path name
     bitrate_kbps: 2000       # H.264 target bitrate
+    hardware_encoder: auto   # auto/true/false — V4L2 HW H.264 (USB cameras; applies at restart)
 
     # HLS (HTTP Live Streaming) — playable in browsers, OBS
     enable_hls: true
