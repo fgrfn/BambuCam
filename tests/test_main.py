@@ -9,6 +9,8 @@ from bambucam.main import (
     RTSP_BITRATE_CEILING_KBPS,
     _clamp_rtsp_bitrate,
     _effective_mjpeg_fps,
+    _mjpeg_bitrate_kbps,
+    _mjpeg_source,
     _resolve_auto_bool,
     _resolve_camera_mode,
     _resolve_hw_encoder,
@@ -147,3 +149,63 @@ class TestRtspEncodeSize:
 
     def test_unknown_tier_falls_back(self):
         assert _rtsp_encode_size(Resolution(1920, 1080), 99) == (1280, 720)
+
+
+class TestMjpegBitrate:
+    def test_scales_with_size_and_framerate(self):
+        small = _mjpeg_bitrate_kbps((640, 360), 15, 85)
+        large = _mjpeg_bitrate_kbps((1280, 720), 15, 85)
+        faster = _mjpeg_bitrate_kbps((640, 360), 30, 85)
+
+        assert large > small
+        assert faster > small
+
+    def test_higher_quality_costs_more_bitrate(self):
+        assert _mjpeg_bitrate_kbps((1280, 720), 15, 95) > _mjpeg_bitrate_kbps((1280, 720), 15, 50)
+
+    def test_stays_above_a_usable_floor(self):
+        assert _mjpeg_bitrate_kbps((64, 48), 1, 1) >= 500
+
+    def test_out_of_range_quality_is_clamped(self):
+        assert _mjpeg_bitrate_kbps((640, 360), 15, 500) == _mjpeg_bitrate_kbps((640, 360), 15, 100)
+        assert _mjpeg_bitrate_kbps((640, 360), 15, -5) == _mjpeg_bitrate_kbps((640, 360), 15, 1)
+
+
+class TestMjpegSource:
+    def test_without_a_backend_it_falls_back_to_still_capture(self):
+        camera = MagicMock()
+        capture, on_resume, on_pause = _mjpeg_source(camera, None, 4000)
+
+        assert capture is camera.capture_jpeg
+        assert on_resume is None
+        assert on_pause is None
+
+    def test_encoder_frames_are_preferred(self):
+        camera = MagicMock()
+        backend = MagicMock()
+        backend.is_mjpeg_streaming = True
+        backend.latest_jpeg.return_value = b"encoded"
+
+        capture, _on_resume, _on_pause = _mjpeg_source(camera, backend, 4000)
+
+        assert capture() == b"encoded"
+        camera.capture_jpeg.assert_not_called()
+
+    def test_still_capture_covers_an_encoder_that_never_started(self):
+        camera = MagicMock()
+        camera.capture_jpeg.return_value = b"still"
+        backend = MagicMock()
+        backend.is_mjpeg_streaming = False
+
+        capture, _on_resume, _on_pause = _mjpeg_source(camera, backend, 4000)
+
+        assert capture() == b"still"
+        backend.latest_jpeg.assert_not_called()
+
+    def test_hooks_drive_the_encoder_with_the_configured_bitrate(self):
+        backend = MagicMock()
+        _capture, on_resume, on_pause = _mjpeg_source(MagicMock(), backend, 7500)
+
+        on_resume()
+        backend.start_mjpeg_stream.assert_called_once_with(7500)
+        assert on_pause is backend.stop_mjpeg_stream

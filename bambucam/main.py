@@ -177,6 +177,47 @@ def _rtsp_encode_size(resolution, tier) -> tuple:
     return max(32, int(width * scale) & ~1), max(32, int(height * scale) & ~1)
 
 
+# The camera-side MJPEG encoder is driven by a bitrate, not by a JPEG quality,
+# so the configured quality is mapped onto bits per pixel and scaled with the
+# stream's size and frame rate.
+MJPEG_MIN_BPP = 0.15
+MJPEG_MAX_BPP = 1.0
+MJPEG_MIN_BITRATE_KBPS = 500
+
+
+def _mjpeg_bitrate_kbps(size, fps: int, quality: int) -> int:
+    """Translate a JPEG quality setting into a bitrate for the MJPEG encoder."""
+    quality = max(1, min(100, int(quality)))
+    bits_per_pixel = MJPEG_MIN_BPP + (quality / 100) * (MJPEG_MAX_BPP - MJPEG_MIN_BPP)
+    estimate = int(size[0] * size[1] * max(1, int(fps)) * bits_per_pixel / 1000)
+    return max(MJPEG_MIN_BITRATE_KBPS, estimate)
+
+
+def _mjpeg_source(camera, backend, bitrate_kbps: int):
+    """
+    Build the MJPEG frame source, encoder hooks included.
+
+    With a picamera2 backend the frames come from a camera-side MJPEG encoder,
+    which is far cheaper than a per-frame still capture. Should that encoder be
+    unavailable — no hardware path, an encoder that refuses to start — still
+    capture keeps serving the stream rather than leaving it dead.
+    """
+    if backend is None:
+        return (camera.capture_jpeg, None, None)
+
+    def capture():
+        if backend.is_mjpeg_streaming:
+            # None here means "no new frame yet"; the streamer keeps the last one.
+            return backend.latest_jpeg()
+        return camera.capture_jpeg()
+
+    return (
+        capture,
+        lambda: backend.start_mjpeg_stream(bitrate_kbps),
+        backend.stop_mjpeg_stream,
+    )
+
+
 def _resolve_hw_encoder(value):
     """Map the hardware_encoder setting to the streamer's tri-state flag."""
     if _is_auto(value):
@@ -282,6 +323,11 @@ def main() -> None:
         and not args.no_rtsp
         and _resolve_auto_bool(rtsp_config.get("enabled", "auto"), rtsp_default_enabled)
     )
+    mjpeg_config = streaming_config.get("mjpeg", {})
+    will_use_mjpeg = camera_ok and not args.no_mjpeg and mjpeg_config.get("enabled", True)
+    # Both streams encode from the camera's separate encode stream: RTSP as H264,
+    # MJPEG as motion JPEG. picamera2 allows several encoders on one stream.
+    needs_encode_stream = will_use_rtsp or will_use_mjpeg
 
     if camera_ok and detected is not None and selected_resolution is not None:
         try:
@@ -307,9 +353,9 @@ def main() -> None:
                     )
                     if key in camera_config
                 },
-                enable_lores=will_use_rtsp,
+                enable_lores=needs_encode_stream,
                 encode_size=(
-                    _rtsp_encode_size(selected_resolution, tier) if will_use_rtsp else None
+                    _rtsp_encode_size(selected_resolution, tier) if needs_encode_stream else None
                 ),
             )
             camera.start()
@@ -317,26 +363,46 @@ def main() -> None:
             log.error("Failed to start camera: %s — continuing in headless mode", exc)
             camera_ok = False
             will_use_rtsp = False
+            will_use_mjpeg = False
 
-    mjpeg_config = streaming_config.get("mjpeg", {})
-    mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, hardware_fps_cap)
-    if camera_ok:
-        camera.set_jpeg_quality(int(mjpeg_config.get("quality", 85)))
-
-    mjpeg = MJPEGStreamer(
-        capture_fn=camera.capture_jpeg if camera_ok else lambda: None,
-        target_fps=mjpeg_fps,
-    )
-    if camera_ok and not args.no_mjpeg and mjpeg_config.get("enabled", True):
-        mjpeg.start()
-
-    rtsp_auth = rtsp_config.get("auth", {})
     picamera2_backend = None
-    if will_use_rtsp and camera_ok and camera.backend is not None:
+    if camera_ok and camera.backend is not None:
         from bambucam.camera.backends.picamera2_backend import Picamera2Backend
 
         if isinstance(camera.backend, Picamera2Backend):
             picamera2_backend = camera.backend
+
+    mjpeg_fps = _effective_mjpeg_fps(selected_fps, mjpeg_config, hardware_fps_cap)
+    mjpeg_quality = int(mjpeg_config.get("quality", 85))
+    if camera_ok:
+        camera.set_jpeg_quality(mjpeg_quality)
+
+    if camera_ok:
+        # The encoder reads the encode stream, so its size — not the larger
+        # still-capture resolution — decides the bitrate.
+        mjpeg_size = (
+            picamera2_backend.encode_resolution
+            if picamera2_backend is not None and picamera2_backend.encode_resolution
+            else (selected_resolution.width, selected_resolution.height)
+        )
+        capture_fn, on_resume, on_pause = _mjpeg_source(
+            camera,
+            picamera2_backend if will_use_mjpeg else None,
+            _mjpeg_bitrate_kbps(mjpeg_size, mjpeg_fps, mjpeg_quality),
+        )
+    else:
+        capture_fn, on_resume, on_pause = (lambda: None), None, None
+
+    mjpeg = MJPEGStreamer(
+        capture_fn=capture_fn,
+        target_fps=mjpeg_fps,
+        on_resume=on_resume,
+        on_pause=on_pause,
+    )
+    if will_use_mjpeg:
+        mjpeg.start()
+
+    rtsp_auth = rtsp_config.get("auth", {})
 
     rtsp = RTSPStreamer(
         v4l2_device=(camera.v4l2_device if camera_ok else None) or "/dev/video0",
