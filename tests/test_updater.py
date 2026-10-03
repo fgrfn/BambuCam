@@ -148,6 +148,29 @@ class FakeResponse:
 
 
 class TestDownloads:
+    def test_failed_download_removes_temporary_directory(self, tmp_path):
+        update_dir = tmp_path / "bambucam_update_failed"
+        release = ReleaseInfo(
+            **{
+                **_MOCK_RELEASE.__dict__,
+                "assets": [
+                    {
+                        "name": "bambucam-1.0.0-py3-none-any.whl",
+                        "url": "https://example.invalid/wheel",
+                        "size": 5,
+                    }
+                ],
+            }
+        )
+        updater = _updater(max_package_bytes=4)
+
+        with patch("bambucam.updater.tempfile.mkdtemp", return_value=str(update_dir)):
+            update_dir.mkdir()
+            with pytest.raises(RuntimeError, match="too large"):
+                updater._download(release)
+
+        assert not update_dir.exists()
+
     def test_download_enforces_actual_size_limit(self, tmp_path):
         updater = _updater(max_package_bytes=4)
         with patch(
