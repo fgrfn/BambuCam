@@ -325,48 +325,53 @@ class Updater:
     def _download(self, release: ReleaseInfo) -> Path:
         """Download a release wheel/sdist, enforce limits, and verify SHA-256 when provided."""
         temp_dir = Path(tempfile.mkdtemp(prefix="bambucam_update_"))
-        selected = self._select_package_asset(release)
-        if selected is None:
-            selected = {
-                "name": f"bambucam-{release.version}.tar.gz",
-                "url": release.tarball_url,
-                "size": 0,
-                "source_tarball": True,
-            }
-            log.warning(
-                "No packaged release asset found; using unchecksummed GitHub source tarball"
-            )
+        try:
+            selected = self._select_package_asset(release)
+            if selected is None:
+                selected = {
+                    "name": f"bambucam-{release.version}.tar.gz",
+                    "url": release.tarball_url,
+                    "size": 0,
+                    "source_tarball": True,
+                }
+                log.warning(
+                    "No packaged release asset found; using unchecksummed GitHub source tarball"
+                )
 
-        asset_size = int(selected.get("size") or 0)
-        if asset_size > self._max_package_bytes:
-            raise RuntimeError(
-                f"Update package is too large ({asset_size} bytes; limit {self._max_package_bytes})"
-            )
+            asset_size = int(selected.get("size") or 0)
+            if asset_size > self._max_package_bytes:
+                raise RuntimeError(
+                    f"Update package is too large ({asset_size} bytes; "
+                    f"limit {self._max_package_bytes})"
+                )
 
-        filename = Path(str(selected["name"])).name
-        if filename != selected["name"]:
-            raise RuntimeError("Release asset has an unsafe filename")
-        local_path = temp_dir / filename
-        expected_hashes = self._fetch_release_checksums(release)
-        expected_hash = expected_hashes.get(filename)
-        if expected_hashes and expected_hash is None:
-            raise RuntimeError(f"SHA256SUMS does not contain {filename}")
+            filename = Path(str(selected["name"])).name
+            if filename != selected["name"]:
+                raise RuntimeError("Release asset has an unsafe filename")
+            local_path = temp_dir / filename
+            expected_hashes = self._fetch_release_checksums(release)
+            expected_hash = expected_hashes.get(filename)
+            if expected_hashes and expected_hash is None:
+                raise RuntimeError(f"SHA256SUMS does not contain {filename}")
 
-        actual_hash = self._download_to_file(
-            str(selected["url"]),
-            local_path,
-            max_bytes=self._max_package_bytes,
-            expected_size=asset_size,
-        )
-        if expected_hash is not None and not secrets_compare(actual_hash, expected_hash):
-            raise RuntimeError(
-                f"SHA-256 mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+            actual_hash = self._download_to_file(
+                str(selected["url"]),
+                local_path,
+                max_bytes=self._max_package_bytes,
+                expected_size=asset_size,
             )
-        if expected_hash is None:
-            log.warning("No SHA-256 checksum available for %s", filename)
-        else:
-            log.info("Verified SHA-256 for %s", filename)
-        return local_path
+            if expected_hash is not None and not secrets_compare(actual_hash, expected_hash):
+                raise RuntimeError(
+                    f"SHA-256 mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+                )
+            if expected_hash is None:
+                log.warning("No SHA-256 checksum available for %s", filename)
+            else:
+                log.info("Verified SHA-256 for %s", filename)
+            return local_path
+        except Exception:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
 
     @staticmethod
     def _select_package_asset(release: ReleaseInfo) -> Optional[dict]:
