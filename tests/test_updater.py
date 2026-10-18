@@ -133,7 +133,7 @@ class TestChecksums:
 
 
 class FakeResponse:
-    def __init__(self, content: bytes, content_length: int = 0):
+    def __init__(self, content: bytes, content_length=0):
         self.content = content
         self.headers = {}
         if content_length:
@@ -179,6 +179,24 @@ class TestDownloads:
         ):
             with pytest.raises(RuntimeError, match="exceeded"):
                 updater._download_to_file("https://example.invalid/file", tmp_path / "file", 4)
+
+    @pytest.mark.parametrize(
+        ("content_length", "message"),
+        [
+            ("not-a-number", "invalid Content-Length"),
+            (-1, "negative Content-Length"),
+        ],
+    )
+    def test_download_rejects_invalid_content_length(self, tmp_path, content_length, message):
+        destination = tmp_path / "file"
+        with patch(
+            "bambucam.updater.requests.get",
+            return_value=FakeResponse(b"payload", content_length=content_length),
+        ):
+            with pytest.raises(RuntimeError, match=message):
+                _updater()._download_to_file("https://example.invalid/file", destination, 1024)
+
+        assert not destination.exists()
 
     def test_release_download_verifies_sha256(self):
         package = b"wheel bytes"
