@@ -419,7 +419,13 @@ class Updater:
     ) -> str:
         response = requests.get(url, stream=True, timeout=(10, 60))
         response.raise_for_status()
-        declared_size = int(response.headers.get("content-length", 0) or 0)
+        raw_declared_size = response.headers.get("content-length")
+        try:
+            declared_size = int(raw_declared_size) if raw_declared_size else 0
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("Server returned an invalid Content-Length header") from exc
+        if declared_size < 0:
+            raise RuntimeError("Server returned a negative Content-Length header")
         if declared_size > max_bytes:
             raise RuntimeError(
                 f"Download is too large ({declared_size} bytes; " f"limit {max_bytes})"
