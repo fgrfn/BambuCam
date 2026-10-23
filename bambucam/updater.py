@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -33,6 +34,13 @@ _ACTIVE_STATES = {
     "installing",
     "restarting",
 }
+
+
+def _require_https_url(url: str, description: str) -> None:
+    """Reject insecure or malformed update download URLs."""
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() != "https" or not parsed.netloc:
+        raise RuntimeError(f"{description} must use HTTPS")
 
 
 class UpdateState(str, Enum):
@@ -397,7 +405,10 @@ class Updater:
         if asset is None:
             return {}
 
-        response = requests.get(str(asset["url"]), stream=True, timeout=(10, 30))
+        asset_url = str(asset["url"])
+        _require_https_url(asset_url, "Checksum URL")
+        response = requests.get(asset_url, stream=True, timeout=(10, 30))
+        _require_https_url(str(response.url), "Final checksum URL")
         response.raise_for_status()
         chunks = []
         total = 0
@@ -417,7 +428,9 @@ class Updater:
         max_bytes: int,
         expected_size: int = 0,
     ) -> str:
+        _require_https_url(url, "Update download URL")
         response = requests.get(url, stream=True, timeout=(10, 60))
+        _require_https_url(str(response.url), "Final update download URL")
         response.raise_for_status()
         raw_declared_size = response.headers.get("content-length")
         try:
