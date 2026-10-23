@@ -133,8 +133,14 @@ class TestChecksums:
 
 
 class FakeResponse:
-    def __init__(self, content: bytes, content_length=0):
+    def __init__(
+        self,
+        content: bytes,
+        content_length=0,
+        url="https://example.invalid/file",
+    ):
         self.content = content
+        self.url = url
         self.headers = {}
         if content_length:
             self.headers["content-length"] = str(content_length)
@@ -179,6 +185,45 @@ class TestDownloads:
         ):
             with pytest.raises(RuntimeError, match="exceeded"):
                 updater._download_to_file("https://example.invalid/file", tmp_path / "file", 4)
+
+    def test_download_rejects_insecure_url_before_request(self, tmp_path):
+        destination = tmp_path / "file"
+        with patch("bambucam.updater.requests.get") as request:
+            with pytest.raises(RuntimeError, match="download URL must use HTTPS"):
+                _updater()._download_to_file("http://example.invalid/file", destination, 1024)
+
+        request.assert_not_called()
+        assert not destination.exists()
+
+    def test_download_rejects_redirect_to_http(self, tmp_path):
+        destination = tmp_path / "file"
+        with patch(
+            "bambucam.updater.requests.get",
+            return_value=FakeResponse(b"payload", url="http://example.invalid/file"),
+        ):
+            with pytest.raises(RuntimeError, match="Final update download URL must use HTTPS"):
+                _updater()._download_to_file("https://example.invalid/file", destination, 1024)
+
+        assert not destination.exists()
+
+    def test_checksum_rejects_redirect_to_http(self):
+        release = ReleaseInfo(
+            **{
+                **_MOCK_RELEASE.__dict__,
+                "assets": [
+                    {
+                        "name": "SHA256SUMS",
+                        "url": "https://example.invalid/checksums",
+                    }
+                ],
+            }
+        )
+        with patch(
+            "bambucam.updater.requests.get",
+            return_value=FakeResponse(b"", url="http://example.invalid/checksums"),
+        ):
+            with pytest.raises(RuntimeError, match="Final checksum URL must use HTTPS"):
+                _updater()._fetch_release_checksums(release)
 
     @pytest.mark.parametrize(
         ("content_length", "message"),
