@@ -26,6 +26,24 @@ def test_capture_can_persist_snapshot(snapshot_service: SnapshotService):
     assert snapshots[0]["size_kb"] == pytest.approx(len(b"jpeg-data") / 1024, abs=0.1)
 
 
+def test_snapshots_captured_in_same_millisecond_get_unique_names(tmp_path: Path, monkeypatch):
+    frames = iter((b"first", b"second"))
+    service = SnapshotService(
+        lambda: next(frames),
+        snapshot_dir=tmp_path,
+        max_age_days=0,
+    )
+    monkeypatch.setattr("bambucam.streaming.snapshot.time.time", lambda: 1_800_000_000.123)
+
+    service.capture(save=True)
+    service.capture(save=True)
+
+    snapshots = service.list_snapshots()
+    assert len(snapshots) == 2
+    assert snapshots[0]["filename"] != snapshots[1]["filename"]
+    assert {path.read_bytes() for path in tmp_path.glob("*.jpg")} == {b"first", b"second"}
+
+
 def test_empty_capture_is_rejected(tmp_path: Path):
     service = SnapshotService(lambda: b"", snapshot_dir=tmp_path)
     with pytest.raises(RuntimeError, match="empty snapshot"):

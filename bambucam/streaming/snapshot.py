@@ -50,8 +50,15 @@ class SnapshotService:
         self._snapshot_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.time()
         milliseconds = int(timestamp * 1000) % 1000
-        filename = f"snapshot_{time.strftime('%Y%m%d_%H%M%S')}_{milliseconds:03d}.jpg"
-        path = self._snapshot_dir / filename
+        stem = (
+            f"snapshot_{time.strftime('%Y%m%d_%H%M%S', time.localtime(timestamp))}"
+            f"_{milliseconds:03d}"
+        )
+        path = self._snapshot_dir / f"{stem}.jpg"
+        suffix = 2
+        while path.exists() or path.with_suffix(".jpg.tmp").exists():
+            path = self._snapshot_dir / f"{stem}_{suffix}.jpg"
+            suffix += 1
         temporary = path.with_suffix(".jpg.tmp")
         temporary.write_bytes(frame)
         temporary.replace(path)
