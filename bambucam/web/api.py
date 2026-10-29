@@ -433,6 +433,7 @@ def rtsp_settings():
     runtime_applied = False
     try:
         data = _json_object()
+        runtime_keys = {"resolution", "framerate"}
         persistent_keys = {
             "bitrate_kbps",
             "stream_name",
@@ -442,6 +443,11 @@ def rtsp_settings():
             "enable_hls",
             "enable_webrtc",
         }
+        unknown = set(data) - runtime_keys - persistent_keys
+        if unknown:
+            raise ValueError(f"Unknown RTSP setting(s): {', '.join(sorted(unknown))}")
+        if not data:
+            raise ValueError("At least one RTSP setting is required")
         persistent_settings = {key: value for key, value in data.items() if key in persistent_keys}
         if persistent_settings:
             _validate_config_update({"streaming": {"rtsp": persistent_settings}})
