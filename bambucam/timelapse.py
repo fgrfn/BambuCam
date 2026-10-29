@@ -57,7 +57,10 @@ class TimelapseService:
         self._default_output_fps = self._validate_output_fps(output_fps)
         self._max_sessions = max(0, int(max_sessions))
         self._max_age_days = max(0, int(max_age_days))
-        self._render_on_stop = bool(render_on_stop)
+        self._render_on_stop = self._validate_boolean(
+            render_on_stop,
+            "Timelapse render-on-stop",
+        )
         self._status = TimelapseStatus(
             interval_seconds=self._default_interval,
             output_fps=self._default_output_fps,
@@ -118,6 +121,11 @@ class TimelapseService:
 
     def stop(self, render: Optional[bool] = None) -> TimelapseStatus:
         """Stop capture and optionally render the completed session."""
+        should_render = (
+            self._render_on_stop
+            if render is None
+            else self._validate_boolean(render, "Timelapse render option")
+        )
         with self._lock:
             if not self._status.running:
                 raise RuntimeError("No timelapse session is running")
@@ -134,7 +142,6 @@ class TimelapseService:
             self._write_metadata_locked()
             session_id = self._status.session_id
 
-        should_render = self._render_on_stop if render is None else bool(render)
         if should_render and self.status.frame_count > 0:
             self.render(session_id)
         self.prune()
@@ -286,6 +293,11 @@ class TimelapseService:
         max_age_days: Optional[int] = None,
         render_on_stop: Optional[bool] = None,
     ) -> dict:
+        validated_render = (
+            None
+            if render_on_stop is None
+            else self._validate_boolean(render_on_stop, "Timelapse render-on-stop")
+        )
         with self._lock:
             if interval_seconds is not None:
                 self._default_interval = self._validate_interval(interval_seconds)
@@ -295,8 +307,8 @@ class TimelapseService:
                 self._max_sessions = max(0, int(max_sessions))
             if max_age_days is not None:
                 self._max_age_days = max(0, int(max_age_days))
-            if render_on_stop is not None:
-                self._render_on_stop = bool(render_on_stop)
+            if validated_render is not None:
+                self._render_on_stop = validated_render
         self.prune()
         return self.defaults()
 
@@ -453,3 +465,9 @@ class TimelapseService:
         if not 1 <= parsed <= 120:
             raise ValueError("Timelapse output FPS must be between 1 and 120")
         return parsed
+
+    @staticmethod
+    def _validate_boolean(value: bool, name: str) -> bool:
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} must be true or false")
+        return value
