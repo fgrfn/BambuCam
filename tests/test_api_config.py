@@ -161,6 +161,25 @@ def test_invalid_rtsp_runtime_settings_are_not_applied_or_persisted():
     rtsp.update_settings.assert_not_called()
 
 
+def test_rtsp_settings_reject_unknown_and_empty_payloads():
+    config = MemoryConfig()
+    app, _camera, _mjpeg, rtsp = _app(config)
+    client = app.test_client()
+
+    unknown = client.post(
+        "/api/v1/stream/rtsp/settings",
+        json={"enable_hsl": True},
+    )
+    empty = client.post("/api/v1/stream/rtsp/settings", json={})
+
+    assert unknown.status_code == 400
+    assert "Unknown RTSP setting" in unknown.get_json()["error"]
+    assert empty.status_code == 400
+    assert "At least one RTSP setting" in empty.get_json()["error"]
+    assert config.saved == 0
+    rtsp.update_settings.assert_not_called()
+
+
 def test_stream_settings_are_applied_and_persisted_as_one_transaction():
     config = MemoryConfig()
     config.data["camera"]["active_profile"] = "balanced"
