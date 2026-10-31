@@ -40,6 +40,23 @@ def test_timelapse_captures_and_lists_session(tmp_path: Path):
     assert (tmp_path / status.session_id / "metadata.json").is_file()
 
 
+def test_stop_rejects_string_render_flag_without_stopping_session(tmp_path: Path):
+    service = TimelapseService(
+        capture_fn=lambda: b"jpeg-frame",
+        root_dir=tmp_path,
+        interval_seconds=0.5,
+        render_on_stop=False,
+    )
+    service.start()
+    wait_for_frames(service)
+
+    with pytest.raises(ValueError, match="must be true or false"):
+        service.stop(render="false")
+
+    assert service.status.running is True
+    service.stop(render=False)
+
+
 def test_render_creates_video_and_updates_metadata(tmp_path: Path, monkeypatch):
     service = TimelapseService(
         capture_fn=lambda: b"jpeg-frame",
@@ -200,3 +217,21 @@ def test_feature_api_profiles_and_settings(feature_client):
     )
     assert response.status_code == 200
     assert response.get_json()["settings"]["max_sessions"] == 5
+
+
+def test_feature_api_rejects_string_render_flags(feature_client):
+    client, service = feature_client
+
+    settings = client.post(
+        "/api/v1/timelapse/settings",
+        json={"render_on_stop": "false"},
+    )
+    assert settings.status_code == 400
+    assert "must be true or false" in settings.get_json()["error"]
+    assert service.defaults()["render_on_stop"] is False
+
+    client.post("/api/v1/timelapse/start", json={"interval_seconds": 0.5})
+    wait_for_frames(service)
+    stop = client.post("/api/v1/timelapse/stop", json={"render": "false"})
+    assert stop.status_code == 400
+    assert service.status.running is True
