@@ -104,7 +104,12 @@ class CameraProfileService:
 
         resolutions = self._available_resolutions()
         resolution = self._select_resolution(profile, resolutions)
-        limits = self._camera.status().get("resolution_max_framerates") or {}
+        status = self._camera.status()
+        limits = (
+            status.get("video_resolution_max_framerates")
+            or status.get("resolution_max_framerates")
+            or {}
+        )
         maximum_fps = limits.get(
             str(resolution), model.resolution_max_framerates.get(resolution, model.max_framerate)
         )
@@ -214,7 +219,12 @@ class CameraProfileService:
 
     def _available_resolutions(self) -> list[Resolution]:
         status = self._camera.status()
-        values = status.get("available_resolutions") or []
+        video_modes = status.get("video_output_modes")
+        values = (
+            [mode["resolution"] for mode in video_modes]
+            if video_modes is not None
+            else (status.get("available_resolutions") or [])
+        )
         resolutions = []
         for value in values:
             try:
@@ -223,7 +233,7 @@ class CameraProfileService:
                 continue
             if resolution not in resolutions:
                 resolutions.append(resolution)
-        if not resolutions and self._camera.model is not None:
+        if not resolutions and video_modes is None and self._camera.model is not None:
             resolutions = list(self._camera.model.supported_resolutions)
         if not resolutions:
             raise RuntimeError("The active camera did not report any resolutions")
