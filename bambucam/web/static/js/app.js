@@ -260,21 +260,28 @@ async function loadModelCapabilities(status) {
       streamEditorState.dirty = false;
     }
 
-    const outputs = status.output_modes || [];
+    // Stream controls show video-safe modes, not photo-only native sensor modes.
+    const outputs = status.video_output_modes ?? status.output_modes ?? [];
     const available = [...new Set(
       outputs.length ? outputs.map(m => m.resolution) : model.supported_resolutions
     )];
     if (!available.length) return;
-    resolutionMaxFps = status.resolution_max_framerates || model.resolution_max_framerates || {};
+    resolutionMaxFps = status.video_resolution_max_framerates ||
+      status.resolution_max_framerates || model.resolution_max_framerates || {};
 
     const preserveDraft = !cameraChanged && (
       streamEditorState.dirty || streamEditorState.applying ||
       !!streamEditorState.awaitingConfirmation
     );
     const preferredResolution = preserveDraft ? resSel.value : status.resolution;
+    // If a saved camera mode is photo-only, prefer the largest safe video size.
+    const videoDefault = available.includes(status.resolution) ? status.resolution :
+      available.reduce((best, size) => {
+        const pixels = value => value.split('x').map(Number).reduce((a, b) => a * b, 1);
+        return pixels(size) > pixels(best) ? size : best;
+      });
     const selectedResolution = available.includes(preferredResolution)
-      ? preferredResolution
-      : (available.includes(status.resolution) ? status.resolution : available[0]);
+      ? preferredResolution : videoDefault;
     if (preserveDraft && selectedResolution !== preferredResolution) {
       // A previously selected mode has disappeared from the new capability list.
       streamEditorState.dirty = false;
@@ -283,7 +290,7 @@ async function loadModelCapabilities(status) {
 
     const options = available.map(r => {
       const output = outputs.find(m => m.resolution === r);
-      const maximum = output?.sensor_max_fps ?? resolutionMaxFps[r];
+      const maximum = resolutionMaxFps[r] ?? output?.max_fps ?? output?.sensor_max_fps;
       const kindKeys = { native: 'camera.mode.native', scaled: 'camera.mode.scaled', model: 'camera.mode.model' };
       const kind = tr(kindKeys[output?.kind] || kindKeys.model);
       const source = output?.kind === 'scaled' ? ' ← ' + output.sensor_resolution : '';
