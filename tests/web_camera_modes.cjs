@@ -19,7 +19,9 @@ const context = vm.createContext({
     supported_resolutions: ['640x480'], resolution_max_framerates: {} }],
   tr: (key, args) => args ? String(args.value) : key,
 });
-vm.runInContext('var resolutionMaxFps = {};\n' + source.slice(start, end), context);
+vm.runInContext('var resolutionMaxFps = {};\n' +
+  'var streamEditorState = {dirty:false,applying:false,awaitingConfirmation:null,' +
+  'modelKey:null,requestSequence:0,revision:0};\n' + source.slice(start, end), context);
 (async () => {
   const status = { model: 'Camera', resolution: '2592x1944', framerate: 12,
     output_modes: [
