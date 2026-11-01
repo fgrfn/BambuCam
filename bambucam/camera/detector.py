@@ -1,6 +1,7 @@
 """Camera auto-detection for Raspberry Pi and USB webcams."""
 
 import logging
+import math
 import os
 import re
 import subprocess
@@ -12,6 +13,7 @@ from bambucam.camera.models import (
     Resolution,
     get_model_by_sensor,
 )
+from bambucam.camera.modes import OV5647_FALLBACK_MODES, SensorMode, output_capabilities
 
 log = logging.getLogger(__name__)
 _CAMERA_HEADER_RE = re.compile(r"(?m)^(\d+)\s*:\s*(\w+)\s*\[")
@@ -27,12 +29,30 @@ class DetectedCamera:
         backend: str,
         index: int = 0,
         detected_resolutions: Optional[list[Resolution]] = None,
+        sensor_modes: Optional[list[SensorMode]] = None,
+        mode_source: str = "model_fallback",
     ):
         self.device = device
         self.model = model
         self.backend = backend
         self.index = index
-        self.detected_resolutions = detected_resolutions or model.supported_resolutions
+        self.sensor_modes = list(sensor_modes or [])
+        self.mode_source = mode_source
+        self.output_modes = output_capabilities(
+            model,
+            detected_resolutions or model.supported_resolutions,
+            self.sensor_modes,
+            mode_source,
+        )
+        self.detected_resolutions = [
+            Resolution.from_string(mode["resolution"]) for mode in self.output_modes
+        ]
+
+    def max_framerate_for(self, resolution: Resolution) -> int:
+        for mode in self.output_modes:
+            if mode["resolution"] == str(resolution):
+                return mode["max_fps"]
+        raise ValueError(f"Resolution {resolution} is not supported")
 
     def __repr__(self) -> str:
         return (
@@ -115,7 +135,13 @@ def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
             log.warning("Unknown libcamera sensor: %s — using generic capabilities", sensor)
             model = CAMERA_USB_GENERIC
 
-        sensor_modes = _parse_libcamera_resolutions(block, sensor)
+        modes = _parse_libcamera_modes(block)
+        source = "detected"
+        if not modes:
+            modes = list(OV5647_FALLBACK_MODES) if sensor == "ov5647" else []
+            source = "model_fallback"
+            log.warning("No reliable sensor modes for %s; using labelled model fallback", sensor)
+        sensor_modes = [mode.resolution for mode in modes]
         # rpicam --list-cameras reports native sensor modes, not every valid ISP
         # output size. Picamera2 can scale/crop those native modes to the known
         # output resolutions from the model table (for example OV5647 1280x720).
@@ -129,6 +155,8 @@ def _parse_libcamera_output(output: str) -> list[DetectedCamera]:
                 backend="picamera2",
                 index=index,
                 detected_resolutions=resolutions,
+                sensor_modes=modes,
+                mode_source=source,
             )
         )
     return cameras
@@ -146,12 +174,32 @@ def _parse_libcamera_resolutions(output: str, sensor: str) -> list[Resolution]:
         if matching_block is not None:
             block = matching_block
 
-    resolutions = []
-    for match in re.finditer(r"(\d{3,5})x(\d{3,5})", block):
-        resolution = Resolution(int(match.group(1)), int(match.group(2)))
-        if resolution not in resolutions:
-            resolutions.append(resolution)
-    return resolutions
+    return list(dict.fromkeys(mode.resolution for mode in _parse_libcamera_modes(block)))
+
+
+def _parse_libcamera_modes(block: str) -> list[SensorMode]:
+    """Read only mode records. Reject the wrapped 65535 crop seen on busy CSI."""
+    modes = []
+    pixel_format = None
+    for line in block.splitlines():
+        format_match = re.search(r"'([^']+)'\s*:", line)
+        if format_match:
+            pixel_format = format_match.group(1)
+        match = re.search(r"(\d+)x(\d+)\s*\[([\d.]+)\s+fps", line)
+        if not match:
+            continue
+        width, height = int(match[1]), int(match[2])
+        fps = float(match[3])
+        crop = re.search(r"\((\d+),\s*(\d+)\)/(\d+)x(\d+)\s+crop", line)
+        if crop and any(int(value) >= 65500 for value in crop.groups()):
+            log.warning("Ignoring unreliable sensor modes from a busy/configured camera")
+            return []
+        if width <= 0 or height <= 0 or not math.isfinite(fps) or fps <= 0:
+            continue
+        mode = SensorMode(Resolution(width, height), fps, pixel_format)
+        if mode not in modes:
+            modes.append(mode)
+    return modes
 
 
 def _detect_v4l2() -> list[DetectedCamera]:

@@ -208,30 +208,32 @@ async function loadModelCapabilities(status) {
     const resSel = document.getElementById('sel-resolution');
     const fpsSel = document.getElementById('sel-framerate');
 
+    const outputs = status.output_modes || [];
+    const available = outputs.length ? outputs.map(m => m.resolution) : model.supported_resolutions;
+    resolutionMaxFps = status.resolution_max_framerates || model.resolution_max_framerates || {};
+
     function buildFpsOptions(res, selectedFps) {
-      const maxFps = (model.resolution_max_framerates || {})[res] ?? model.max_framerate;
-      fpsSel.innerHTML = model.supported_framerates
-        .filter(f => f <= maxFps)
-        .map(f => `<option value="${f}"${f == selectedFps ? ' selected' : ''}>${f} fps</option>`)
-        .join('');
+      const maxFps = Math.floor(resolutionMaxFps[res] ?? model.max_framerate);
+      const values = [...new Set([...model.supported_framerates, maxFps, selectedFps])]
+        .filter(f => Number.isInteger(f) && f >= 1 && f <= maxFps).sort((a, b) => b - a);
+      const selected = values.includes(selectedFps) ? selectedFps : values[0];
+      fpsSel.replaceChildren(...values.map(f => new Option(f + ' fps', f, false, f === selected)));
     }
 
-    const resFpsMap = model.resolution_max_framerates || {};
-    resSel.innerHTML = model.supported_resolutions.map(r => {
-      const maxFps = resFpsMap[r];
-      const label = maxFps ? `${r} (${tr('camera.maxFps', { value: maxFps })})` : r;
-      return `<option value="${r}"${r === currentRes ? ' selected' : ''}>${label}</option>`;
-    }).join('');
+    resSel.replaceChildren(...available.map(r => {
+      const output = outputs.find(m => m.resolution === r);
+      const maximum = output?.sensor_max_fps ?? resolutionMaxFps[r];
+      const kindKeys = { native: 'camera.mode.native', scaled: 'camera.mode.scaled', model: 'camera.mode.model' };
+      const kind = tr(kindKeys[output?.kind] || kindKeys.model);
+      const source = output?.kind === 'scaled' ? ' ← ' + output.sensor_resolution : '';
+      const fallback = output?.source === 'model_fallback' ? '; ' + tr('camera.mode.fallback') : '';
+      const label = r + ' (' + kind + source + '; ' +
+        tr('camera.maxFps', { value: maximum }) + fallback + ')';
+      return new Option(label, r, false, r === currentRes);
+    }));
 
-    resolutionMaxFps = model.resolution_max_framerates || {};
-
-    buildFpsOptions(currentRes, currentFps);
-
-    resSel.addEventListener('change', () => {
-      const selectedRes = resSel.value;
-      const maxFps = resolutionMaxFps[selectedRes] ?? model.max_framerate;
-      buildFpsOptions(selectedRes, maxFps);
-    });
+    buildFpsOptions(resSel.value, currentFps);
+    resSel.onchange = () => buildFpsOptions(resSel.value, Number(fpsSel.value));
   } catch(e) { /* ignore */ }
 }
 

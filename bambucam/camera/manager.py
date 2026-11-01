@@ -19,6 +19,7 @@ class CameraManager:
     def __init__(self):
         self._backend: Optional[CameraBackend] = None
         self._detected: Optional[DetectedCamera] = None
+        self._cameras: list[DetectedCamera] = []
         self._resolution: Optional[Resolution] = None
         self._framerate: int = 30
         self._settings: dict = {}
@@ -32,7 +33,7 @@ class CameraManager:
         preferred_backend: str = "auto",
     ) -> DetectedCamera:
         """Detect cameras and select one after applying an optional backend filter."""
-        cameras = detect_cameras()
+        cameras = self.detected_cameras()
         if not cameras:
             raise RuntimeError(
                 "No cameras found. Check connections and run "
@@ -62,7 +63,9 @@ class CameraManager:
                     model=override,
                     backend=detected.backend,
                     index=detected.index,
-                    detected_resolutions=override.supported_resolutions,
+                    detected_resolutions=detected.detected_resolutions,
+                    sensor_modes=detected.sensor_modes,
+                    mode_source=detected.mode_source,
                 )
                 log.info("Camera model overridden by config: %s", override.name)
             else:
@@ -111,6 +114,7 @@ class CameraManager:
                 model=detected.model,
                 device=detected.device,
                 camera_index=detected.index,
+                sensor_modes=detected.sensor_modes,
                 enable_lores=enable_lores,
                 encode_size=encode_size,
             )
@@ -135,9 +139,7 @@ class CameraManager:
             allowed = ", ".join(str(item) for item in available)
             raise ValueError(f"Resolution {resolution} is not supported. Available: {allowed}")
 
-        max_fps = detected.model.resolution_max_framerates.get(
-            resolution, detected.model.max_framerate
-        )
+        max_fps = detected.max_framerate_for(resolution)
         if fps > max_fps:
             raise ValueError(f"{resolution} supports at most {max_fps} FPS, requested {fps}")
 
@@ -315,6 +317,13 @@ class CameraManager:
     def v4l2_device(self) -> Optional[str]:
         return self._backend.get_v4l2_device() if self._backend is not None else None
 
+    def detected_cameras(self) -> list[DetectedCamera]:
+        """Use the startup inventory while streaming; never re-probe an open CSI."""
+        if self.is_running:
+            return list(self._cameras or ([self._detected] if self._detected else []))
+        self._cameras = detect_cameras()
+        return list(self._cameras)
+
     def status(self) -> dict:
         return {
             "running": self.is_running,
@@ -328,6 +337,16 @@ class CameraManager:
                 [str(item) for item in self._detected.detected_resolutions]
                 if self._detected
                 else []
+            ),
+            "native_sensor_modes": (
+                [mode.as_dict() for mode in self._detected.sensor_modes] if self._detected else []
+            ),
+            "output_modes": self._detected.output_modes if self._detected else [],
+            "mode_source": self._detected.mode_source if self._detected else None,
+            "resolution_max_framerates": (
+                {mode["resolution"]: mode["max_fps"] for mode in self._detected.output_modes}
+                if self._detected
+                else {}
             ),
             "has_autofocus": self.model.has_autofocus if self.model else False,
             "has_hdr": self.model.has_hdr if self.model else False,
