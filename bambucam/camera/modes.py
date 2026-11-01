@@ -77,3 +77,26 @@ def output_capabilities(model, resolutions, modes, source) -> list[dict]:
             }
         )
     return outputs
+
+
+def video_output_capabilities(model, output_modes: list[dict]) -> list[dict]:
+    """Restrict video choices without discarding high-resolution still/sensor modes.
+
+    Native CSI modes also include full-frame still capture resolutions. A
+    camera's advertised video specification can be narrower than its sensor
+    inventory, so the stream form must not use output_modes unfiltered.
+    """
+    result = []
+    for item in output_modes:
+        resolution = Resolution.from_string(item["resolution"])
+        cap = model.video_max_resolution
+        if cap is not None and (
+            resolution.width > cap.width or resolution.height > cap.height
+        ):
+            continue
+        fps = min(
+            int(item["max_fps"]),
+            int(model.video_max_framerates.get(resolution, item["max_fps"])),
+        )
+        result.append({**item, "max_fps": fps})
+    return result
