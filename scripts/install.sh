@@ -306,6 +306,21 @@ if command -v raspi-config >/dev/null 2>&1; then
   raspi-config nonint do_camera 0 2>/dev/null || true
 fi
 
+# Compute Module carrier boards wire CSI differently and auto-detection often
+# finds nothing; point the user at the explicit overlay instead of a silent
+# headless start.
+PI_MODEL=$(tr -d '\0' </proc/device-tree/model 2>/dev/null || true)
+if [[ "$PI_MODEL" == *"Compute Module"* ]] && command -v rpicam-hello >/dev/null 2>&1 \
+  && ! rpicam-hello --list-cameras 2>&1 | grep -q "Available cameras"; then
+  BOOT_CONFIG=/boot/firmware/config.txt
+  [[ -f "$BOOT_CONFIG" ]] || BOOT_CONFIG=/boot/config.txt
+  warn "No CSI camera detected on this ${PI_MODEL}."
+  warn "Add to ${BOOT_CONFIG} and reboot (sensor: ov5647 = v1, imx219 = v2, imx708 = v3, imx477 = HQ):"
+  warn "  camera_auto_detect=0"
+  warn "  dtoverlay=<sensor>          # camera on CAM1"
+  warn "  dtoverlay=<sensor>,cam0     # camera on CAM0"
+fi
+
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   step "Configuring the firewall"
   ufw allow 8080/tcp comment "BambuCam WebUI+MJPEG" 2>/dev/null || true

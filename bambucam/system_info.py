@@ -169,6 +169,36 @@ def pi_capability_tier() -> int:
     return 3
 
 
+def compute_module_camera_hint() -> Optional[dict]:
+    """Return where CSI camera overlays belong on a Compute Module, else None.
+
+    Carrier boards for Compute Modules wire the CSI connectors differently, and
+    camera auto-detection frequently finds nothing there; the sensor overlay then
+    has to be named explicitly, with ",cam0" for a camera on the CAM0 port.
+    """
+    model = raspberry_pi_model()
+    if not model or "compute module" not in model.lower():
+        return None
+    firmware_config = Path("/boot/firmware/config.txt")
+    config_file = firmware_config if firmware_config.exists() else Path("/boot/config.txt")
+    return {
+        "board": model,
+        "config_file": str(config_file),
+        "lines": ["camera_auto_detect=0", "dtoverlay=<sensor>"],
+        "cam0_line": "dtoverlay=<sensor>,cam0",
+        "sensors": {"ov5647": "v1", "imx219": "v2", "imx708": "v3", "imx477": "HQ"},
+    }
+
+
+def compute_module_camera_hint_text(hint: dict) -> str:
+    sensors = ", ".join(f"{name} = {label}" for name, label in hint["sensors"].items())
+    return (
+        f"{hint['board']}: add to {hint['config_file']} and reboot: "
+        f"{'; '.join(hint['lines'])} (use {hint['cam0_line']} for the CAM0 port; "
+        f"sensor: {sensors})"
+    )
+
+
 def hardware_recommendations(tier: Optional[int] = None) -> dict:
     """Return conservative fresh-install defaults for the detected hardware tier."""
     resolved_tier = pi_capability_tier() if tier is None else int(tier)

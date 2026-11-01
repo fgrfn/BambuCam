@@ -87,3 +87,39 @@ def test_throttle_status_is_none_without_pi_firmware(tmp_path, monkeypatch):
     monkeypatch.setattr(system_info, "_THROTTLED_PATH", tmp_path / "missing")
     monkeypatch.setattr(system_info.subprocess, "run", missing)
     assert system_info.throttle_status() is None
+
+
+def test_compute_module_camera_hint_only_on_compute_modules():
+    from bambucam import system_info
+
+    with patch.object(
+        system_info, "raspberry_pi_model", return_value="Raspberry Pi Compute Module 4 Rev 1.1"
+    ):
+        hint = system_info.compute_module_camera_hint()
+    assert hint["lines"] == ["camera_auto_detect=0", "dtoverlay=<sensor>"]
+    assert hint["cam0_line"] == "dtoverlay=<sensor>,cam0"
+    assert "camera_auto_detect=0" in system_info.compute_module_camera_hint_text(hint)
+
+    with patch.object(system_info, "raspberry_pi_model", return_value="Raspberry Pi 4 Model B"):
+        assert system_info.compute_module_camera_hint() is None
+
+
+def test_missing_camera_error_mentions_overlay_on_compute_module():
+    from bambucam.camera.manager import CameraManager
+
+    manager = CameraManager()
+    with (
+        patch.object(manager, "detected_cameras", return_value=[]),
+        patch(
+            "bambucam.camera.manager.compute_module_camera_hint",
+            return_value={
+                "board": "Raspberry Pi Compute Module 4",
+                "config_file": "/boot/firmware/config.txt",
+                "lines": ["camera_auto_detect=0", "dtoverlay=<sensor>"],
+                "cam0_line": "dtoverlay=<sensor>,cam0",
+                "sensors": {"ov5647": "v1"},
+            },
+        ),
+        pytest.raises(RuntimeError, match=r"dtoverlay=<sensor>,cam0"),
+    ):
+        manager.detect_and_select()

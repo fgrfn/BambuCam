@@ -213,6 +213,8 @@ async function loadCameraStatus() {
       txt.textContent = tr('header.cameraStopped');
     }
 
+    renderCameraSetupHint(s.setup_hint);
+
     // Conditional controls
     toggleRow('row-autofocus', s.has_autofocus);
     toggleRow('row-hdr',       s.has_hdr);
@@ -452,6 +454,24 @@ async function loadSystemInfo() {
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
     toggleRow('system-reboot-section', !!s.can_reboot);
   } catch(e) { /* ignore */ }
+}
+
+function renderCameraSetupHint(hint) {
+  const el = document.getElementById('cam-setup-hint');
+  if (!el) return;
+  toggleRow('cam-setup-hint', !!hint);
+  if (!hint) return;
+  const sensors = Object.entries(hint.sensors).map(([name, label]) => name + ' = ' + label).join(', ');
+  const code = text => { const node = document.createElement('code'); node.textContent = text; return node; };
+  el.replaceChildren(
+    document.createTextNode(tr('camera.setupHint.intro', { value: hint.config_file })),
+    document.createElement('br'),
+    ...hint.lines.flatMap(line => [code(line), document.createElement('br')]),
+    document.createTextNode(tr('camera.setupHint.cam0') + ' '),
+    code(hint.cam0_line),
+    document.createElement('br'),
+    document.createTextNode(tr('camera.setupHint.sensors', { value: sensors })),
+  );
 }
 
 function renderThrottling(state) {
