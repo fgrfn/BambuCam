@@ -113,6 +113,50 @@ class TestUpdaterStartGuards:
         assert updater.status.state == UpdateState.ERROR
 
 
+def _api_release(tag, assets):
+    return {
+        "tag_name": tag,
+        "name": f"BambuCam {tag}",
+        "html_url": f"https://github.com/fgrfn/bambucam/releases/tag/{tag}",
+        "tarball_url": f"https://api.github.com/repos/fgrfn/bambucam/tarball/{tag}",
+        "assets": [
+            {"name": name, "browser_download_url": f"https://example.invalid/{name}"}
+            for name in assets
+        ],
+    }
+
+
+class TestReleaseSelection:
+    def _releases_response(self):
+        response = MagicMock()
+        response.json.return_value = [
+            _api_release("v1.2.15", []),
+            _api_release("v1.2.14", ["bambucam-1.2.14-py3-none-any.whl"]),
+        ]
+        return response
+
+    def test_latest_release_skips_release_without_packages(self):
+        updater = _updater()
+        with patch("bambucam.updater.requests.get", return_value=self._releases_response()):
+            release = updater._fetch_latest_release()
+
+        assert release.version == "1.2.14"
+
+    def test_release_list_skips_release_without_packages(self):
+        updater = _updater()
+        with patch("bambucam.updater.requests.get", return_value=self._releases_response()):
+            releases = updater._fetch_all_releases()
+
+        assert [release["version"] for release in releases] == ["1.2.14"]
+
+    def test_download_refuses_source_tarball_fallback(self):
+        with patch("bambucam.updater.requests.get") as get:
+            with pytest.raises(RuntimeError, match="no installable package"):
+                _updater()._download(_MOCK_RELEASE)
+
+        get.assert_not_called()
+
+
 class TestChecksums:
     def test_parses_standard_checksum_file(self):
         digest = "a" * 64

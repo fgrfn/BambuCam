@@ -336,15 +336,9 @@ class Updater:
         try:
             selected = self._select_package_asset(release)
             if selected is None:
-                selected = {
-                    "name": f"bambucam-{release.version}.tar.gz",
-                    "url": release.tarball_url,
-                    "size": 0,
-                    "source_tarball": True,
-                }
-                log.warning(
-                    "No packaged release asset found; using unchecksummed GitHub source tarball"
-                )
+                # GitHub source tarballs carry the placeholder version from _version.py, so
+                # installing one can never pass the version check after pip install.
+                raise RuntimeError(f"Release v{release.version} has no installable package asset")
 
             asset_size = int(selected.get("size") or 0)
             if asset_size > self._max_package_bytes:
@@ -668,8 +662,7 @@ class Updater:
                 "is_current": release["tag_name"].lstrip("v") == self._current,
             }
             for release in response.json()
-            if not release.get("draft")
-            and (self._include_prerelease or not release.get("prerelease"))
+            if self._is_installable_release(release)
         ]
 
     def _find_release(self, version: str) -> Optional[ReleaseInfo]:
@@ -694,12 +687,20 @@ class Updater:
         )
         response.raise_for_status()
         for release in response.json():
-            if release.get("draft"):
-                continue
-            if release.get("prerelease") and not self._include_prerelease:
-                continue
-            return _release_from_api(release)
+            if self._is_installable_release(release):
+                return _release_from_api(release)
         raise RuntimeError("No suitable release found")
+
+    def _is_installable_release(self, release: dict) -> bool:
+        """Skip drafts, unwanted prereleases, and releases without built packages."""
+        if release.get("draft"):
+            return False
+        if release.get("prerelease") and not self._include_prerelease:
+            return False
+        if self._select_package_asset(_release_from_api(release)) is None:
+            log.warning("Ignoring release %s without package assets", release.get("tag_name"))
+            return False
+        return True
 
     def _set_state(self, state: UpdateState, message: str, progress: int) -> None:
         with self._lock:
