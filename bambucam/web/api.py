@@ -302,10 +302,7 @@ def stream_settings():
         video_modes = status.get("video_output_modes")
         if video_modes is not None and {"resolution", "framerate"} & data.keys():
             selected = str(data.get("resolution") or status.get("resolution") or "")
-            mode = next(
-                (item for item in video_modes if item["resolution"] == selected),
-                None,
-            )
+            mode = next((item for item in video_modes if item["resolution"] == selected), None)
             if mode is None:
                 raise ValueError(
                     f"Resolution {selected} is not a supported video mode for this camera"
