@@ -77,9 +77,27 @@ def _resolve_camera_mode(
     model, camera_config: dict, tier_fps_cap=None, resolutions=None, max_framerates=None
 ):
     """Resolve auto/explicit camera mode and enforce model and hardware limits."""
-    smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap, max_framerates)
     available = list(resolutions or model.supported_resolutions)
     configured_resolution = camera_config.get("resolution", "auto")
+
+    candidates = max_framerates if max_framerates is not None else model.resolution_max_framerates
+    if _is_auto(configured_resolution) and model.video_max_resolution is not None:
+        # Auto mode is for the live preview; do not start a high-res still
+        # sensor mode as the default video source (OV5647: 5MP vs 1080p30).
+        from bambucam.camera.modes import video_output_capabilities
+
+        output_modes = [
+            {"resolution": str(resolution), "max_fps": fps}
+            for resolution, fps in candidates.items()
+            if resolution in available
+        ]
+        video_modes = video_output_capabilities(model, output_modes)
+        if video_modes:
+            candidates = {
+                Resolution.from_string(mode["resolution"]): mode["max_fps"]
+                for mode in video_modes
+            }
+    smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap, candidates)
 
     if _is_auto(configured_resolution):
         resolution = smart_resolution
