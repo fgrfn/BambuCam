@@ -35,7 +35,7 @@ vm.runInContext('var resolutionMaxFps = {};\n' +
   };
   await context.loadModelCapabilities(status);
   assert.equal(elements['sel-resolution'].options.length, 2);
-  assert.match(elements['sel-resolution'].options[0].label, /native.*15.63/);
+  assert.match(elements['sel-resolution'].options[0].label, /^2592×1944 \(15.63\)$/);
   assert.match(elements['sel-resolution'].options[1].label, /scaled.*1296x972.*46.34.*fallback/);
   assert.equal(elements['sel-framerate'].value, '12');
   assert(elements['sel-framerate'].options.every(o => o.value <= 15));
@@ -50,16 +50,21 @@ vm.runInContext('var resolutionMaxFps = {};\n' +
   await context.loadModelCapabilities({
     ...status,
     video_output_modes: [
-      {resolution: '1920x1080', kind: 'native', sensor_max_fps: 32.81, max_fps: 30},
       {resolution: '1280x720', kind: 'scaled', sensor_resolution: '1296x972',
-       sensor_max_fps: 46.34, max_fps: 46},
+       sensor_max_fps: 46.34, max_fps: 46, aspect: '16:9', fov_width_pct: 100},
+      {resolution: '1920x1080', kind: 'native', sensor_max_fps: 32.81, max_fps: 30,
+       aspect: '16:9', fov_width_pct: 74},
     ],
     video_resolution_max_framerates: {'1920x1080': 30, '1280x720': 46},
   });
   assert.equal(elements['sel-resolution'].options.length, 2);
   assert.equal(elements['sel-resolution'].value, '1920x1080');
   assert(!elements['sel-resolution'].options.some(o => o.value === '2592x1944'));
-  assert.match(elements['sel-resolution'].options[0].label, /30/);
+  // Largest first, and a centre-cropped native mode is labelled as such.
+  assert.equal(elements['sel-resolution'].options[0].value, '1920x1080');
+  assert.equal(elements['sel-resolution'].options[0].label, '1920×1080 (16:9, 74, 30)');
+  assert.equal(elements['sel-resolution'].options[1].label,
+    '1280×720 (16:9, camera.mode.fullWidth, 1296x972, 46)');
   assert(!elements['sel-framerate'].options.some(o => o.value > 30));
 
   console.log('Camera UI behavior passed');

@@ -288,18 +288,29 @@ async function loadModelCapabilities(status) {
       streamEditorState.awaitingConfirmation = null;
     }
 
-    const options = available.map(r => {
+    const pixelCount = value => value.split('x').map(Number).reduce((a, b) => a * b, 1);
+    const options = [...available].sort((a, b) => pixelCount(b) - pixelCount(a)).map(r => {
       const output = outputs.find(m => m.resolution === r);
       // Older status payloads only have sensor rates; preserve their labels.
       const maximum = status.video_output_modes != null
         ? (resolutionMaxFps[r] ?? output?.max_fps ?? output?.sensor_max_fps)
         : (output?.sensor_max_fps ?? resolutionMaxFps[r]);
-      const kindKeys = { native: 'camera.mode.native', scaled: 'camera.mode.scaled', model: 'camera.mode.model' };
-      const kind = tr(kindKeys[output?.kind] || kindKeys.model);
-      const source = output?.kind === 'scaled' ? ' ← ' + output.sensor_resolution : '';
-      const fallback = output?.source === 'model_fallback' ? '; ' + tr('camera.mode.fallback') : '';
-      return { value: r, label: r + ' (' + kind + source + '; ' +
-        tr('camera.maxFps', { value: maximum }) + fallback + ')' };
+      const parts = [];
+      if (output?.aspect) parts.push(output.aspect);
+      // Field of view matters more than pixels for a printer camera: some native
+      // modes (OV5647 1920x1080) only read out a centre window of the sensor.
+      const fov = output?.fov_width_pct;
+      if (fov != null) {
+        parts.push(fov >= 97 ? tr('camera.mode.fullWidth') : tr('camera.mode.cropped', { value: fov }));
+      }
+      if (output?.kind === 'scaled') {
+        parts.push(tr('camera.mode.scaledFrom', { value: output.sensor_resolution }));
+      } else if (output?.kind !== 'native') {
+        parts.push(tr('camera.mode.model'));
+      }
+      parts.push(tr('camera.maxFps', { value: maximum }));
+      if (output?.source === 'model_fallback') parts.push(tr('camera.mode.fallback'));
+      return { value: r, label: r.replace('x', '×') + ' (' + parts.join(', ') + ')' };
     });
 
     // Do not replace focused select elements on every polling tick.
