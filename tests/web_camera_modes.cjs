@@ -21,7 +21,9 @@ const context = vm.createContext({
 });
 vm.runInContext('var resolutionMaxFps = {};\n' +
   'var streamEditorState = {dirty:false,applying:false,awaitingConfirmation:null,' +
-  'modelKey:null,requestSequence:0,revision:0};\n' + source.slice(start, end), context);
+  'modelKey:null,requestSequence:0,revision:0};\n' +
+  source.slice(source.indexOf('function markStreamSettingsDirty()'),
+    source.indexOf('// Bounds are supplied')) + source.slice(start, end), context);
 (async () => {
   const status = { model: 'Camera', resolution: '2592x1944', framerate: 12,
     output_modes: [
