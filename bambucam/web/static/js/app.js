@@ -213,6 +213,8 @@ async function loadCameraStatus() {
       txt.textContent = tr('header.cameraStopped');
     }
 
+    renderCameraSetupHint(s.setup_hint);
+
     // Conditional controls
     toggleRow('row-autofocus', s.has_autofocus);
     toggleRow('row-hdr',       s.has_hdr);
@@ -288,18 +290,30 @@ async function loadModelCapabilities(status) {
       streamEditorState.awaitingConfirmation = null;
     }
 
-    const options = available.map(r => {
+    const pixelCount = value => value.split('x').map(Number).reduce((a, b) => a * b, 1);
+    const options = [...available].sort((a, b) => pixelCount(b) - pixelCount(a)).map(r => {
       const output = outputs.find(m => m.resolution === r);
       // Older status payloads only have sensor rates; preserve their labels.
       const maximum = status.video_output_modes != null
         ? (resolutionMaxFps[r] ?? output?.max_fps ?? output?.sensor_max_fps)
         : (output?.sensor_max_fps ?? resolutionMaxFps[r]);
-      const kindKeys = { native: 'camera.mode.native', scaled: 'camera.mode.scaled', model: 'camera.mode.model' };
-      const kind = tr(kindKeys[output?.kind] || kindKeys.model);
-      const source = output?.kind === 'scaled' ? ' ← ' + output.sensor_resolution : '';
-      const fallback = output?.source === 'model_fallback' ? '; ' + tr('camera.mode.fallback') : '';
-      return { value: r, label: r + ' (' + kind + source + '; ' +
-        tr('camera.maxFps', { value: maximum }) + fallback + ')' };
+      const parts = [];
+      if (output?.aspect) parts.push(output.aspect);
+      // Field of view matters more than pixels for a printer camera: some native
+      // modes (OV5647 1920x1080) only read out a centre window of the sensor.
+      const fov = output?.fov_width_pct;
+      if (fov != null) {
+        parts.push(fov >= 97 ? tr('camera.mode.fullWidth') : tr('camera.mode.cropped', { value: fov }));
+      }
+      if (output?.kind === 'scaled') {
+        parts.push(tr('camera.mode.scaledFrom', { value: output.sensor_resolution }));
+      } else if (output?.kind !== 'native') {
+        parts.push(tr('camera.mode.model'));
+      }
+      parts.push(tr('camera.maxFps', { value: maximum }));
+      if (output?.limited_by === 'h264_encoder') parts.push(tr('camera.mode.encoderLimit'));
+      if (output?.source === 'model_fallback') parts.push(tr('camera.mode.fallback'));
+      return { value: r, label: r.replace('x', '×') + ' (' + parts.join(', ') + ')' };
     });
 
     // Do not replace focused select elements on every polling tick.
@@ -434,11 +448,55 @@ async function loadSystemInfo() {
       setText('sys-disk-total', s.disk.total_gb.toFixed(1) + ' GB');
     }
 
+    renderThrottling(s.throttling);
+
     setText('sys-host',   s.hostname  || '—');
     setText('sys-pi',     s.pi_model  || '—');
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
     toggleRow('system-reboot-section', !!s.can_reboot);
   } catch(e) { /* ignore */ }
+}
+
+function renderCameraSetupHint(hint) {
+  const el = document.getElementById('cam-setup-hint');
+  if (!el) return;
+  toggleRow('cam-setup-hint', !!hint);
+  if (!hint) return;
+  const sensors = Object.entries(hint.sensors).map(([name, label]) => name + ' = ' + label).join(', ');
+  const code = text => { const node = document.createElement('code'); node.textContent = text; return node; };
+  el.replaceChildren(
+    document.createTextNode(tr('camera.setupHint.intro', { value: hint.config_file })),
+    document.createElement('br'),
+    ...hint.lines.flatMap(line => [code(line), document.createElement('br')]),
+    document.createTextNode(tr('camera.setupHint.cam0') + ' '),
+    code(hint.cam0_line),
+    document.createElement('br'),
+    document.createTextNode(tr('camera.setupHint.sensors', { value: sensors })),
+  );
+}
+
+function renderThrottling(state) {
+  toggleRow('sys-throttle-row', state != null);
+  const el = document.getElementById('sys-throttle');
+  if (!state || !el) return;
+  const labels = {
+    under_voltage: tr('system.throttle.under_voltage'),
+    freq_capped: tr('system.throttle.freq_capped'),
+    throttled: tr('system.throttle.throttled'),
+    soft_temp_limit: tr('system.throttle.soft_temp_limit'),
+  };
+  const names = flags => flags.map(flag => labels[flag] || flag).join(', ');
+  if (state.active.length) {
+    el.textContent = tr('system.throttle.now', { value: names(state.active) });
+    el.className = 'info-val crit';
+  } else if (state.since_boot.length) {
+    el.textContent = tr('system.throttle.sinceBoot', { value: names(state.since_boot) });
+    el.className = 'info-val warn';
+  } else {
+    el.textContent = tr('system.throttle.ok');
+    el.className = 'info-val';
+  }
+  el.title = state.raw;
 }
 
 // ── Network & services config ──────────────────────────────────────────────
@@ -462,6 +520,9 @@ async function loadNetworkConfig() {
     setVal('cfg-rtsp-name',  r.stream_name ?? 'cam');
     setChk('cfg-hls-enabled', r.enable_hls ?? true);
     setVal('cfg-hls-port',   r.hls_port    ?? 8888);
+    const storage = cfg.streaming || {};
+    setVal('cfg-snapshot-dir',  (storage.snapshot || {}).save_dir  ?? '/var/lib/bambucam/snapshots');
+    setVal('cfg-timelapse-dir', (storage.timelapse || {}).save_dir ?? '/var/lib/bambucam/timelapse');
     if (!streamEditorState.dirty && !streamEditorState.applying &&
         !streamEditorState.awaitingConfirmation) {
       setVal('sl-bitrate', r.bitrate_kbps ?? 2000);
@@ -523,6 +584,21 @@ async function saveRtspConfig() {
     toast(tr('settings.rtspSaved'));
   } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
   finally { btnLoading('btn-cfg-rtsp', false); }
+}
+
+async function saveStorageConfig() {
+  btnLoading('btn-cfg-storage', true, tr('settings.saving'));
+  try {
+    const snapshotDir  = document.getElementById('cfg-snapshot-dir').value.trim();
+    const timelapseDir = document.getElementById('cfg-timelapse-dir').value.trim();
+    const result = await api('POST', '/config', { streaming: {
+      snapshot: { save_dir: snapshotDir },
+      timelapse: { save_dir: timelapseDir },
+    } });
+    if (result.restart_required) markRestartRequired();
+    toast(tr('settings.storageSaved'));
+  } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
+  finally { btnLoading('btn-cfg-storage', false); }
 }
 
 async function saveWebConfig() {

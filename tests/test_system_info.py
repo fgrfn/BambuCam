@@ -45,3 +45,99 @@ def test_system_summary_reports_reboot_capability():
         patch("bambucam.system_info.cpu_usage", return_value=0.0),
     ):
         assert system_summary()["can_reboot"] is True
+
+
+def test_throttle_status_decodes_current_and_latched_flags(tmp_path, monkeypatch):
+    from bambucam import system_info
+
+    sysfs = tmp_path / "get_throttled"
+    sysfs.write_text("50005\n")
+    monkeypatch.setattr(system_info, "_THROTTLED_PATH", sysfs)
+
+    assert system_info.throttle_status() == {
+        "raw": "0x50005",
+        "active": ["under_voltage", "throttled"],
+        "since_boot": ["under_voltage", "throttled"],
+    }
+
+
+def test_throttle_status_falls_back_to_vcgencmd(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from bambucam import system_info
+
+    monkeypatch.setattr(system_info, "_THROTTLED_PATH", tmp_path / "missing")
+    monkeypatch.setattr(
+        system_info.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout="throttled=0x80000\n"),
+    )
+
+    status = system_info.throttle_status()
+    assert status["active"] == []
+    assert status["since_boot"] == ["soft_temp_limit"]
+
+
+def test_throttle_status_is_none_without_pi_firmware(tmp_path, monkeypatch):
+    from bambucam import system_info
+
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("vcgencmd")
+
+    monkeypatch.setattr(system_info, "_THROTTLED_PATH", tmp_path / "missing")
+    monkeypatch.setattr(system_info.subprocess, "run", missing)
+    assert system_info.throttle_status() is None
+
+
+def test_compute_module_camera_hint_only_on_compute_modules():
+    from bambucam import system_info
+
+    with patch.object(
+        system_info, "raspberry_pi_model", return_value="Raspberry Pi Compute Module 4 Rev 1.1"
+    ):
+        hint = system_info.compute_module_camera_hint()
+    assert hint["lines"] == ["camera_auto_detect=0", "dtoverlay=<sensor>"]
+    assert hint["cam0_line"] == "dtoverlay=<sensor>,cam0"
+    assert "camera_auto_detect=0" in system_info.compute_module_camera_hint_text(hint)
+
+    with patch.object(system_info, "raspberry_pi_model", return_value="Raspberry Pi 4 Model B"):
+        assert system_info.compute_module_camera_hint() is None
+
+
+def test_missing_camera_error_mentions_overlay_on_compute_module():
+    from bambucam.camera.manager import CameraManager
+
+    manager = CameraManager()
+    with (
+        patch.object(manager, "detected_cameras", return_value=[]),
+        patch(
+            "bambucam.camera.manager.compute_module_camera_hint",
+            return_value={
+                "board": "Raspberry Pi Compute Module 4",
+                "config_file": "/boot/firmware/config.txt",
+                "lines": ["camera_auto_detect=0", "dtoverlay=<sensor>"],
+                "cam0_line": "dtoverlay=<sensor>,cam0",
+                "sensors": {"ov5647": "v1"},
+            },
+        ),
+        pytest.raises(RuntimeError, match=r"dtoverlay=<sensor>,cam0"),
+    ):
+        manager.detect_and_select()
+
+
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        ("Raspberry Pi Compute Module 4 Rev 1.1", True),
+        ("Raspberry Pi 4 Model B Rev 1.5", True),
+        ("Raspberry Pi 5 Model B Rev 1.0", False),
+        ("Raspberry Pi Compute Module 5 Rev 1.0", False),
+        ("Raspberry Pi 500 Rev 1.0", False),
+        (None, False),
+    ],
+)
+def test_hardware_h264_follows_board_generation(model, expected):
+    from bambucam import system_info
+
+    with patch.object(system_info, "raspberry_pi_model", return_value=model):
+        assert system_info.has_hardware_h264() is expected

@@ -2,6 +2,7 @@
 
 import platform
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
@@ -21,6 +22,48 @@ def cpu_temperature() -> Optional[float]:
         except (OSError, ValueError):
             pass
     return None
+
+
+_THROTTLED_PATH = Path("/sys/devices/platform/soc/soc:firmware/get_throttled")
+# Firmware throttle flags (same word as `vcgencmd get_throttled`). Bits 0-3 are
+# the current state; the same flags shifted by 16 latch until the next boot.
+_THROTTLE_FLAGS = {
+    0: "under_voltage",
+    1: "freq_capped",
+    2: "throttled",
+    3: "soft_temp_limit",
+}
+
+
+def _read_throttled() -> Optional[int]:
+    try:
+        return int(_THROTTLED_PATH.read_text().strip(), 16)
+    except (OSError, ValueError):
+        pass
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=2
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.search(r"throttled=(0x[0-9a-fA-F]+)", result.stdout)
+    return int(match.group(1), 16) if match else None
+
+
+def throttle_status() -> Optional[dict]:
+    """Report undervoltage and thermal throttling, or None off Raspberry Pi firmware.
+
+    A CM4 next to a printer runs warm, and carrier boards are often fed by
+    marginal supplies; both show up as dropped frames long before anything fails.
+    """
+    raw = _read_throttled()
+    if raw is None:
+        return None
+    return {
+        "raw": f"0x{raw:x}",
+        "active": [name for bit, name in _THROTTLE_FLAGS.items() if raw & (1 << bit)],
+        "since_boot": [name for bit, name in _THROTTLE_FLAGS.items() if raw & (1 << (bit + 16))],
+    }
 
 
 def memory_info() -> dict:
@@ -101,6 +144,15 @@ def _compute_module_tier(model: str) -> Optional[int]:
     return 3  # CM4 / CM4S / CM5 and newer — BCM2711 and up, Pi 4 class or better
 
 
+def has_hardware_h264() -> bool:
+    """Raspberry Pi boards up to the Pi 4/CM4 encode H.264 in hardware; Pi 5/CM5 do not."""
+    model = raspberry_pi_model()
+    if not model or "raspberry pi" not in model.lower():
+        return False
+    m = model.lower()
+    return not any(name in m for name in ("pi 5", "compute module 5"))
+
+
 def pi_capability_tier() -> int:
     """
     Return a hardware capability tier for adaptive defaults:
@@ -126,6 +178,36 @@ def pi_capability_tier() -> int:
     return 3
 
 
+def compute_module_camera_hint() -> Optional[dict]:
+    """Return where CSI camera overlays belong on a Compute Module, else None.
+
+    Carrier boards for Compute Modules wire the CSI connectors differently, and
+    camera auto-detection frequently finds nothing there; the sensor overlay then
+    has to be named explicitly, with ",cam0" for a camera on the CAM0 port.
+    """
+    model = raspberry_pi_model()
+    if not model or "compute module" not in model.lower():
+        return None
+    firmware_config = Path("/boot/firmware/config.txt")
+    config_file = firmware_config if firmware_config.exists() else Path("/boot/config.txt")
+    return {
+        "board": model,
+        "config_file": str(config_file),
+        "lines": ["camera_auto_detect=0", "dtoverlay=<sensor>"],
+        "cam0_line": "dtoverlay=<sensor>,cam0",
+        "sensors": {"ov5647": "v1", "imx219": "v2", "imx708": "v3", "imx477": "HQ"},
+    }
+
+
+def compute_module_camera_hint_text(hint: dict) -> str:
+    sensors = ", ".join(f"{name} = {label}" for name, label in hint["sensors"].items())
+    return (
+        f"{hint['board']}: add to {hint['config_file']} and reboot: "
+        f"{'; '.join(hint['lines'])} (use {hint['cam0_line']} for the CAM0 port; "
+        f"sensor: {sensors})"
+    )
+
+
 def hardware_recommendations(tier: Optional[int] = None) -> dict:
     """Return conservative fresh-install defaults for the detected hardware tier."""
     resolved_tier = pi_capability_tier() if tier is None else int(tier)
@@ -147,6 +229,7 @@ def system_summary() -> dict:
         "os": platform.platform(),
         "python": platform.python_version(),
         "cpu_temp_c": cpu_temperature(),
+        "throttling": throttle_status(),
         "cpu_usage_pct": cpu_usage(),
         "memory": memory_info(),
         "disk": disk_info(),

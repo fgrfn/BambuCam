@@ -459,3 +459,51 @@ def test_stream_settings_reject_framerate_beyond_video_limit():
     assert "at most 30 FPS" in response.get_json()["error"]
     camera.apply_settings.assert_not_called()
     assert config.saved == 0
+
+
+def test_storage_directories_are_created_probed_and_require_restart(tmp_path):
+    config = MemoryConfig()
+    app, *_ = _app(config)
+    snapshots = tmp_path / "nvme" / "snapshots"
+
+    response = app.test_client().post(
+        "/api/v1/config",
+        json={"streaming": {"snapshot": {"save_dir": str(snapshots)}}},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["restart_reasons"] == ["snapshot"]
+    assert snapshots.is_dir() and not any(snapshots.iterdir())
+    assert config.data["streaming"]["snapshot"]["save_dir"] == str(snapshots)
+
+
+def test_unwritable_storage_directory_is_rejected_with_service_hint(tmp_path):
+    import errno
+
+    config = MemoryConfig()
+    app, *_ = _app(config)
+
+    def read_only(*args, **kwargs):
+        raise OSError(errno.EROFS, "Read-only file system")
+
+    with patch("bambucam.web.api.tempfile.NamedTemporaryFile", read_only):
+        response = app.test_client().post(
+            "/api/v1/config",
+            json={"streaming": {"timelapse": {"save_dir": str(tmp_path / "usb")}}},
+        )
+
+    assert response.status_code == 400
+    assert "/mnt and /media" in response.get_json()["error"]
+    assert config.saved == 0
+
+
+def test_relative_storage_directory_is_rejected():
+    config = MemoryConfig()
+    app, *_ = _app(config)
+
+    response = app.test_client().post(
+        "/api/v1/config", json={"streaming": {"snapshot": {"save_dir": "snapshots"}}}
+    )
+
+    assert response.status_code == 400
+    assert "absolute path" in response.get_json()["error"]
