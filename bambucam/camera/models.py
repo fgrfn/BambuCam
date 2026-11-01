@@ -41,6 +41,11 @@ class CameraModel:
     # (e.g. 90 fps @ 2592x1944 on OV5647) are never shown.
     resolution_max_framerates: dict = field(default_factory=dict)
 
+    # Optional documented video limits. None means native output sizes remain
+    # eligible; max_resolution always describes full sensor/still capability.
+    video_max_resolution: Optional[Resolution] = None
+    video_max_framerates: dict = field(default_factory=dict)
+
     # Feature flags
     has_autofocus: bool = False
     has_hdr: bool = False
@@ -92,6 +97,9 @@ CAMERA_V1 = CameraModel(
         _RES(1280, 720): 46,  # Scaled from 1296x972, not a native 720p60 mode.
         _RES(640, 480): 62,
     },
+    # Raspberry Pi Camera V1 video spec is up to 1080p30; 5 MP is still capture.
+    video_max_resolution=_RES(1920, 1080),
+    video_max_framerates={_RES(1920, 1080): 30},
     description="Original Raspberry Pi Camera Module (OV5647, 5MP)",
     libcamera_name="ov5647",
 )
@@ -106,6 +114,8 @@ CAMERA_V1_NOIR = CameraModel(
     supported_resolutions=CAMERA_V1.supported_resolutions,
     supported_framerates=CAMERA_V1.supported_framerates,
     resolution_max_framerates=CAMERA_V1.resolution_max_framerates,
+    video_max_resolution=CAMERA_V1.video_max_resolution,
+    video_max_framerates=CAMERA_V1.video_max_framerates,
     is_noir=True,
     description="Raspberry Pi Camera Module v1 without IR filter (OV5647, 5MP)",
     libcamera_name="ov5647",
