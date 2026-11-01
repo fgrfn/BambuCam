@@ -238,7 +238,12 @@ for group in video gpio i2c; do
   fi
 done
 
-install -d -m 755 "$BAMBUCAM_DIR" "$BAMBUCAM_CONFIG_DIR"
+install -d -m 755 "$BAMBUCAM_DIR"
+# Config.save() uses a temporary file beside bambucam.yaml and os.replace().
+# The service therefore needs directory write access, not just file ownership.
+# Keep the directory root-owned, private, and writable by the service group.
+# setgid preserves the bambucam group for new temporary config files.
+install -d -o root -g "$SERVICE_USER" -m 2770 "$BAMBUCAM_CONFIG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 \
   "$BAMBUCAM_DATA_DIR" "$BAMBUCAM_DATA_DIR/snapshots"
 
