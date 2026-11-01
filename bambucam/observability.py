@@ -196,6 +196,19 @@ def prometheus_payload(config, camera, mjpeg, rtsp, snapshot, updater) -> str:
         system.get("cpu_temp_c"),
         "CPU temperature",
     )
+    throttling = system.get("throttling")
+    _metric(
+        lines,
+        "bambucam_under_voltage",
+        "under_voltage" in throttling["active"] if throttling else None,
+        "Raspberry Pi firmware reports undervoltage right now",
+    )
+    _metric(
+        lines,
+        "bambucam_throttled",
+        bool(set(throttling["active"]) - {"under_voltage"}) if throttling else None,
+        "Raspberry Pi firmware caps the CPU clock or throttles right now",
+    )
     _metric(
         lines,
         "bambucam_cpu_usage_percent",

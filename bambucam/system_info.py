@@ -2,6 +2,7 @@
 
 import platform
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
@@ -21,6 +22,48 @@ def cpu_temperature() -> Optional[float]:
         except (OSError, ValueError):
             pass
     return None
+
+
+_THROTTLED_PATH = Path("/sys/devices/platform/soc/soc:firmware/get_throttled")
+# Firmware throttle flags (same word as `vcgencmd get_throttled`). Bits 0-3 are
+# the current state; the same flags shifted by 16 latch until the next boot.
+_THROTTLE_FLAGS = {
+    0: "under_voltage",
+    1: "freq_capped",
+    2: "throttled",
+    3: "soft_temp_limit",
+}
+
+
+def _read_throttled() -> Optional[int]:
+    try:
+        return int(_THROTTLED_PATH.read_text().strip(), 16)
+    except (OSError, ValueError):
+        pass
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=2
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.search(r"throttled=(0x[0-9a-fA-F]+)", result.stdout)
+    return int(match.group(1), 16) if match else None
+
+
+def throttle_status() -> Optional[dict]:
+    """Report undervoltage and thermal throttling, or None off Raspberry Pi firmware.
+
+    A CM4 next to a printer runs warm, and carrier boards are often fed by
+    marginal supplies; both show up as dropped frames long before anything fails.
+    """
+    raw = _read_throttled()
+    if raw is None:
+        return None
+    return {
+        "raw": f"0x{raw:x}",
+        "active": [name for bit, name in _THROTTLE_FLAGS.items() if raw & (1 << bit)],
+        "since_boot": [name for bit, name in _THROTTLE_FLAGS.items() if raw & (1 << (bit + 16))],
+    }
 
 
 def memory_info() -> dict:
@@ -147,6 +190,7 @@ def system_summary() -> dict:
         "os": platform.platform(),
         "python": platform.python_version(),
         "cpu_temp_c": cpu_temperature(),
+        "throttling": throttle_status(),
         "cpu_usage_pct": cpu_usage(),
         "memory": memory_info(),
         "disk": disk_info(),

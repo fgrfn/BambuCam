@@ -45,3 +45,45 @@ def test_system_summary_reports_reboot_capability():
         patch("bambucam.system_info.cpu_usage", return_value=0.0),
     ):
         assert system_summary()["can_reboot"] is True
+
+
+def test_throttle_status_decodes_current_and_latched_flags(tmp_path, monkeypatch):
+    from bambucam import system_info
+
+    sysfs = tmp_path / "get_throttled"
+    sysfs.write_text("50005\n")
+    monkeypatch.setattr(system_info, "_THROTTLED_PATH", sysfs)
+
+    assert system_info.throttle_status() == {
+        "raw": "0x50005",
+        "active": ["under_voltage", "throttled"],
+        "since_boot": ["under_voltage", "throttled"],
+    }
+
+
+def test_throttle_status_falls_back_to_vcgencmd(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from bambucam import system_info
+
+    monkeypatch.setattr(system_info, "_THROTTLED_PATH", tmp_path / "missing")
+    monkeypatch.setattr(
+        system_info.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout="throttled=0x80000\n"),
+    )
+
+    status = system_info.throttle_status()
+    assert status["active"] == []
+    assert status["since_boot"] == ["soft_temp_limit"]
+
+
+def test_throttle_status_is_none_without_pi_firmware(tmp_path, monkeypatch):
+    from bambucam import system_info
+
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("vcgencmd")
+
+    monkeypatch.setattr(system_info, "_THROTTLED_PATH", tmp_path / "missing")
+    monkeypatch.setattr(system_info.subprocess, "run", missing)
+    assert system_info.throttle_status() is None

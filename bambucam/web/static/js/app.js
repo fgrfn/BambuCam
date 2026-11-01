@@ -445,11 +445,37 @@ async function loadSystemInfo() {
       setText('sys-disk-total', s.disk.total_gb.toFixed(1) + ' GB');
     }
 
+    renderThrottling(s.throttling);
+
     setText('sys-host',   s.hostname  || '—');
     setText('sys-pi',     s.pi_model  || '—');
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
     toggleRow('system-reboot-section', !!s.can_reboot);
   } catch(e) { /* ignore */ }
+}
+
+function renderThrottling(state) {
+  toggleRow('sys-throttle-row', state != null);
+  const el = document.getElementById('sys-throttle');
+  if (!state || !el) return;
+  const labels = {
+    under_voltage: tr('system.throttle.under_voltage'),
+    freq_capped: tr('system.throttle.freq_capped'),
+    throttled: tr('system.throttle.throttled'),
+    soft_temp_limit: tr('system.throttle.soft_temp_limit'),
+  };
+  const names = flags => flags.map(flag => labels[flag] || flag).join(', ');
+  if (state.active.length) {
+    el.textContent = tr('system.throttle.now', { value: names(state.active) });
+    el.className = 'info-val crit';
+  } else if (state.since_boot.length) {
+    el.textContent = tr('system.throttle.sinceBoot', { value: names(state.since_boot) });
+    el.className = 'info-val warn';
+  } else {
+    el.textContent = tr('system.throttle.ok');
+    el.className = 'info-val';
+  }
+  el.title = state.raw;
 }
 
 // ── Network & services config ──────────────────────────────────────────────

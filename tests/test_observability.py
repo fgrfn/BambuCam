@@ -171,6 +171,7 @@ def test_prometheus_output_contains_core_metrics():
         "memory": {"available_mb": 256},
         "disk": {"free_gb": 12.5},
         "uptime_seconds": 123,
+        "throttling": {"raw": "0x50001", "active": ["under_voltage"], "since_boot": []},
     }
     with patch("bambucam.observability.system_summary", return_value=system):
         payload = prometheus_payload(
@@ -186,4 +187,6 @@ def test_prometheus_output_contains_core_metrics():
     assert "bambucam_mjpeg_clients 2" in payload
     assert "bambucam_mjpeg_fps 14.8" in payload
     assert "bambucam_cpu_temperature_celsius 42.5" in payload
+    assert "bambucam_under_voltage 1" in payload
+    assert "bambucam_throttled 0" in payload
     assert "bambucam_snapshots_total 2" in payload
