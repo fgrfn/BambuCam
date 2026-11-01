@@ -184,3 +184,19 @@ def test_noir_variant_uses_same_video_caps_as_camera_v1():
     modes = video_output_capabilities(CAMERA_V1_NOIR, detected.output_modes)
     assert "2592x1944" not in [mode["resolution"] for mode in modes]
     assert next(mode for mode in modes if mode["resolution"] == "1920x1080")["max_fps"] == 30
+
+
+def test_quality_stream_profile_uses_video_capabilities_not_5mp_stills():
+    camera = MagicMock(model=CAMERA_V1)
+    camera.status.return_value = {
+        "available_resolutions": ["2592x1944", "1920x1080", "640x480"],
+        "video_output_modes": [
+            {"resolution": "1920x1080", "max_fps": 30},
+            {"resolution": "640x480", "max_fps": 62},
+        ],
+        "video_resolution_max_framerates": {"1920x1080": 30, "640x480": 62},
+    }
+    service = CameraProfileService(None, camera, None, None)
+    quality = service.resolve("quality")
+    assert quality["resolution"] == "1920x1080"
+    assert quality["framerate"] == 15
