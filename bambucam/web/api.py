@@ -309,9 +309,7 @@ def stream_settings():
                 )
             selected_fps = int(data.get("framerate", status.get("framerate", 0)))
             if selected_fps > int(mode["max_fps"]):
-                raise ValueError(
-                    f"Video mode {selected} supports at most {mode['max_fps']} FPS"
-                )
+                raise ValueError(f"Video mode {selected} supports at most {mode['max_fps']} FPS")
 
         camera_data = {key: data[key] for key in ("resolution", "framerate") if key in data}
         config_update: dict = {}

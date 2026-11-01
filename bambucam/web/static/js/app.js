@@ -290,7 +290,10 @@ async function loadModelCapabilities(status) {
 
     const options = available.map(r => {
       const output = outputs.find(m => m.resolution === r);
-      const maximum = resolutionMaxFps[r] ?? output?.max_fps ?? output?.sensor_max_fps;
+      // Older status payloads only have sensor rates; preserve their labels.
+      const maximum = status.video_output_modes != null
+        ? (resolutionMaxFps[r] ?? output?.max_fps ?? output?.sensor_max_fps)
+        : (output?.sensor_max_fps ?? resolutionMaxFps[r]);
       const kindKeys = { native: 'camera.mode.native', scaled: 'camera.mode.scaled', model: 'camera.mode.model' };
       const kind = tr(kindKeys[output?.kind] || kindKeys.model);
       const source = output?.kind === 'scaled' ? ' ← ' + output.sensor_resolution : '';
