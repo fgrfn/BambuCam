@@ -62,6 +62,8 @@ jobs:
         run: black --check bambucam/ tests/
       - name: ShellCheck installer
         run: shellcheck scripts/install.sh
+      - name: Camera UI behavior
+        run: node tests/web_camera_modes.cjs
       - name: Compile sources
         run: python -m compileall -q bambucam tests
       - name: Build and inspect distributions

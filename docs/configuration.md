@@ -137,3 +137,39 @@ curl -X POST http://localhost:8080/api/v1/camera/settings \
 
 Runtime changes are persisted atomically, so an interrupted write cannot leave a partially written YAML file.
 Applying a camera profile updates resolution, frame rate, JPEG quality, RTSP bitrate, and the image controls defined by that profile. Any later manual camera or stream change marks the active profile as `custom`.
+
+
+### CSI sensor modes and output sizes
+
+At startup BambuCam reads native sensor modes and decimal maximum frame rates
+from `rpicam-hello --list-cameras` (or `libcamera-hello`). Camera status and
+detection expose `native_sensor_modes`, `output_modes`, `mode_source`, and
+effective integer `resolution_max_framerates`. The UI uses these active camera
+capabilities rather than the static model list. FPS values are floored, never
+rounded above a mode's maximum; the application currently accepts up to 120 FPS.
+
+A native mode is a sensor readout size. A scaled output is an ISP result, not a
+new sensor mode: BambuCam selects the smallest native mode covering both output
+dimensions and pins its raw size/format when configuring Picamera2. It does not
+use a smaller, faster mode and upscale it. Scaling/cropping can change the field
+of view; advertised FPS are sensor ceilings, not guaranteed stream performance.
+
+Verified OV5647/CM4 modes with the camera stopped:
+
+| Native sensor mode | Sensor maximum | Configurable maximum |
+| --- | ---: | ---: |
+| 2592x1944 | 15.63 FPS | 15 FPS |
+| 1920x1080 | 32.81 FPS | 32 FPS |
+| 1296x972 | 46.34 FPS | 46 FPS |
+| 640x480 | 62.50 FPS | 62 FPS |
+
+1280x720 is a scaled output sourced from 1296x972 (maximum 46 FPS), not a
+native 720p60 mode. Main/snapshot resolution is independent of the smaller H.264
+encode stream; sensor capabilities do not remove encoder or hardware limits.
+
+While streaming, `GET /api/v1/camera/detect` returns the startup inventory
+without re-opening or stopping the camera. Restart the application to discover
+hardware changes. Invalid wrapped crop rectangles (such as 65535x65535) cause
+that probe's mode data to be discarded. OV5647 then uses the verified fallback
+above; other sensors use labelled model estimates. Fallback data is explicitly
+marked `model_fallback`, not presented as a fresh measurement.

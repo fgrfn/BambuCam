@@ -353,8 +353,6 @@ def stream_settings():
 
 @api_bp.get("/camera/detect")
 def camera_detect():
-    from bambucam.camera.detector import detect_cameras
-
     return jsonify(
         [
             {
@@ -365,8 +363,11 @@ def camera_detect():
                 "model_id": camera.model.id,
                 "sensor": camera.model.sensor,
                 "resolutions": [str(item) for item in camera.detected_resolutions],
+                "native_sensor_modes": [mode.as_dict() for mode in camera.sensor_modes],
+                "output_modes": camera.output_modes,
+                "mode_source": camera.mode_source,
             }
-            for camera in detect_cameras()
+            for camera in _camera().detected_cameras()
         ]
     )
 

@@ -10,6 +10,7 @@ from typing import Optional
 
 from bambucam.camera.backends.base import CameraBackend
 from bambucam.camera.models import CameraModel, Resolution
+from bambucam.camera.modes import SensorMode, select_sensor_mode
 
 log = logging.getLogger(__name__)
 
@@ -149,9 +150,11 @@ class Picamera2Backend(CameraBackend):
         camera_index: int = 0,
         enable_lores: bool = True,
         encode_size: Optional[tuple[int, int]] = None,
+        sensor_modes: Optional[list[SensorMode]] = None,
     ):
         super().__init__(model, device)
         self._camera_index = camera_index
+        self._sensor_modes = list(sensor_modes or [])
         self._enable_lores = enable_lores  # False → skip lores stream (no RTSP H264 possible)
         self._requested_encode_size = encode_size
         self._encode_size: Optional[tuple[int, int]] = None
@@ -252,11 +255,21 @@ class Picamera2Backend(CameraBackend):
             lores_stream = {"size": self._encode_size, "format": "YUV420"}
             log.info("H264 encode stream: %dx%d", *self._encode_size)
 
+        mode = select_sensor_mode(self._sensor_modes, res)
+        mode_config = {}
+        if mode is not None:
+            # Pin the source used to calculate output FPS, including scaled modes.
+            # raw is supported on both Bullseye and Bookworm Picamera2.
+            raw = {"size": mode.resolution.as_tuple()}
+            if mode.format:
+                raw["format"] = mode.format
+            mode_config["raw"] = raw
         config = self._picam.create_video_configuration(
             main={"size": res.as_tuple(), "format": "RGB888"},
             lores=lores_stream,
             controls={"FrameRate": float(self._framerate)},
             transform=Transform(hflip=self._hflip, vflip=self._vflip),
+            **mode_config,
         )
         self._picam.configure(config)
 

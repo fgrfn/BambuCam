@@ -103,9 +103,9 @@ class CameraProfileService:
 
         resolutions = self._available_resolutions()
         resolution = self._select_resolution(profile, resolutions)
-        maximum_fps = model.resolution_max_framerates.get(
-            resolution,
-            model.max_framerate,
+        limits = self._camera.status().get("resolution_max_framerates") or {}
+        maximum_fps = limits.get(
+            str(resolution), model.resolution_max_framerates.get(resolution, model.max_framerate)
         )
         framerate = max(1, min(int(profile.target_fps), int(maximum_fps)))
         return {

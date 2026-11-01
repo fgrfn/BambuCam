@@ -12,6 +12,8 @@ import logging
 import sys
 from pathlib import Path
 
+from bambucam.camera.models import Resolution
+
 
 def _setup_logging(level: str) -> None:
     logging.basicConfig(
@@ -48,9 +50,9 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _best_resolution_and_fps(model, tier_fps_cap=None):
+def _best_resolution_and_fps(model, tier_fps_cap=None, max_framerates=None):
     """Pick the model mode with the highest width × height × FPS score."""
-    candidates = model.resolution_max_framerates
+    candidates = max_framerates if max_framerates is not None else model.resolution_max_framerates
     if not candidates:
         fps = model.max_framerate
         if tier_fps_cap is not None:
@@ -70,11 +72,11 @@ def _is_auto(value) -> bool:
     return value is None or (isinstance(value, str) and value.strip().lower() in {"", "auto"})
 
 
-def _resolve_camera_mode(model, camera_config: dict, tier_fps_cap=None, resolutions=None):
+def _resolve_camera_mode(
+    model, camera_config: dict, tier_fps_cap=None, resolutions=None, max_framerates=None
+):
     """Resolve auto/explicit camera mode and enforce model and hardware limits."""
-    from bambucam.camera.models import Resolution
-
-    smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap)
+    smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap, max_framerates)
     available = list(resolutions or model.supported_resolutions)
     configured_resolution = camera_config.get("resolution", "auto")
 
@@ -91,13 +93,14 @@ def _resolve_camera_mode(model, camera_config: dict, tier_fps_cap=None, resoluti
         allowed = ", ".join(str(item) for item in available)
         raise ValueError(f"Resolution {resolution} is not supported. Available: {allowed}")
 
-    max_fps = model.resolution_max_framerates.get(resolution, model.max_framerate)
+    limits = max_framerates if max_framerates is not None else model.resolution_max_framerates
+    max_fps = int(limits.get(resolution, model.max_framerate))
     if tier_fps_cap is not None:
         max_fps = min(max_fps, int(tier_fps_cap))
 
     configured_fps = camera_config.get("framerate", "auto")
     if _is_auto(configured_fps):
-        fps = smart_fps if resolution == smart_resolution else max_fps
+        fps = min(smart_fps, max_fps) if resolution == smart_resolution else max_fps
     else:
         try:
             fps = int(configured_fps)
@@ -311,6 +314,7 @@ def main() -> None:
             camera_config,
             hardware_fps_cap,
             detected.detected_resolutions,
+            {Resolution.from_string(m["resolution"]): m["max_fps"] for m in detected.output_modes},
         )
         log.info("Selected camera mode: %s @ %d FPS", selected_resolution, selected_fps)
     except (RuntimeError, ValueError) as exc:
