@@ -353,9 +353,7 @@ class CameraManager:
             "video_resolution_max_framerates": {
                 mode["resolution"]: mode["max_fps"] for mode in video_modes
             },
-            "snapshot_max_resolution": (
-                str(self.model.max_resolution) if self.model else None
-            ),
+            "snapshot_max_resolution": str(self.model.max_resolution) if self.model else None,
             "mode_source": self._detected.mode_source if self._detected else None,
             "resolution_max_framerates": (
                 {mode["resolution"]: mode["max_fps"] for mode in self._detected.output_modes}
