@@ -526,6 +526,22 @@
 
       <div class="divider"></div>
 
+      <div class="section-label" data-i18n="settings.storage">Storage</div>
+      <div class="hint" data-i18n="settings.storageHint">Directories for saved snapshots and timelapses. External drives must be mounted below /mnt or /media and be writable by the bambucam user.</div>
+      <div class="field">
+        <div class="field-label"><span data-i18n="settings.snapshotDir">Snapshot directory</span></div>
+        <input type="text" id="cfg-snapshot-dir" class="text-input" value="/var/lib/bambucam/snapshots" />
+      </div>
+      <div class="field">
+        <div class="field-label"><span data-i18n="settings.timelapseDir">Timelapse directory</span></div>
+        <input type="text" id="cfg-timelapse-dir" class="text-input" value="/var/lib/bambucam/timelapse" />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-cfg-storage" onclick="saveStorageConfig()" data-i18n="common.save">Save</button>
+      </div>
+
+      <div class="divider"></div>
+
       <div class="section-label" data-i18n="settings.webUi">Web interface</div>
       <div class="field">
         <div class="field-label"><span>Port</span></div>

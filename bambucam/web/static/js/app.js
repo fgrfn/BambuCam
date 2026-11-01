@@ -519,6 +519,9 @@ async function loadNetworkConfig() {
     setVal('cfg-rtsp-name',  r.stream_name ?? 'cam');
     setChk('cfg-hls-enabled', r.enable_hls ?? true);
     setVal('cfg-hls-port',   r.hls_port    ?? 8888);
+    const storage = cfg.streaming || {};
+    setVal('cfg-snapshot-dir',  (storage.snapshot || {}).save_dir  ?? '/var/lib/bambucam/snapshots');
+    setVal('cfg-timelapse-dir', (storage.timelapse || {}).save_dir ?? '/var/lib/bambucam/timelapse');
     if (!streamEditorState.dirty && !streamEditorState.applying &&
         !streamEditorState.awaitingConfirmation) {
       setVal('sl-bitrate', r.bitrate_kbps ?? 2000);
@@ -580,6 +583,21 @@ async function saveRtspConfig() {
     toast(tr('settings.rtspSaved'));
   } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
   finally { btnLoading('btn-cfg-rtsp', false); }
+}
+
+async function saveStorageConfig() {
+  btnLoading('btn-cfg-storage', true, tr('settings.saving'));
+  try {
+    const snapshotDir  = document.getElementById('cfg-snapshot-dir').value.trim();
+    const timelapseDir = document.getElementById('cfg-timelapse-dir').value.trim();
+    const result = await api('POST', '/config', { streaming: {
+      snapshot: { save_dir: snapshotDir },
+      timelapse: { save_dir: timelapseDir },
+    } });
+    if (result.restart_required) markRestartRequired();
+    toast(tr('settings.storageSaved'));
+  } catch(e) { toast(tr('common.error', { message: e.message }), 'error'); }
+  finally { btnLoading('btn-cfg-storage', false); }
 }
 
 async function saveWebConfig() {

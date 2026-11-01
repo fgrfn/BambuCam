@@ -39,6 +39,9 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ReadWritePaths=/var/lib/bambucam /etc/bambucam /opt/bambucam
+# Optional external storage for snapshots and timelapses (USB stick, NVMe).
+# "-" skips paths that do not exist; normal file permissions still apply.
+ReadWritePaths=-/mnt -/media
 
 Environment="PYTHONUNBUFFERED=1"
 # ProtectHome hides /home from the service. Keep libraries and optional

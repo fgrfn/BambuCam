@@ -97,6 +97,18 @@ system:
 See [RTSP bitrate limits](rtsp-bitrate.md) for hardware and encode-size ranges,
 validation, migration and API behavior.
 
+## Storage locations
+
+`streaming.snapshot.save_dir` and `streaming.timelapse.save_dir` can be changed
+in the WebUI (Settings → Storage) and take effect after a restart. The systemd
+unit only lets the service write below `/var/lib/bambucam`, `/mnt` and `/media`,
+so mount an external drive (USB stick, NVMe) below `/mnt` or `/media` and make
+the directory writable by the `bambucam` user, for example
+`sudo install -d -o bambucam -g bambucam /mnt/usb/bambucam`. The WebUI creates
+the directory and test-writes a file before saving, and rejects paths the
+service cannot write. Installations made before this option existed need the
+installer run once more to pick up the updated unit.
+
 ## Automatic camera modes
 
 With `resolution: auto` and `framerate: auto`, BambuCam selects a mode from the detected camera capabilities. For generic USB webcams, the largest mode actually reported by V4L2 is preferred instead of assuming a Raspberry Pi camera mode.
