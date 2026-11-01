@@ -181,18 +181,22 @@
     /* ── Main layout ───────────────────────────────────────────────────── */
     main {
       display: grid;
-      grid-template-columns: 280px 1fr 320px;
-      gap: 1rem;
-      padding: 1rem 1.25rem;
+      /* Keep both side panels near the viewport edges; the preview gets all spare space. */
+      grid-template-columns: clamp(260px, 17vw, 360px) minmax(0, 1fr) clamp(300px, 19vw, 380px);
+      gap: clamp(0.75rem, 1vw, 1.25rem);
+      padding: clamp(0.65rem, 1vw, 1.25rem);
       flex: 1;
       align-items: start;
-      max-width: 1600px;
       width: 100%;
-      margin: 0 auto;
+      min-width: 0;
+      max-width: none;
+      margin: 0;
+      box-sizing: border-box;
     }
 
     /* ── Info panel (left) ─────────────────────────────────────────────── */
     .info-panel {
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 0.6rem;
@@ -200,12 +204,15 @@
 
     /* ── Stream panel (centre) ─────────────────────────────────────────── */
     .stream-panel {
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
     }
 
     .stream-view {
+      min-width: 0;
+      width: 100%;
       background: #000;
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
@@ -354,6 +361,7 @@
 
     /* ── Sidebar ───────────────────────────────────────────────────────── */
     .sidebar {
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 0.6rem;
@@ -874,20 +882,24 @@
       flex-shrink: 0;
     }
 
-    /* ── Tablet (≤900px) ──────────────────────────────────────────────── */
-    @media (max-width: 900px) {
+    /* Tablet/windowed: full-width preview with the two panels side by side. */
+    @media (max-width: 1180px) {
       main {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         padding: 0.75rem;
         gap: 0.75rem;
       }
-      .metrics-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-      /* On tablet, show left panel below stream — reorder visually */
-      .info-panel { order: 3; }
-      .stream-panel { order: 1; }
-      .sidebar { order: 2; }
+      .stream-panel { grid-column: 1 / -1; grid-row: 1; }
+      .info-panel { grid-column: 1; grid-row: 2; }
+      .sidebar { grid-column: 2; grid-row: 2; }
+    }
+
+    /* Narrow windows: keep the camera first, then controls and diagnostics. */
+    @media (max-width: 720px) {
+      main { grid-template-columns: minmax(0, 1fr); }
+      .stream-panel { grid-column: 1; grid-row: 1; }
+      .sidebar { grid-column: 1; grid-row: 2; }
+      .info-panel { grid-column: 1; grid-row: 3; }
     }
 
     /* ── Phone (≤600px) ───────────────────────────────────────────────── */
