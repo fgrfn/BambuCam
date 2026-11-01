@@ -90,9 +90,7 @@ def video_output_capabilities(model, output_modes: list[dict]) -> list[dict]:
     for item in output_modes:
         resolution = Resolution.from_string(item["resolution"])
         cap = model.video_max_resolution
-        if cap is not None and (
-            resolution.width > cap.width or resolution.height > cap.height
-        ):
+        if cap is not None and (resolution.width > cap.width or resolution.height > cap.height):
             continue
         fps = min(
             int(item["max_fps"]),
