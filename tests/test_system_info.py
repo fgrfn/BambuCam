@@ -123,3 +123,21 @@ def test_missing_camera_error_mentions_overlay_on_compute_module():
         pytest.raises(RuntimeError, match=r"dtoverlay=<sensor>,cam0"),
     ):
         manager.detect_and_select()
+
+
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        ("Raspberry Pi Compute Module 4 Rev 1.1", True),
+        ("Raspberry Pi 4 Model B Rev 1.5", True),
+        ("Raspberry Pi 5 Model B Rev 1.0", False),
+        ("Raspberry Pi Compute Module 5 Rev 1.0", False),
+        ("Raspberry Pi 500 Rev 1.0", False),
+        (None, False),
+    ],
+)
+def test_hardware_h264_follows_board_generation(model, expected):
+    from bambucam import system_info
+
+    with patch.object(system_info, "raspberry_pi_model", return_value=model):
+        assert system_info.has_hardware_h264() is expected

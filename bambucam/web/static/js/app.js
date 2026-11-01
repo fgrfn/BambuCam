@@ -311,6 +311,7 @@ async function loadModelCapabilities(status) {
         parts.push(tr('camera.mode.model'));
       }
       parts.push(tr('camera.maxFps', { value: maximum }));
+      if (output?.limited_by === 'h264_encoder') parts.push(tr('camera.mode.encoderLimit'));
       if (output?.source === 'model_fallback') parts.push(tr('camera.mode.fallback'));
       return { value: r, label: r.replace('x', '×') + ' (' + parts.join(', ') + ')' };
     });

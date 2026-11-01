@@ -144,6 +144,15 @@ def _compute_module_tier(model: str) -> Optional[int]:
     return 3  # CM4 / CM4S / CM5 and newer — BCM2711 and up, Pi 4 class or better
 
 
+def has_hardware_h264() -> bool:
+    """Raspberry Pi boards up to the Pi 4/CM4 encode H.264 in hardware; Pi 5/CM5 do not."""
+    model = raspberry_pi_model()
+    if not model or "raspberry pi" not in model.lower():
+        return False
+    m = model.lower()
+    return not any(name in m for name in ("pi 5", "compute module 5"))
+
+
 def pi_capability_tier() -> int:
     """
     Return a hardware capability tier for adaptive defaults:

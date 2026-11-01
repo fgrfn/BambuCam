@@ -1,5 +1,6 @@
 """Shared, practical H.264 target-bitrate policy (kbps, not a wire-rate guarantee)."""
 
+from math import ceil
 from typing import Optional
 
 from bambucam.camera.models import Resolution
@@ -11,6 +12,28 @@ RTSP_BITRATE_CEILING_KBPS = {1: 3000, 2: 8000, 3: 20000}
 RTSP_BITRATE_CEILING_FALLBACK_KBPS = 20000
 RTSP_ENCODE_CEILING = {1: (640, 360), 2: (1280, 720), 3: (1920, 1080)}
 RTSP_ENCODE_CEILING_FALLBACK = (1280, 720)
+
+
+# The VideoCore H.264 encoder (Pi 4/CM4 and older) is specified for 1080p30, the
+# macroblock rate of H.264 level 4.0. Faster streams make it drop frames.
+HW_H264_MAX_MACROBLOCKS_PER_SECOND = 245760
+
+
+def hardware_h264_fps_limit(size: tuple[int, int]) -> int:
+    macroblocks = ceil(size[0] / 16) * ceil(size[1] / 16)
+    return max(1, HW_H264_MAX_MACROBLOCKS_PER_SECOND // macroblocks)
+
+
+def limit_to_hardware_h264(video_modes: list[dict], tier: int) -> list[dict]:
+    """Cap each video mode's frame rate at what the hardware encoder sustains."""
+    result = []
+    for item in video_modes:
+        size = encode_size(Resolution.from_string(item["resolution"]), tier)
+        limit = hardware_h264_fps_limit(size)
+        if int(item["max_fps"]) > limit:
+            item = {**item, "max_fps": limit, "limited_by": "h264_encoder"}
+        result.append(item)
+    return result
 
 
 def encode_size(resolution: Resolution, tier: int) -> tuple[int, int]:
