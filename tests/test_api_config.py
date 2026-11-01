@@ -418,3 +418,44 @@ def test_duplicate_system_reboot_request_is_rejected():
         )
 
     assert response.status_code == 409
+
+
+def test_stream_settings_reject_photo_only_mode_without_mutating_camera():
+    config = MemoryConfig()
+    app, camera, mjpeg, rtsp = _app(config)
+    camera.status.return_value = {
+        "resolution": "1920x1080",
+        "framerate": 30,
+        "video_output_modes": [
+            {"resolution": "1920x1080", "max_fps": 30},
+            {"resolution": "1280x720", "max_fps": 46},
+        ],
+    }
+    response = app.test_client().post(
+        "/api/v1/stream/settings",
+        json={"resolution": "2592x1944", "framerate": 15, "bitrate_kbps": 2000},
+    )
+    assert response.status_code == 400
+    assert "not a supported video mode" in response.get_json()["error"]
+    camera.apply_settings.assert_not_called()
+    rtsp.update_settings.assert_not_called()
+    mjpeg.update_fps.assert_not_called()
+    assert config.saved == 0
+
+
+def test_stream_settings_reject_framerate_beyond_video_limit():
+    config = MemoryConfig()
+    app, camera, _mjpeg, _rtsp = _app(config)
+    camera.status.return_value = {
+        "resolution": "1920x1080",
+        "framerate": 30,
+        "video_output_modes": [{"resolution": "1920x1080", "max_fps": 30}],
+    }
+    response = app.test_client().post(
+        "/api/v1/stream/settings",
+        json={"resolution": "1920x1080", "framerate": 32},
+    )
+    assert response.status_code == 400
+    assert "at most 30 FPS" in response.get_json()["error"]
+    camera.apply_settings.assert_not_called()
+    assert config.saved == 0

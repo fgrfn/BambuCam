@@ -213,6 +213,9 @@ def camera_models():
                 "sensor": model.sensor,
                 "megapixels": model.megapixels,
                 "max_resolution": str(model.max_resolution),
+                "video_max_resolution": (
+                    str(model.video_max_resolution) if model.video_max_resolution else None
+                ),
                 "max_framerate": model.max_framerate,
                 "supported_resolutions": [str(item) for item in model.supported_resolutions],
                 "supported_framerates": model.supported_framerates,
@@ -292,6 +295,23 @@ def stream_settings():
             raise ValueError(f"Unknown stream setting(s): {', '.join(sorted(unknown))}")
         if not data:
             raise ValueError("At least one stream setting is required")
+
+        # This endpoint configures video streaming, not still capture. A CSI
+        # sensor's full-resolution modes can exceed its documented video modes.
+        status = _camera().status()
+        video_modes = status.get("video_output_modes")
+        if video_modes is not None and {"resolution", "framerate"} & data.keys():
+            selected = str(data.get("resolution") or status.get("resolution") or "")
+            mode = next((item for item in video_modes if item["resolution"] == selected), None)
+            if mode is None:
+                raise ValueError(
+                    f"Resolution {selected} is not a supported video mode for this camera"
+                )
+            selected_fps = int(data.get("framerate", status.get("framerate", 0)))
+            if selected_fps > int(mode["max_fps"]):
+                raise ValueError(
+                    f"Video mode {selected} supports at most {mode['max_fps']} FPS"
+                )
 
         camera_data = {key: data[key] for key in ("resolution", "framerate") if key in data}
         config_update: dict = {}

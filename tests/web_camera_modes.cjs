@@ -43,5 +43,24 @@ vm.runInContext('var resolutionMaxFps = {};\n' +
   elements['sel-resolution'].onchange();
   assert(elements['sel-framerate'].options.some(o => o.value === 46));
   assert(elements['sel-framerate'].options.every(o => o.value <= 46));
+
+  // Camera state can still expose full-resolution still modes, while the
+  // stream editor must show only the documented video-safe resolutions.
+  context.streamEditorState.dirty = false;
+  await context.loadModelCapabilities({
+    ...status,
+    video_output_modes: [
+      {resolution: '1920x1080', kind: 'native', sensor_max_fps: 32.81, max_fps: 30},
+      {resolution: '1280x720', kind: 'scaled', sensor_resolution: '1296x972',
+       sensor_max_fps: 46.34, max_fps: 46},
+    ],
+    video_resolution_max_framerates: {'1920x1080': 30, '1280x720': 46},
+  });
+  assert.equal(elements['sel-resolution'].options.length, 2);
+  assert.equal(elements['sel-resolution'].value, '1920x1080');
+  assert(!elements['sel-resolution'].options.some(o => o.value === '2592x1944'));
+  assert.match(elements['sel-resolution'].options[0].label, /30/);
+  assert(!elements['sel-framerate'].options.some(o => o.value > 30));
+
   console.log('Camera UI behavior passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

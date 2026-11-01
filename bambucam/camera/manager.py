@@ -9,6 +9,7 @@ from typing import Optional
 from bambucam.camera.backends.base import CameraBackend
 from bambucam.camera.detector import DetectedCamera, detect_cameras
 from bambucam.camera.models import CameraModel, Resolution
+from bambucam.camera.modes import video_output_capabilities
 
 log = logging.getLogger(__name__)
 
@@ -325,6 +326,11 @@ class CameraManager:
         return list(self._cameras)
 
     def status(self) -> dict:
+        video_modes = (
+            video_output_capabilities(self._detected.model, self._detected.output_modes)
+            if self._detected
+            else []
+        )
         return {
             "running": self.is_running,
             "model": self.model.name if self.model else None,
@@ -342,6 +348,12 @@ class CameraManager:
                 [mode.as_dict() for mode in self._detected.sensor_modes] if self._detected else []
             ),
             "output_modes": self._detected.output_modes if self._detected else [],
+            # Stream-safe choices are independent of full-resolution still modes.
+            "video_output_modes": video_modes,
+            "video_resolution_max_framerates": {
+                mode["resolution"]: mode["max_fps"] for mode in video_modes
+            },
+            "snapshot_max_resolution": str(self.model.max_resolution) if self.model else None,
             "mode_source": self._detected.mode_source if self._detected else None,
             "resolution_max_framerates": (
                 {mode["resolution"]: mode["max_fps"] for mode in self._detected.output_modes}

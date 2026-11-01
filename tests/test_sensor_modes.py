@@ -109,6 +109,10 @@ def test_running_detection_api_and_status_use_startup_snapshot():
     probe.assert_not_called()
     assert data[0]["mode_source"] == "detected"
     assert status["resolution_max_framerates"]["2592x1944"] == 15
+    assert status["snapshot_max_resolution"] == "2592x1944"
+    assert "2592x1944" not in status["video_resolution_max_framerates"]
+    assert status["video_resolution_max_framerates"]["1920x1080"] == 30
+    assert status["video_resolution_max_framerates"]["1280x720"] == 46
     assert status["native_sensor_modes"][0]["max_fps"] == 62.5
 
 
@@ -147,3 +151,36 @@ def test_scaled_backend_configuration_pins_same_native_source_as_fps_limit():
     assert config["main"]["size"] == (1280, 720)
     assert config["raw"] == {"size": (1296, 972), "format": "SGBRG10_CSI2P"}
     assert config["controls"]["FrameRate"] == 46.0
+
+
+def test_auto_start_prefers_1080p30_video_but_explicit_still_mode_remains_available():
+    detected = _parse_libcamera_output(OV5647)[0]
+    limits = {
+        Resolution.from_string(mode["resolution"]): mode["max_fps"]
+        for mode in detected.output_modes
+    }
+    auto = _resolve_camera_mode(
+        detected.model,
+        {"resolution": "auto", "framerate": "auto"},
+        resolutions=detected.detected_resolutions,
+        max_framerates=limits,
+    )
+    assert auto == (Resolution(1920, 1080), 30)
+
+    still = _resolve_camera_mode(
+        detected.model,
+        {"resolution": "2592x1944", "framerate": "auto"},
+        resolutions=detected.detected_resolutions,
+        max_framerates=limits,
+    )
+    assert still == (Resolution(2592, 1944), 15)
+
+
+def test_noir_variant_uses_same_video_caps_as_camera_v1():
+    from bambucam.camera.models import CAMERA_V1_NOIR
+    from bambucam.camera.modes import video_output_capabilities
+
+    detected = _parse_libcamera_output(OV5647)[0]
+    modes = video_output_capabilities(CAMERA_V1_NOIR, detected.output_modes)
+    assert "2592x1944" not in [mode["resolution"] for mode in modes]
+    assert next(mode for mode in modes if mode["resolution"] == "1920x1080")["max_fps"] == 30
