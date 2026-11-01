@@ -5,6 +5,21 @@ let resolutionMaxFps = {};  // populated on load from camera model data
 let bitratePolicy = null;
 let bitrateLimitsByResolution = {};
 
+const streamEditorState = {
+  dirty: false,
+  applying: false,
+  awaitingConfirmation: null,
+  modelKey: null,
+  requestSequence: 0,
+  revision: 0,
+};
+
+// Polling may update live status, but must not overwrite unsubmitted edits.
+function markStreamSettingsDirty() {
+  streamEditorState.dirty = true;
+  streamEditorState.revision += 1;
+}
+
 // Bounds are supplied by the backend for the actual encode stream.
 function updateBitrateLimits() {
   const slider = document.getElementById('sl-bitrate');
@@ -169,6 +184,7 @@ async function init() {
     loadSnapshotList(),
   ]);
   loadInitialUpdateStatus();
+  document.getElementById('sl-bitrate')?.addEventListener('input', markStreamSettingsDirty);
 
   setInterval(loadCameraStatus, 5000);
   setInterval(loadSystemInfo, 10000);
@@ -218,43 +234,109 @@ async function loadCameraStatus() {
 
 async function loadModelCapabilities(status) {
   if (!status.model) return;
+  const requestSequence = ++streamEditorState.requestSequence;
   try {
     const models = await api('GET', '/camera/models');
+    // Overlapping status polls can complete out of order.
+    if (requestSequence !== streamEditorState.requestSequence) return;
     const model = models.find(m => m.name === status.model);
     if (!model) return;
 
-    const currentRes = status.resolution || '';
-    const currentFps = status.framerate || 15;
     const resSel = document.getElementById('sel-resolution');
     const fpsSel = document.getElementById('sel-framerate');
-
-    const outputs = status.output_modes || [];
-    const available = outputs.length ? outputs.map(m => m.resolution) : model.supported_resolutions;
-    resolutionMaxFps = status.resolution_max_framerates || model.resolution_max_framerates || {};
-
-    function buildFpsOptions(res, selectedFps) {
-      const maxFps = Math.floor(resolutionMaxFps[res] ?? model.max_framerate);
-      const values = [...new Set([...model.supported_framerates, maxFps, selectedFps])]
-        .filter(f => Number.isInteger(f) && f >= 1 && f <= maxFps).sort((a, b) => b - a);
-      const selected = values.includes(selectedFps) ? selectedFps : values[0];
-      fpsSel.replaceChildren(...values.map(f => new Option(f + ' fps', f, false, f === selected)));
+    const modelKey = [status.backend, status.device, status.model].join('|');
+    const cameraChanged = streamEditorState.modelKey !== modelKey;
+    if (cameraChanged) {
+      // A different physical camera cannot inherit the previous camera's draft.
+      streamEditorState.modelKey = modelKey;
+      streamEditorState.dirty = false;
+      streamEditorState.awaitingConfirmation = null;
     }
 
-    resSel.replaceChildren(...available.map(r => {
+    const pending = streamEditorState.awaitingConfirmation;
+    if (pending && pending.resolution === status.resolution &&
+        pending.framerate === Number(status.framerate)) {
+      streamEditorState.awaitingConfirmation = null;
+      streamEditorState.dirty = false;
+    }
+
+    const outputs = status.output_modes || [];
+    const available = [...new Set(
+      outputs.length ? outputs.map(m => m.resolution) : model.supported_resolutions
+    )];
+    if (!available.length) return;
+    resolutionMaxFps = status.resolution_max_framerates || model.resolution_max_framerates || {};
+
+    const preserveDraft = !cameraChanged && (
+      streamEditorState.dirty || streamEditorState.applying ||
+      !!streamEditorState.awaitingConfirmation
+    );
+    const preferredResolution = preserveDraft ? resSel.value : status.resolution;
+    const selectedResolution = available.includes(preferredResolution)
+      ? preferredResolution
+      : (available.includes(status.resolution) ? status.resolution : available[0]);
+    if (preserveDraft && selectedResolution !== preferredResolution) {
+      // A previously selected mode has disappeared from the new capability list.
+      streamEditorState.dirty = false;
+      streamEditorState.awaitingConfirmation = null;
+    }
+
+    const options = available.map(r => {
       const output = outputs.find(m => m.resolution === r);
       const maximum = output?.sensor_max_fps ?? resolutionMaxFps[r];
       const kindKeys = { native: 'camera.mode.native', scaled: 'camera.mode.scaled', model: 'camera.mode.model' };
       const kind = tr(kindKeys[output?.kind] || kindKeys.model);
       const source = output?.kind === 'scaled' ? ' ← ' + output.sensor_resolution : '';
       const fallback = output?.source === 'model_fallback' ? '; ' + tr('camera.mode.fallback') : '';
-      const label = r + ' (' + kind + source + '; ' +
-        tr('camera.maxFps', { value: maximum }) + fallback + ')';
-      return new Option(label, r, false, r === currentRes);
-    }));
+      return { value: r, label: r + ' (' + kind + source + '; ' +
+        tr('camera.maxFps', { value: maximum }) + fallback + ')' };
+    });
 
-    buildFpsOptions(resSel.value, currentFps);
-    resSel.onchange = () => buildFpsOptions(resSel.value, Number(fpsSel.value));
-  } catch(e) { /* ignore */ }
+    // Do not replace focused select elements on every polling tick.
+    const modesChanged = resSel.options.length !== options.length ||
+      options.some((option, index) => {
+        const existing = resSel.options[index];
+        return String(existing.value) !== option.value ||
+          (existing.text || existing.label) !== option.label;
+      });
+    if (modesChanged) {
+      resSel.replaceChildren(...options.map(o =>
+        new Option(o.label, o.value, false, o.value === selectedResolution)
+      ));
+    }
+    if (resSel.value !== selectedResolution) resSel.value = selectedResolution;
+
+    function buildFpsOptions(res, preferredFps) {
+      const maximum = Math.max(1, Math.floor(Number(
+        resolutionMaxFps[res] ?? model.max_framerate
+      ) || 30));
+      const values = [...new Set([...model.supported_framerates, maximum, preferredFps]
+        .map(Number))]
+        .filter(f => Number.isInteger(f) && f >= 1 && f <= maximum)
+        .sort((a, b) => b - a);
+      const chosen = values.includes(preferredFps)
+        ? preferredFps : (values.find(f => f <= preferredFps) ?? values[values.length - 1]);
+      const changed = fpsSel.options.length !== values.length ||
+        values.some((fps, index) => String(fpsSel.options[index].value) !== String(fps));
+      if (changed) {
+        fpsSel.replaceChildren(...values.map(f =>
+          new Option(f + ' fps', f, false, f === chosen)
+        ));
+      }
+      if (fpsSel.value !== String(chosen)) fpsSel.value = String(chosen);
+    }
+
+    const preferredFps = preserveDraft ? Number(fpsSel.value) :
+      Number(status.framerate || fpsSel.value || 15);
+    buildFpsOptions(selectedResolution, preferredFps);
+
+    resSel.onchange = () => {
+      markStreamSettingsDirty();
+      buildFpsOptions(resSel.value, Number(fpsSel.value));
+      if (typeof updateBitrateLimits === 'function') updateBitrateLimits();
+    };
+    fpsSel.onchange = markStreamSettingsDirty;
+  } catch(e) { /* keep the current draft if camera capabilities are unavailable */ }
 }
 
 // ── Stream status ──────────────────────────────────────────────────────────
@@ -370,8 +452,11 @@ async function loadNetworkConfig() {
     setVal('cfg-rtsp-name',  r.stream_name ?? 'cam');
     setChk('cfg-hls-enabled', r.enable_hls ?? true);
     setVal('cfg-hls-port',   r.hls_port    ?? 8888);
-    setVal('sl-bitrate',     r.bitrate_kbps ?? 2000);
-    setText('val-bitrate',   r.bitrate_kbps ?? 2000);
+    if (!streamEditorState.dirty && !streamEditorState.applying &&
+        !streamEditorState.awaitingConfirmation) {
+      setVal('sl-bitrate', r.bitrate_kbps ?? 2000);
+      setText('val-bitrate', r.bitrate_kbps ?? 2000);
+    }
     updateBitrateLimits();
 
     setVal('sl-brightness', Math.round((c.brightness ?? 0) * 100));
@@ -534,11 +619,20 @@ async function applyStreamSettings() {
     return;
   }
 
+  if (streamEditorState.applying) return;
+  const revision = streamEditorState.revision;
+  const modelKey = streamEditorState.modelKey;
+  streamEditorState.applying = true;
   btnLoading('btn-stream-apply', true, tr('stream.applying'));
   try {
     const result = await api('POST', '/stream/settings', {
       resolution, framerate, bitrate_kbps,
     });
+    if (revision === streamEditorState.revision && modelKey === streamEditorState.modelKey) {
+      // Keep the submitted values until the camera status confirms them.
+      streamEditorState.awaitingConfirmation = { resolution, framerate };
+      streamEditorState.dirty = true;
+    }
 
     const img = document.getElementById('stream-img');
     img.src = '/stream?' + Date.now();
@@ -549,6 +643,7 @@ async function applyStreamSettings() {
   } catch(e) {
     toast(tr('common.error', { message: e.message }), 'error');
   } finally {
+    streamEditorState.applying = false;
     btnLoading('btn-stream-apply', false);
   }
 }
