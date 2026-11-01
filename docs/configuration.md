@@ -170,6 +170,26 @@ Verified OV5647/CM4 modes with the camera stopped:
 native 720p60 mode. Main/snapshot resolution is independent of the smaller H.264
 encode stream; sensor capabilities do not remove encoder or hardware limits.
 
+### Video output versus still capture (OV5647 Camera V1)
+
+Camera Module V1's **full sensor/still frame** is 2592x1944 (5 MP).
+The camera's documented **video** modes top out at 1920x1080 / 30 FPS;
+native libcamera readout of 2592x1944 / 15.63 FPS does **not** mean the
+module or CM4 H.264 encoder supports 5 MP video.
+
+The stream settings UI and `POST /api/v1/stream/settings` now use the
+video-specific capability list, including a 30 FPS cap for 1080p on OV5647.
+The camera status API retains `output_modes` for full sensor readout and
+adds `video_output_modes`, `video_resolution_max_framerates`, and
+`snapshot_max_resolution`. Camera V1 NoIR uses the same limits.
+
+**Snapshot limitation:** BambuCam captures still JPEGs from the currently
+configured Picamera2 main stream. With a 1080p video configuration, snapshots
+are therefore 1080p, **not** automatically 5 MP. An explicitly configured
+5 MP camera mode can capture a 5 MP still, but is not offered as a live video
+mode. A seamless full-resolution snapshot while 1080p streaming would require
+separate mode switching/capture logic and is not implemented here.
+
 While streaming, `GET /api/v1/camera/detect` returns the startup inventory
 without re-opening or stopping the camera. Restart the application to discover
 hardware changes. Invalid wrapped crop rectangles (such as 65535x65535) cause
