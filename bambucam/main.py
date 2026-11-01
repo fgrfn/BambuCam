@@ -94,8 +94,7 @@ def _resolve_camera_mode(
         video_modes = video_output_capabilities(model, output_modes)
         if video_modes:
             candidates = {
-                Resolution.from_string(mode["resolution"]): mode["max_fps"]
-                for mode in video_modes
+                Resolution.from_string(mode["resolution"]): mode["max_fps"] for mode in video_modes
             }
     smart_resolution, smart_fps = _best_resolution_and_fps(model, tier_fps_cap, candidates)
 
