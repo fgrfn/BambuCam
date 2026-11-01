@@ -78,6 +78,27 @@ The installer also adds a narrowly scoped Polkit rule for the WebUI's Raspberry 
 
 If the reboot button remains hidden after updating through the WebUI, run the release installer once. In-app package updates cannot create the root-owned Polkit rule themselves.
 
+## Troubleshooting: Permission denied saving settings
+
+BambuCam saves configuration atomically by creating a temporary file in
+`/etc/bambucam` and renaming it to `bambucam.yaml`. The `bambucam` service
+therefore needs write access to the **directory**, not only to the YAML file.
+Installations made with older versions of the installer may leave the
+directory owned by `root:root` with mode `755`, causing errors like
+`Permission denied: '/etc/bambucam/.bambucam.yaml.*.tmp'`.
+
+To repair an existing installation without changing the YAML contents:
+
+```bash
+sudo chown root:bambucam /etc/bambucam
+sudo chmod 2770 /etc/bambucam
+sudo systemctl restart bambucam
+```
+
+The directory remains root-owned and private to the `bambucam` group.
+The setgid bit makes newly created files inherit that group. New installs and
+installer reruns now set these permissions automatically.
+
 ## Verify the installation
 
 The executable lives inside the configured installation directory. With the default path:
