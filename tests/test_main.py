@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from bambucam.camera.models import CAMERA_V2, Resolution
+from bambucam.encoding import RTSP_BITRATE_CEILING_KBPS
 from bambucam.main import (
-    RTSP_BITRATE_CEILING_KBPS,
     _clamp_rtsp_bitrate,
     _effective_mjpeg_fps,
     _mjpeg_bitrate_kbps,

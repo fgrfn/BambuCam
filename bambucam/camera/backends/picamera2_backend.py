@@ -11,6 +11,7 @@ from typing import Optional
 from bambucam.camera.backends.base import CameraBackend
 from bambucam.camera.models import CameraModel, Resolution
 from bambucam.camera.modes import SensorMode, select_sensor_mode
+from bambucam.encoding import bitrate_limits, validate_bitrate
 
 log = logging.getLogger(__name__)
 
@@ -556,6 +557,19 @@ class Picamera2Backend(CameraBackend):
     # RTSP via picamera2 H264Encoder (avoids V4L2 device conflict)
     # ---------------------------------------------------------------------------
 
+    def rtsp_bitrate_limits(self, resolution=None) -> dict:
+        main = (
+            Resolution.from_string(str(resolution))
+            if resolution
+            else (self._resolution or self.model.max_resolution)
+        )
+        size = (
+            self._resolve_encode_size(main)
+            if resolution
+            else (self._encode_size or self._resolve_encode_size(main))
+        )
+        return bitrate_limits(size)
+
     def start_rtsp_recording(self, rtsp_url: str, bitrate_kbps: int = 2000) -> None:
         """
         Encode H264 in-process and publish to MediaMTX via RTSP.
@@ -570,6 +584,8 @@ class Picamera2Backend(CameraBackend):
 
         if not self._running or self._picam is None:
             raise RuntimeError("Camera must be started before RTSP recording")
+
+        validate_bitrate(bitrate_kbps, self.rtsp_bitrate_limits())
 
         if self._h264_encoder is not None:
             log.warning("H264 recording already active — stopping before restart")

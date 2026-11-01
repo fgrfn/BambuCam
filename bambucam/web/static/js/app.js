@@ -2,6 +2,26 @@
 
 // ── Module-level camera model state ───────────────────────────────────────
 let resolutionMaxFps = {};  // populated on load from camera model data
+let bitratePolicy = null;
+let bitrateLimitsByResolution = {};
+
+// Bounds are supplied by the backend for the actual encode stream.
+function updateBitrateLimits() {
+  const slider = document.getElementById('sl-bitrate');
+  if (!slider) return;
+  const resolution = document.getElementById('sel-resolution')?.value;
+  const limits = bitrateLimitsByResolution[resolution] || bitratePolicy;
+  slider.disabled = !limits;
+  if (!limits) return;
+  slider.min = limits.min_kbps;
+  slider.max = limits.max_kbps;
+  slider.value = Math.max(limits.min_kbps, Math.min(Number(slider.value), limits.max_kbps));
+  setText('val-bitrate', slider.value);
+  setText('hint-bitrate', tr('stream.bitrateLimit', {
+    min: limits.min_kbps, max: limits.max_kbps, resolution: limits.resolution || resolution || '—',
+  }));
+}
+document.getElementById('sel-resolution')?.addEventListener('change', updateBitrateLimits);
 
 function tr(key, values) {
   return window.BambuCamI18n ? window.BambuCamI18n.t(key, values) : key;
@@ -263,6 +283,11 @@ async function loadStreamStatus() {
       }
     }
 
+    if (s.rtsp?.bitrate_limits) {
+      bitratePolicy = s.rtsp.bitrate_limits;
+      bitrateLimitsByResolution = s.rtsp.bitrate_limits_by_resolution || {};
+      updateBitrateLimits();
+    }
     const rtspRunning = !!(s.rtsp && s.rtsp.running);
 
     // Sync RTSP toggle (only when not mid-toggle)
@@ -347,6 +372,7 @@ async function loadNetworkConfig() {
     setVal('cfg-hls-port',   r.hls_port    ?? 8888);
     setVal('sl-bitrate',     r.bitrate_kbps ?? 2000);
     setText('val-bitrate',   r.bitrate_kbps ?? 2000);
+    updateBitrateLimits();
 
     setVal('sl-brightness', Math.round((c.brightness ?? 0) * 100));
     setText('val-brightness', Number(c.brightness ?? 0).toFixed(2));
@@ -496,7 +522,17 @@ async function toggleRtsp(enabled) {
 async function applyStreamSettings() {
   const resolution   = document.getElementById('sel-resolution').value;
   const framerate    = parseInt(document.getElementById('sel-framerate').value);
-  const bitrate_kbps = parseInt(document.getElementById('sl-bitrate').value);
+  const slider = document.getElementById('sl-bitrate');
+  if (slider.disabled) {
+    toast(tr('stream.bitrateUnavailable'), 'error');
+    return;
+  }
+  const bitrate_kbps = Number(slider.value);
+  if (!Number.isInteger(bitrate_kbps) || bitrate_kbps < Number(slider.min) ||
+      bitrate_kbps > Number(slider.max)) {
+    toast(tr('stream.bitrateInvalid', { min: slider.min, max: slider.max }), 'error');
+    return;
+  }
 
   btnLoading('btn-stream-apply', true, tr('stream.applying'));
   try {

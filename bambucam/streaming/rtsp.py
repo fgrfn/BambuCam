@@ -8,11 +8,15 @@ import subprocess
 import tempfile
 import threading
 import time
+from copy import copy
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import quote
 
 import yaml
+
+from bambucam.encoding import bitrate_limits, validate_bitrate
+from bambucam.system_info import pi_capability_tier
 
 log = logging.getLogger(__name__)
 
@@ -64,11 +68,13 @@ class RTSPStreamer:
         camera_backend=None,
         capture_fn: Optional[Callable[[], bytes]] = None,
         hw_encoder: Optional[bool] = None,
+        hardware_tier: Optional[int] = None,
     ):
         self._device = v4l2_device
         self._resolution = resolution
         self._framerate = int(framerate)
-        self._bitrate = int(bitrate_kbps)
+        self._bitrate = bitrate_kbps
+        self._hardware_tier = pi_capability_tier() if hardware_tier is None else hardware_tier
         self._stream_name = stream_name
         self._mediamtx_path = Path(mediamtx_path)
         self._ffmpeg_path = str(ffmpeg_path)
@@ -98,6 +104,24 @@ class RTSPStreamer:
 
         self._validate_settings()
 
+    def bitrate_limits_for(self, resolution=None) -> dict:
+        """Calculate from the actual (or proposed) H.264 encode stream."""
+        if self._uses_picamera2():
+            getter = getattr(self._camera_backend, "rtsp_bitrate_limits", None)
+            if callable(getter):
+                limits = getter(resolution)
+                if isinstance(limits, dict):
+                    # The streamer and direct backend use the same device tier.
+                    return bitrate_limits(limits["resolution"], self._hardware_tier)
+            resolution = self._published_resolution()
+        return bitrate_limits(resolution or self._resolution, self._hardware_tier)
+
+    def validate_update(self, resolution=None, bitrate_kbps=None) -> None:
+        validate_bitrate(
+            self._bitrate if bitrate_kbps is None else bitrate_kbps,
+            self.bitrate_limits_for(resolution),
+        )
+
     def _validate_settings(self) -> None:
         for name, value in (
             ("RTSP", self._rtsp_port),
@@ -112,8 +136,7 @@ class RTSPStreamer:
             raise ValueError("Invalid RTSP stream name")
         if self._framerate < 1:
             raise ValueError("RTSP framerate must be at least 1")
-        if self._bitrate < 100:
-            raise ValueError("RTSP bitrate must be at least 100 kbps")
+        self.validate_update(resolution=self._resolution)
 
     def _uses_picamera2(self) -> bool:
         return self._camera_backend is not None and hasattr(
@@ -130,6 +153,7 @@ class RTSPStreamer:
         return f"rtsp://{credentials}127.0.0.1:{self._rtsp_port}/{self._stream_name}"
 
     def _start_publisher(self) -> None:
+        self.validate_update()
         if self._uses_picamera2():
             log.info(
                 "RTSP publisher: picamera2 H264Encoder → %s",
@@ -236,6 +260,7 @@ class RTSPStreamer:
     ) -> None:
         """Apply publisher settings and restart MediaMTX when network settings change."""
         with self._lock:
+            self.validate_update(resolution=resolution, bitrate_kbps=bitrate_kbps)
             server_restart = any(
                 value is not None
                 for value in (
@@ -247,30 +272,28 @@ class RTSPStreamer:
                     enable_webrtc,
                 )
             )
+            # Validate a complete candidate before mutating or stopping anything.
+            changes = {
+                "_resolution": str(resolution) if resolution is not None else self._resolution,
+                "_framerate": int(framerate) if framerate is not None else self._framerate,
+                "_bitrate": bitrate_kbps if bitrate_kbps is not None else self._bitrate,
+                "_stream_name": str(stream_name) if stream_name is not None else self._stream_name,
+                "_rtsp_port": int(rtsp_port) if rtsp_port is not None else self._rtsp_port,
+                "_hls_port": int(hls_port) if hls_port is not None else self._hls_port,
+                "_webrtc_port": int(webrtc_port) if webrtc_port is not None else self._webrtc_port,
+                "_enable_hls": bool(enable_hls) if enable_hls is not None else self._enable_hls,
+                "_enable_webrtc": (
+                    bool(enable_webrtc) if enable_webrtc is not None else self._enable_webrtc
+                ),
+            }
+            candidate = copy(self)
+            candidate.__dict__.update(changes)
+            candidate._validate_settings()
+
             was_running = self._running
             if was_running and server_restart:
                 self.stop()
-
-            if resolution is not None:
-                self._resolution = str(resolution)
-            if framerate is not None:
-                self._framerate = int(framerate)
-            if bitrate_kbps is not None:
-                self._bitrate = int(bitrate_kbps)
-            if stream_name is not None:
-                self._stream_name = str(stream_name)
-            if rtsp_port is not None:
-                self._rtsp_port = int(rtsp_port)
-            if hls_port is not None:
-                self._hls_port = int(hls_port)
-            if webrtc_port is not None:
-                self._webrtc_port = int(webrtc_port)
-            if enable_hls is not None:
-                self._enable_hls = bool(enable_hls)
-            if enable_webrtc is not None:
-                self._enable_webrtc = bool(enable_webrtc)
-
-            self._validate_settings()
+            self.__dict__.update(changes)
             if was_running and server_restart:
                 self.start()
             elif was_running:
@@ -477,6 +500,11 @@ class RTSPStreamer:
             )
 
         command.append("-an")
+        if self._uses_frame_pipe():
+            # The JPEG producer may still emit the camera's larger main size.
+            # Match the encoded size used by the policy and status endpoint.
+            width, height = self._resolution.split("x")
+            command.extend(["-vf", f"scale={int(width)}:{int(height)}"])
         command.extend(self._encoder_args())
         command.extend(
             [
@@ -620,6 +648,7 @@ class RTSPStreamer:
             "resolution": self._published_resolution(),
             "framerate": self._framerate,
             "bitrate_kbps": self._bitrate,
+            "bitrate_limits": self.bitrate_limits_for(),
             "stream_name": self._stream_name,
             "rtsp_port": self._rtsp_port,
             "hls_port": self._hls_port if self._enable_hls else None,

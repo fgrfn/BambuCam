@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from bambucam.camera.models import Resolution
+from bambucam.encoding import bitrate_limits
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +109,10 @@ class CameraProfileService:
             str(resolution), model.resolution_max_framerates.get(resolution, model.max_framerate)
         )
         framerate = max(1, min(int(profile.target_fps), int(maximum_fps)))
+        getter = getattr(self._rtsp, "bitrate_limits_for", None)
+        limits = getter(str(resolution)) if callable(getter) else None
+        if not isinstance(limits, dict):
+            limits = bitrate_limits(resolution)
         return {
             "name": profile.name,
             "label": profile.label,
@@ -115,7 +120,7 @@ class CameraProfileService:
             "resolution": str(resolution),
             "framerate": framerate,
             "mjpeg_quality": profile.mjpeg_quality,
-            "bitrate_kbps": profile.bitrate_kbps,
+            "bitrate_kbps": min(profile.bitrate_kbps, limits["max_kbps"]),
             "image_settings": deepcopy(profile.image_settings),
         }
 

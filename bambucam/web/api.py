@@ -48,7 +48,16 @@ def _json_object() -> dict:
 
 
 def _validate_config_update(data: dict) -> None:
-    validate_config_update(data, _cfg().as_dict())
+    merged = validate_config_update(data, _cfg().as_dict())
+    camera = data.get("camera", {})
+    rtsp = data.get("streaming", {}).get("rtsp", {})
+    if {"resolution", "framerate"} & camera.keys() or "bitrate_kbps" in rtsp:
+        resolution = camera.get("resolution")
+        if resolution == "auto":
+            resolution = None
+        _rtsp().validate_update(
+            resolution=resolution, bitrate_kbps=merged["streaming"]["rtsp"]["bitrate_kbps"]
+        )
 
 
 def _restore_config(snapshot: dict) -> None:
@@ -119,7 +128,11 @@ def _rollback_runtime(
             elif mjpeg_running is False and _mjpeg().is_running:
                 _mjpeg().stop()
         if rtsp:
-            _rtsp().update_settings(**_rtsp_runtime_settings(config))
+            rtsp_settings = _rtsp_runtime_settings(config)
+            if camera_status:
+                rtsp_settings["resolution"] = camera_status.get("resolution")
+                rtsp_settings["framerate"] = camera_status.get("framerate")
+            _rtsp().update_settings(**rtsp_settings)
             if rtsp_running is True and not _rtsp().is_running:
                 _rtsp().start()
             elif rtsp_running is False and _rtsp().is_running:
@@ -222,9 +235,11 @@ def camera_models():
 def camera_settings():
     snapshot = _cfg().as_dict()
     old_camera_status = _camera().status()
+    camera_applied = False
     try:
         data = _json_object()
         _validate_config_update({"camera": data})
+        camera_applied = True
         _camera().apply_settings(data)
 
         if "resolution" in data or "framerate" in data:
@@ -239,13 +254,14 @@ def camera_settings():
     except Exception as exc:
         log.exception("Failed to apply camera settings")
         _restore_config(snapshot)
-        _rollback_runtime(
-            snapshot,
-            camera=True,
-            mjpeg=True,
-            rtsp=True,
-            camera_status=old_camera_status,
-        )
+        if camera_applied:
+            _rollback_runtime(
+                snapshot,
+                camera=True,
+                mjpeg=True,
+                rtsp=True,
+                camera_status=old_camera_status,
+            )
         return jsonify({"error": str(exc)}), 400
 
     restart_keys = {"resolution", "framerate", "vflip", "hflip"}
@@ -388,7 +404,14 @@ def stream_status():
                 "clients": mjpeg.client_count,
                 "actual_fps": mjpeg.actual_fps,
             },
-            "rtsp": rtsp.status() | {"urls": rtsp.stream_urls(host)},
+            "rtsp": rtsp.status()
+            | {
+                "urls": rtsp.stream_urls(host),
+                "bitrate_limits_by_resolution": {
+                    resolution: rtsp.bitrate_limits_for(resolution)
+                    for resolution in (_camera().status().get("available_resolutions") or [])
+                },
+            },
         }
     )
 
@@ -453,6 +476,9 @@ def rtsp_settings():
         if persistent_settings:
             _validate_config_update({"streaming": {"rtsp": persistent_settings}})
 
+        _rtsp().validate_update(
+            resolution=data.get("resolution"), bitrate_kbps=data.get("bitrate_kbps")
+        )
         runtime_applied = True
         _rtsp().update_settings(
             resolution=data.get("resolution"),
