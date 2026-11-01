@@ -53,9 +53,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _best_resolution_and_fps(model, tier_fps_cap=None, max_framerates=None):
     """Pick the model mode with the highest width × height × FPS score."""
-    candidates = (
-        max_framerates if max_framerates is not None else model.resolution_max_framerates
-    )
+    candidates = model.resolution_max_framerates if max_framerates is None else max_framerates
     if not candidates:
         fps = model.max_framerate
         if tier_fps_cap is not None:
