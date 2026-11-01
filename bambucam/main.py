@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from bambucam.camera.models import Resolution
+from bambucam.encoding import bitrate_limits, encode_size
 
 
 def _setup_logging(level: str) -> None:
@@ -133,51 +134,27 @@ def _effective_mjpeg_fps(camera_fps: int, mjpeg_cfg: dict, tier_fps_cap=None) ->
     return max(1, effective_fps)
 
 
-# Highest useful H.264 bitrate per hardware tier. Beyond these values the
-# encoder burns CPU without any visible quality gain at BambuCam's resolutions,
-# and on weak hardware it makes the publisher crash and restart in a loop.
-RTSP_BITRATE_CEILING_KBPS = {1: 3000, 2: 8000, 3: 20000}
-RTSP_BITRATE_CEILING_FALLBACK_KBPS = 20000
-
-
-def _clamp_rtsp_bitrate(configured_kbps, tier, log=None) -> int:
-    """Cap the configured RTSP bitrate at what the detected hardware can encode."""
+def _clamp_rtsp_bitrate(configured_kbps, tier, log=None, resolution=None) -> int:
+    """Normalize startup values after the effective encode size is known."""
     try:
         bitrate = int(configured_kbps)
     except (TypeError, ValueError):
         bitrate = 2000
-
-    ceiling = RTSP_BITRATE_CEILING_KBPS.get(tier, RTSP_BITRATE_CEILING_FALLBACK_KBPS)
-    if bitrate <= ceiling:
-        return bitrate
-
-    if log is not None:
+    limits = bitrate_limits(resolution, tier)
+    effective = max(limits["min_kbps"], min(bitrate, limits["max_kbps"]))
+    if effective != bitrate and log is not None:
         log.warning(
-            "RTSP bitrate %d kbps exceeds the limit of %d kbps for hardware tier %s — "
-            "using %d kbps. Higher bitrates add no visible quality at these resolutions "
-            "and can overload the encoder.",
+            "RTSP bitrate %d kbps reduced to %d kbps for encode size %s, hardware tier %s",
             bitrate,
-            ceiling,
+            effective,
+            limits["resolution"],
             tier,
-            ceiling,
         )
-    return ceiling
-
-
-# Ceiling for the H264 encode stream per hardware tier. With a CSI camera the
-# publisher encodes this stream, so it is what BambuBuddy and OBS actually
-# receive — independent of the (often larger) still-capture resolution.
-RTSP_ENCODE_CEILING = {1: (640, 360), 2: (1280, 720), 3: (1920, 1080)}
-RTSP_ENCODE_CEILING_FALLBACK = (1280, 720)
+    return effective
 
 
 def _rtsp_encode_size(resolution, tier) -> tuple:
-    """Fit the camera's aspect ratio into the tier's encode-stream ceiling."""
-    ceiling = RTSP_ENCODE_CEILING.get(tier, RTSP_ENCODE_CEILING_FALLBACK)
-    width, height = int(resolution.width), int(resolution.height)
-    # Scale down only — never upscale a small camera mode to fill the ceiling.
-    scale = min(1.0, ceiling[0] / width, ceiling[1] / height)
-    return max(32, int(width * scale) & ~1), max(32, int(height * scale) & ~1)
+    return encode_size(resolution, tier)
 
 
 # The camera-side MJPEG encoder is driven by a bitrate, not by a JPEG quality,
@@ -408,11 +385,28 @@ def main() -> None:
 
     rtsp_auth = rtsp_config.get("auth", {})
 
+    effective_bitrate = _clamp_rtsp_bitrate(
+        rtsp_config.get("bitrate_kbps", 2000),
+        tier,
+        log,
+        (
+            picamera2_backend.encode_resolution
+            if picamera2_backend is not None
+            else str(selected_resolution or "1920x1080")
+        ),
+    )
+    if effective_bitrate != rtsp_config.get("bitrate_kbps"):
+        cfg.update_section("streaming", {"rtsp": {"bitrate_kbps": effective_bitrate}})
+        try:
+            cfg.save()
+        except OSError as exc:
+            log.warning("Could not persist effective RTSP bitrate: %s", exc)
+
     rtsp = RTSPStreamer(
         v4l2_device=(camera.v4l2_device if camera_ok else None) or "/dev/video0",
         resolution=str(selected_resolution or "1920x1080"),
         framerate=selected_fps,
-        bitrate_kbps=_clamp_rtsp_bitrate(rtsp_config.get("bitrate_kbps", 2000), tier, log),
+        bitrate_kbps=effective_bitrate,
         stream_name=rtsp_config.get("stream_name", "cam"),
         mediamtx_path=Path(cfg.system.get("mediamtx_path", "/usr/local/bin/mediamtx")),
         ffmpeg_path=cfg.system.get("ffmpeg_path", "ffmpeg"),
@@ -424,6 +418,7 @@ def main() -> None:
         rtsp_auth_user=rtsp_auth.get("username") if rtsp_auth.get("enabled") else None,
         rtsp_auth_pass=rtsp_auth.get("password") if rtsp_auth.get("enabled") else None,
         camera_backend=picamera2_backend,
+        hardware_tier=tier,
         capture_fn=(camera.capture_jpeg if camera_ok and picamera2_backend is None else None),
         hw_encoder=_resolve_hw_encoder(rtsp_config.get("hardware_encoder", "auto")),
     )

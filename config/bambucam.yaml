@@ -39,6 +39,8 @@ streaming:
     enabled: auto              # disabled on Pi Zero/1/2, enabled on Pi Zero 2 W/3+
     port: 8554               # RTSP port (rtsp://<ip>:8554/cam)
     stream_name: cam         # Stream path name
+    # kbps; capped by hardware tier and actual H.264 encode size.
+    # VGA: 2000, 720p: 6000, 1080p: 12000; see docs/configuration.md.
     bitrate_kbps: 2000       # H.264 target bitrate
     hardware_encoder: auto   # auto/true/false — V4L2 HW H.264 (USB cameras; applies at restart)
 

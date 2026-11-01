@@ -100,6 +100,11 @@ class FakeMJPEG:
 
 
 class FakeRTSP:
+    def bitrate_limits_for(self, resolution):
+        from bambucam.encoding import bitrate_limits
+
+        return bitrate_limits(resolution, tier=3)
+
     def __init__(self):
         self.settings = None
 

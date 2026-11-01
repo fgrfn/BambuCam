@@ -287,8 +287,10 @@
             <span data-i18n="stream.bitrate">RTSP bitrate</span>
             <span class="field-label-val"><span id="val-bitrate">2000</span> kbps</span>
           </div>
-          <input type="range" id="sl-bitrate" min="100" max="20000" step="100" value="2000"
+          <input type="range" id="sl-bitrate" min="100" max="20000" step="100" value="2000" disabled
+            aria-describedby="hint-bitrate"
             oninput="document.getElementById('val-bitrate').textContent=this.value" />
+          <small id="hint-bitrate" class="field-hint"></small>
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="btn-stream-apply" onclick="applyStreamSettings()">

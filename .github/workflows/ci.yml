@@ -56,6 +56,8 @@ jobs:
           cache: pip
       - name: Install tools
         run: pip install -e ".[dev]" build twine
+      - name: Bitrate UI behavior
+        run: node tests/web_bitrate_limits.cjs
       - name: Ruff
         run: ruff check bambucam/ tests/
       - name: Black

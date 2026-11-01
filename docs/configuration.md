@@ -94,6 +94,9 @@ system:
   diagnostics_log_lines: 300
 ```
 
+See [RTSP bitrate limits](rtsp-bitrate.md) for hardware and encode-size ranges,
+validation, migration and API behavior.
+
 ## Automatic camera modes
 
 With `resolution: auto` and `framerate: auto`, BambuCam selects a mode from the detected camera capabilities. For generic USB webcams, the largest mode actually reported by V4L2 is preferred instead of assuming a Raspberry Pi camera mode.
