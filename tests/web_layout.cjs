@@ -28,8 +28,15 @@ assert.match(live, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+\d+px/);
 for (const selector of ['.stage', '.card', '.field']) {
   assert.match(rule(selector) || '', /min-width:\s*0/, selector + ' must be allowed to shrink without horizontal overflow');
 }
-assert.match(rule('.stream-view') || '', /aspect-ratio:\s*16\s*\/\s*9/);
+assert.match(rule('.stream-view') || '', /aspect-ratio:\s*var\(--stream-ar,\s*16\s*\/\s*9\)/);
 assert.match(rule('.stream-view') || '', /max-width:\s*100%/);
+
+// On desktop the Live tab fits the window instead of growing past it.
+const desktop = css.match(/@media\s*\(min-width:\s*1101px\)\s*\{([\s\S]*?)\n\}/)?.[1];
+assert(desktop, 'Desktop fit-to-window block must exist');
+assert.match(desktop, /body\.fit-live\s*\{[^}]*height:\s*100dvh/);
+assert.match(desktop, /\.stream-fit\s*\{[^}]*container-type:\s*size/);
+assert.match(desktop, /\.stream-view\s*\{[^}]*width:\s*min\(100cqw/);
 
 // Breakpoints: inspector below the video on tablets, tabs on their own row on phones.
 const tablet = mediaBlock(1100);
