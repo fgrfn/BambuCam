@@ -110,7 +110,7 @@ class Updater:
     """Check, verify, install, and activate BambuCam GitHub releases."""
 
     _AUTO_CHECK_INITIAL_DELAY = 60
-    _AUTO_CHECK_INTERVAL = 24 * 3600
+    _AUTO_CHECK_INTERVAL = 6 * 3600
     _RELEASES_CACHE_TTL = 3600
 
     def __init__(
