@@ -442,16 +442,9 @@ async function loadSystemInfo() {
   try {
     const s = await api('GET', '/system');
 
-    // CPU temp with color coding
-    const tempEl = document.getElementById('sys-temp');
-    if (s.cpu_temp_c != null) {
-      tempEl.textContent = s.cpu_temp_c.toFixed(1) + ' °C';
-      tempEl.className = 'kv-val num' + (s.cpu_temp_c >= 80 ? ' crit' : s.cpu_temp_c >= 70 ? ' warn' : '');
-    }
-
-    // CPU load
+    // Temperature and disk are shown as health tiles; CPU load in the device details.
     const cpuEl = document.getElementById('sys-cpu');
-    if (s.cpu_usage_pct != null) {
+    if (cpuEl && s.cpu_usage_pct != null) {
       cpuEl.textContent = s.cpu_usage_pct.toFixed(1) + ' %';
       cpuEl.className = 'kv-val num' + (s.cpu_usage_pct > 85 ? ' crit' : s.cpu_usage_pct > 65 ? ' warn' : '');
     }
@@ -991,10 +984,7 @@ async function loadInitialUpdateStatus() {
   try {
     const s = await api('GET', '/update/status');
     renderUpdateStatus(s);
-    if (s.current_version) {
-      document.getElementById('hdr-version').textContent = 'v' + s.current_version;
-      setText('footer-version', 'v' + s.current_version);
-    }
+    if (s.current_version) setText('footer-version', 'v' + s.current_version);
     if (['downloading', 'installing', 'restarting'].includes(s.state)) {
       startUpdatePolling();
     }
@@ -1304,8 +1294,8 @@ function buildChecks() {
   if (camera) {
     checks.push(camera.running
       ? { level: 'ok', title: tr('checks.camera'),
-          value: (camera.resolution || '—').replace('x', '×') + ' · ' + (camera.framerate || '—') + ' fps',
-          text: [camera.sensor || camera.model, camera.backend].filter(Boolean).join(' · ') }
+          value: (camera.resolution || '—').replace('x', '×'),
+          text: [(camera.framerate || '—') + ' fps', camera.sensor || camera.model].filter(Boolean).join(' · ') }
       : { level: 'crit', title: tr('checks.camera'), value: tr('checks.cameraStoppedValue'),
           text: camera.setup_hint ? tr('checks.cameraMissingHint') : tr('checks.cameraStopped') });
   } else {
@@ -1351,17 +1341,7 @@ function buildChecks() {
         text: tr(low ? 'checks.storageLow' : 'checks.storageOk', { free: free.toFixed(1), total: total.toFixed(1) }) });
     }
   }
-  if (update) {
-    if (update.state === 'error') {
-      checks.push({ level: 'warn', title: tr('checks.software'), value: 'v' + (update.current_version || '?'), text: update.error || tr('update.unknownError') });
-    } else if (update.update_available) {
-      checks.push({ level: 'info', title: tr('checks.software'), value: 'v' + update.current_version,
-        text: tr('checks.updateAvailable', { version: update.latest_version }) });
-    } else {
-      checks.push({ level: 'ok', title: tr('checks.software'), value: update.current_version ? 'v' + update.current_version : '—',
-        text: update.state === 'up_to_date' ? tr('update.upToDateMessage') : tr('checks.updateUnknown') });
-    }
-  }
+  // Software has its own update bar below the tiles.
   return checks;
 }
 
