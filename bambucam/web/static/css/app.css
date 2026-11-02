@@ -172,8 +172,9 @@ code, .num, .code { font-family: var(--mono); font-variant-numeric: tabular-nums
 .restart-banner span { flex: 1; min-width: 200px; }
 
 /* ── Page & building blocks ─────────────────────────────────────────── */
+/* Fluid on purpose: the live view uses the whole width of large screens. */
 .page {
-  max-width: 1560px; margin: 0 auto;
+  width: 100%; max-width: none;
   padding-block: 20px max(40px, env(safe-area-inset-bottom, 0px));
   padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
   padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
