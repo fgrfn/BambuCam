@@ -102,8 +102,8 @@ def configure_web_security(app: Flask, config) -> None:
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data: blob:; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "font-src 'self'; "
             "script-src 'self' 'unsafe-inline'; connect-src 'self'",
         )
         if request.is_secure:
