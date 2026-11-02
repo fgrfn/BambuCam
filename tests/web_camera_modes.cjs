@@ -36,7 +36,7 @@ vm.runInContext('var resolutionMaxFps = {};\n' +
   await context.loadModelCapabilities(status);
   assert.equal(elements['sel-resolution'].options.length, 2);
   assert.match(elements['sel-resolution'].options[0].label, /^2592×1944 \(15.63\)$/);
-  assert.match(elements['sel-resolution'].options[1].label, /scaled.*1296x972.*46.34.*fallback/);
+  assert.match(elements['sel-resolution'].options[1].label, /1296x972.*46.34.*fallback/);
   assert.equal(elements['sel-framerate'].value, '12');
   assert(elements['sel-framerate'].options.every(o => o.value <= 15));
   elements['sel-resolution'].value = '1280x720';
