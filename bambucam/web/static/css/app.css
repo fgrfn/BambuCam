@@ -242,7 +242,9 @@ input[type="range"]:disabled { opacity: 0.5; }
 .stage { display: grid; gap: 12px; min-width: 0; }
 .setup-hint { padding: 14px 16px; border-radius: var(--radius); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border)); line-height: 1.7; }
 .setup-hint code { background: var(--surface); padding: 1px 6px; border-radius: 4px; font-size: 0.875rem; }
-.stream-view { position: relative; aspect-ratio: 16 / 9; max-width: 100%; border-radius: var(--radius); overflow: hidden; background: var(--frame); box-shadow: var(--shadow); }
+.stream-fit { min-width: 0; }
+/* --stream-ar follows the active camera mode (16:9 or 4:3), set by app.js. */
+.stream-view { position: relative; aspect-ratio: var(--stream-ar, 16 / 9); width: 100%; max-width: 100%; margin: 0 auto; border-radius: var(--radius); overflow: hidden; background: var(--frame); box-shadow: var(--shadow); }
 .stream-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.3s; }
 .stream-view.live img { opacity: 1; }
 .stream-placeholder { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: rgb(255 255 255 / 0.55); }
@@ -413,6 +415,20 @@ input[type="range"]:disabled { opacity: 0.5; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
+/* Desktop Live tab fits the window: the video scales into the space left
+   by header, toolbar and strip, and the inspector scrolls on its own. */
+@media (min-width: 1101px) {
+  body.fit-live { height: 100vh; height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  body.fit-live .page { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding-bottom: 16px; overflow-y: auto; }
+  body.fit-live #view-live { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  body.fit-live .live { flex: 1 1 auto; min-height: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr); }
+  body.fit-live .stage { display: flex; flex-direction: column; min-height: 0; }
+  body.fit-live .stream-fit { flex: 1 1 0; min-height: 220px; container-type: size; display: grid; align-items: center; }
+  body.fit-live .stream-view { width: min(100cqw, calc(100cqh * var(--stream-ar-num, 1.7778))); }
+  body.fit-live .inspector { position: static; max-height: none; min-height: 0; }
+  body.fit-live .footer { margin-top: 0; padding-block: 10px; }
+}
+
 @media (max-width: 1100px) {
   .live, .sys { grid-template-columns: minmax(0, 1fr); }
   .inspector { position: static; max-height: none; }

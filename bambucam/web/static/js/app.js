@@ -335,11 +335,16 @@ async function loadModelCapabilities(status) {
     }
     if (resSel.value !== selectedResolution) resSel.value = selectedResolution;
 
+    // libcamera runs CSI sensors at any rate up to the mode's maximum, so offer that
+    // maximum plus common steps. The model's list mixes the maxima of other modes
+    // (e.g. 32 fps from OV5647 1080p); V4L2 devices only accept their discrete rates.
+    const STANDARD_FPS = [60, 50, 30, 25, 20, 15, 10, 5];
     function buildFpsOptions(res, preferredFps) {
       const maximum = Math.max(1, Math.floor(Number(
         resolutionMaxFps[res] ?? model.max_framerate
       ) || 30));
-      const values = [...new Set([...model.supported_framerates, maximum, preferredFps]
+      const candidates = status.backend === 'picamera2' ? STANDARD_FPS : model.supported_framerates;
+      const values = [...new Set([...candidates, maximum, preferredFps]
         .map(Number))]
         .filter(f => Number.isInteger(f) && f >= 1 && f <= maximum)
         .sort((a, b) => b - a);
@@ -1147,6 +1152,7 @@ function showView(view) {
     if (button.dataset.view === target) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
+  document.body.classList.toggle('fit-live', target === 'live');
   if (location.hash.slice(1) !== target) history.replaceState(null, '', '#' + target);
   // Snapshots are not polled; refresh them when the recordings are opened.
   if (target === 'recordings' && consoleReady) loadSnapshotList();
@@ -1256,6 +1262,12 @@ function renderLiveOverlay() {
   const fov = document.getElementById('ov-fov');
   if (!mode || !fov) return;
   if (!camera || !camera.resolution) { mode.textContent = '—'; fov.classList.add('hidden'); return; }
+  const [width, height] = camera.resolution.split('x').map(Number);
+  if (width > 0 && height > 0) {
+    const view = document.getElementById('stream-view');
+    view.style.setProperty('--stream-ar', `${width} / ${height}`);
+    view.style.setProperty('--stream-ar-num', String(width / height));
+  }
   const parts = [camera.resolution.replace('x', '×'), camera.framerate + ' fps'];
   const rtsp = consoleState.stream?.rtsp;
   if (rtsp?.running && rtsp.bitrate_kbps) parts.push((rtsp.bitrate_kbps / 1000).toFixed(1) + ' Mbit/s');
