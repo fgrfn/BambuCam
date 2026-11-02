@@ -117,6 +117,37 @@ class TestConfig:
             cfg2.load(path)
             assert cfg2.get("camera", "framerate") == 60
 
+    def test_save_falls_back_to_in_place_write_when_directory_is_read_only(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        path = tmp_path / "bambucam.yaml"
+        path.write_text("camera: {}\n", encoding="utf-8")
+        cfg = Config()
+        cfg.load()
+        cfg._user_config_path = path
+        cfg.set("camera", "framerate", value=24)
+
+        def deny(*args, **kwargs):
+            raise PermissionError(13, "Permission denied", str(tmp_path / ".bambucam.yaml.x.tmp"))
+
+        monkeypatch.setattr("bambucam.config.tempfile.NamedTemporaryFile", deny)
+        cfg.save()
+
+        assert yaml.safe_load(path.read_text(encoding="utf-8"))["camera"]["framerate"] == 24
+        assert "not writable; saving bambucam.yaml in place" in caplog.text
+
+    def test_save_still_fails_without_existing_writable_file(self, tmp_path, monkeypatch):
+        cfg = Config()
+        cfg.load()
+        cfg._user_config_path = tmp_path / "bambucam.yaml"
+
+        def deny(*args, **kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr("bambucam.config.tempfile.NamedTemporaryFile", deny)
+        with pytest.raises(PermissionError):
+            cfg.save()
+
     def test_update_section(self):
         cfg = Config()
         cfg.load()

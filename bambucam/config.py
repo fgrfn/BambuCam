@@ -199,18 +199,40 @@ class Config:
 
         tmp_path: Optional[Path] = None
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                prefix=f".{path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
+            try:
+                handle = tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=path.parent,
+                    prefix=f".{path.name}.",
+                    suffix=".tmp",
+                    delete=False,
+                )
+            except PermissionError:
+                # Installations made before the installer granted the service group write
+                # access to /etc/bambucam keep a root-owned directory, and in-app updates
+                # never rerun the installer. The config file itself is still owned by the
+                # service there, so rewrite it in place instead of failing every save.
+                if not path.is_file() or not os.access(path, os.W_OK):
+                    raise
+                log.warning(
+                    "Config directory %s is not writable; saving %s in place. "
+                    "Fix with: chown root:bambucam %s && chmod 2770 %s",
+                    path.parent,
+                    path.name,
+                    path.parent,
+                    path.parent,
+                )
+                with open(path, "w", encoding="utf-8") as in_place:
+                    in_place.write(rendered)
+                    in_place.flush()
+                    os.fsync(in_place.fileno())
+                return
+            with handle:
+                tmp_path = Path(handle.name)
                 handle.write(rendered)
                 handle.flush()
                 os.fsync(handle.fileno())
-                tmp_path = Path(handle.name)
 
             if path.exists():
                 tmp_path.chmod(path.stat().st_mode & 0o777)
