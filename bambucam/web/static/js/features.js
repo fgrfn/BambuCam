@@ -27,54 +27,71 @@
     console[isError ? "error" : "log"](message);
   }
 
-  function cardMarkup() {
+  // Profile picker inside the "Image settings" group of the inspector.
+  function profileMarkup() {
     return `
-      <div class="card feature-card" id="camera-profiles-card">
-        <div class="card-header"><span class="card-title" data-i18n="profile.title">Camera profile</span></div>
-        <div class="card-body">
-          <div class="field">
-            <div class="field-label"><span data-i18n="profile.field">Profile</span></div>
-            <select id="feature-profile-select"></select>
-          </div>
-          <p class="hint feature-description" id="feature-profile-description"></p>
-          <div class="btn-row">
-            <button class="btn btn-secondary" id="feature-profile-apply" data-i18n="profile.apply">Apply profile</button>
-          </div>
+      <div class="field" id="camera-profiles-card">
+        <label class="field-label" for="feature-profile-select" data-i18n="profile.title">Camera profile</label>
+        <div class="row" style="flex-wrap:nowrap">
+          <select id="feature-profile-select"></select>
+          <button class="btn" id="feature-profile-apply" data-i18n="profile.apply">Apply profile</button>
         </div>
-      </div>
-      <div class="card feature-card" id="timelapse-card">
-        <div class="card-header">
-          <span class="card-title" data-i18n="timelapse.title">Timelapse</span>
-          <span class="feature-state" id="timelapse-state" data-i18n="timelapse.ready">Ready</span>
+        <p class="field-hint" id="feature-profile-description"></p>
+      </div>`;
+  }
+
+  // Timelapse controls on the Recordings tab.
+  function timelapseMarkup() {
+    return `
+      <div class="card pad" id="timelapse-card">
+        <div class="card-head">
+          <h2 data-i18n="timelapse.title">Timelapse</h2>
+          <span class="chip neutral" id="timelapse-state" data-i18n="timelapse.ready">Ready</span>
         </div>
-        <div class="card-body">
+        <div class="tl-form">
           <div class="field">
-            <div class="field-label"><span data-i18n="timelapse.jobTitle">Title</span></div>
+            <label class="field-label" for="timelapse-title" data-i18n="timelapse.jobTitle">Title</label>
             <input class="text-input" id="timelapse-title" placeholder="Print job" data-i18n-placeholder="timelapse.jobPlaceholder" maxlength="160" />
           </div>
-          <div class="feature-grid">
-            <div class="field">
-              <div class="field-label"><span data-i18n="timelapse.interval">Interval (s)</span></div>
-              <input class="text-input" type="number" id="timelapse-interval" min="0.5" max="86400" step="0.5" value="10" />
-            </div>
-            <div class="field">
-              <div class="field-label"><span data-i18n="timelapse.videoFps">Video FPS</span></div>
-              <input class="text-input" type="number" id="timelapse-fps" min="1" max="120" value="30" />
-            </div>
+          <div class="field">
+            <label class="field-label" for="timelapse-interval" data-i18n="timelapse.interval">Interval (s)</label>
+            <input class="text-input" type="number" id="timelapse-interval" min="0.5" max="86400" step="0.5" value="10" />
           </div>
-          <div class="feature-progress" id="timelapse-progress" data-i18n="timelapse.noSession">No session yet</div>
-          <div class="btn-row">
-            <button class="btn btn-secondary" id="timelapse-start" data-i18n="timelapse.start">Start</button>
-            <button class="btn btn-danger" id="timelapse-stop" disabled data-i18n="timelapse.stopRender">Stop & render</button>
+          <div class="field">
+            <label class="field-label" for="timelapse-fps" data-i18n="timelapse.videoFps">Video FPS</label>
+            <input class="text-input" type="number" id="timelapse-fps" min="1" max="120" value="30" />
           </div>
-          <div class="snapshot-list feature-sessions" id="timelapse-sessions"></div>
         </div>
+        <p class="muted small" id="timelapse-progress" data-i18n="timelapse.noSession">No session yet</p>
+        <div class="row">
+          <button class="btn primary" id="timelapse-start" data-i18n="timelapse.start">Start</button>
+          <button class="btn danger" id="timelapse-stop" disabled data-i18n="timelapse.stopRender">Stop & render</button>
+        </div>
+      </div>`;
+  }
+
+  // Compact timelapse status under the live view.
+  function miniMarkup() {
+    return `
+      <div class="card-head">
+        <h2 data-i18n="timelapse.title">Timelapse</h2>
+        <span class="chip neutral" id="timelapse-mini-state" data-i18n="timelapse.ready">Ready</span>
+      </div>
+      <div class="tl-mini-nums">
+        <div><span class="field-label" data-i18n="timelapse.framesLabel">Frames</span><b class="num" id="timelapse-mini-frames">–</b></div>
+        <div><span class="field-label" data-i18n="timelapse.nextFrame">Next frame</span><b class="num" id="timelapse-mini-next">–</b></div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="timelapse-mini-bar" style="width:0%"></div></div>
+      <div class="row">
+        <button class="btn" id="timelapse-mini-toggle" data-i18n="timelapse.start">Start</button>
+        <button class="btn ghost small" data-goto="recordings" data-i18n="timelapse.manage">Manage</button>
       </div>`;
   }
 
   let profiles = [];
   let recommendedProfile = "";
   let activeProfile = "custom";
+  let lastStatus = null;
   let lastSessions = [];
 
   function profileText(profile, field) {
@@ -95,6 +112,9 @@
     }).join("");
     select.innerHTML = customOption + profileOptions;
     updateProfileDescription();
+    const summary = document.getElementById("sum-image");
+    const active = profiles.find((item) => item.name === activeProfile);
+    if (summary) summary.textContent = active ? profileText(active, 'label') : tr('profile.custom');
   }
 
   async function loadProfiles() {
@@ -150,9 +170,8 @@
   }
 
   async function stopTimelapse() {
-    const button = document.getElementById("timelapse-stop");
-    button.disabled = true;
-    button.textContent = tr("timelapse.rendering");
+    const buttons = [document.getElementById("timelapse-stop"), document.getElementById("timelapse-mini-toggle")];
+    buttons.forEach((button) => { button.disabled = true; button.textContent = tr("timelapse.rendering"); });
     try {
       await request("/api/v1/timelapse/stop", {
         method: "POST",
@@ -162,7 +181,6 @@
     } catch (error) {
       toast(error.message, true);
     } finally {
-      button.textContent = tr("timelapse.stopRender");
       await refreshTimelapse();
     }
   }
@@ -191,29 +209,56 @@
     }
   }
 
-  function renderSessions(sessions) {
-    lastSessions = sessions;
-    const container = document.getElementById("timelapse-sessions");
-    if (!sessions.length) {
-      container.innerHTML = `<div class="hint">${tr('timelapse.noSessions')}</div>`;
+  function setState(element, status) {
+    element.textContent = status.rendering
+      ? tr("timelapse.stateRendering")
+      : status.running ? tr("timelapse.stateRunning") : tr("timelapse.ready");
+    element.className = "chip " + (status.running ? "ok" : status.rendering ? "warn" : "neutral");
+  }
+
+  // The countdown is derived from next_frame_at so it keeps ticking between polls.
+  function renderCountdown() {
+    const status = lastStatus;
+    const next = document.getElementById("timelapse-mini-next");
+    const bar = document.getElementById("timelapse-mini-bar");
+    if (!status || !next || !bar) return;
+    if (!status.running || !status.next_frame_at) {
+      next.textContent = "–";
+      bar.style.width = status.running ? "0%" : "0%";
       return;
     }
-    container.innerHTML = sessions.slice(0, 8).map((session) => {
-      const title = session.title || session.session_id;
-      const video = session.video_available
-        ? `<a class="feature-link" href="/api/v1/timelapse/${encodeURIComponent(session.session_id)}/video">MP4 ↓</a>`
-        : `<button class="feature-link-button" data-render="${session.session_id}">${tr('timelapse.render')}</button>`;
-      return `<div class="feature-session">
-        <div><strong>${title}</strong><small>${tr('timelapse.frames', { count: session.frame_count })}</small></div>
-        <div>${video}<button class="feature-link-button danger" data-delete="${session.session_id}">${tr('timelapse.delete')}</button></div>
-      </div>`;
-    }).join("");
-    container.querySelectorAll("[data-render]").forEach((button) => {
-      button.addEventListener("click", () => renderSession(button.dataset.render));
-    });
-    container.querySelectorAll("[data-delete]").forEach((button) => {
-      button.addEventListener("click", () => deleteSession(button.dataset.delete));
-    });
+    const remaining = Math.max(0, status.next_frame_at - Date.now() / 1000);
+    next.textContent = `${Math.ceil(remaining)} s`;
+    const interval = Number(status.interval_seconds) || 1;
+    bar.style.width = `${Math.min(100, Math.max(0, (1 - remaining / interval) * 100))}%`;
+  }
+
+  function renderStatus(payload) {
+    const status = payload.status;
+    lastStatus = status;
+    if (!status.running) {
+      document.getElementById("timelapse-interval").value = payload.defaults.interval_seconds;
+      document.getElementById("timelapse-fps").value = payload.defaults.output_fps;
+    } else {
+      document.getElementById("timelapse-interval").value = status.interval_seconds;
+      document.getElementById("timelapse-fps").value = status.output_fps;
+    }
+    setState(document.getElementById("timelapse-state"), status);
+    setState(document.getElementById("timelapse-mini-state"), status);
+    document.getElementById("timelapse-progress").textContent = status.session_id
+      ? `${status.title || status.session_id} · ${tr('timelapse.frames', { count: status.frame_count })}${status.error ? ` · ${status.error}` : ""}`
+      : tr("timelapse.noSession");
+    document.getElementById("timelapse-mini-frames").textContent = status.session_id ? status.frame_count : "–";
+    const busy = status.running || status.rendering;
+    document.getElementById("timelapse-start").disabled = busy;
+    const stop = document.getElementById("timelapse-stop");
+    stop.disabled = !status.running || status.rendering;
+    stop.textContent = status.rendering ? tr("timelapse.rendering") : tr("timelapse.stopRender");
+    const mini = document.getElementById("timelapse-mini-toggle");
+    mini.disabled = status.rendering;
+    mini.textContent = status.rendering ? tr("timelapse.rendering") : status.running ? tr("timelapse.stopRender") : tr("timelapse.start");
+    mini.className = status.running ? "btn danger" : "btn";
+    renderCountdown();
   }
 
   async function refreshTimelapse() {
@@ -222,39 +267,44 @@
         request("/api/v1/timelapse/status"),
         request("/api/v1/timelapse/sessions"),
       ]);
-      const status = payload.status;
-      document.getElementById("timelapse-interval").value = status.running
-        ? status.interval_seconds
-        : payload.defaults.interval_seconds;
-      document.getElementById("timelapse-fps").value = status.running
-        ? status.output_fps
-        : payload.defaults.output_fps;
-      document.getElementById("timelapse-state").textContent = status.rendering
-        ? tr("timelapse.stateRendering")
-        : status.running ? tr("timelapse.stateRunning") : tr("timelapse.ready");
-      document.getElementById("timelapse-progress").textContent = status.session_id
-        ? `${tr('timelapse.frames', { count: status.frame_count })} · ${status.session_id}${status.error ? ` · ${status.error}` : ""}`
-        : tr("timelapse.noSession");
-      document.getElementById("timelapse-start").disabled = status.running || status.rendering;
-      document.getElementById("timelapse-stop").disabled = !status.running || status.rendering;
-      renderSessions(sessions);
+      renderStatus(payload);
+      lastSessions = sessions;
+      // app.js merges sessions with snapshots into the recordings timeline.
+      window.dispatchEvent(new CustomEvent("bambucam:timelapsesessions", {
+        detail: { sessions, status: payload.status },
+      }));
     } catch (error) {
       document.getElementById("timelapse-progress").textContent = error.message;
     }
   }
 
   function initialise() {
-    const aside = document.querySelector("aside");
-    if (!aside || document.getElementById("timelapse-card")) return;
-    aside.insertAdjacentHTML("beforeend", cardMarkup());
-    if (window.BambuCamI18n) window.BambuCamI18n.translateDocument(aside);
+    const profileSlot = document.getElementById("profile-slot");
+    const timelapseSlot = document.getElementById("timelapse-slot");
+    const miniSlot = document.getElementById("timelapse-mini");
+    if (!profileSlot || !timelapseSlot || !miniSlot || document.getElementById("timelapse-card")) return;
+    profileSlot.innerHTML = profileMarkup();
+    timelapseSlot.innerHTML = timelapseMarkup();
+    miniSlot.innerHTML = miniMarkup();
+    if (window.BambuCamI18n) {
+      [profileSlot, timelapseSlot, miniSlot].forEach((slot) => window.BambuCamI18n.translateDocument(slot));
+    }
     document.getElementById("feature-profile-select").addEventListener("change", updateProfileDescription);
     document.getElementById("feature-profile-apply").addEventListener("click", applyProfile);
     document.getElementById("timelapse-start").addEventListener("click", startTimelapse);
     document.getElementById("timelapse-stop").addEventListener("click", stopTimelapse);
+    document.getElementById("timelapse-mini-toggle").addEventListener("click", () => {
+      if (lastStatus && lastStatus.running) stopTimelapse();
+      else startTimelapse();
+    });
+    miniSlot.querySelectorAll("[data-goto]").forEach((button) => {
+      button.addEventListener("click", () => window.BambuCamConsole && window.BambuCamConsole.go(button.dataset.goto));
+    });
+    window.BambuCamTimelapse = { render: renderSession, remove: deleteSession, sessions: () => lastSessions };
     loadProfiles().catch((error) => toast(error.message, true));
     refreshTimelapse();
     window.setInterval(refreshTimelapse, 5000);
+    window.setInterval(renderCountdown, 1000);
   }
 
   window.addEventListener("DOMContentLoaded", initialise);
@@ -264,7 +314,6 @@
       const selected = document.getElementById("feature-profile-select").value;
       renderProfileOptions(selected);
     }
-    renderSessions(lastSessions);
     refreshTimelapse();
   });
   window.addEventListener("bambucam:configurationchange", () => {

@@ -214,6 +214,8 @@ async function loadCameraStatus() {
     }
 
     renderCameraSetupHint(s.setup_hint);
+    consoleState.camera = s;
+    renderConsole();
 
     // Conditional controls
     toggleRow('row-autofocus', s.has_autofocus);
@@ -231,6 +233,8 @@ async function loadCameraStatus() {
     const dot = document.getElementById('status-dot');
     dot.className = 'status-dot error';
     document.getElementById('status-text').textContent = tr('header.connectionError');
+    consoleState.camera = null;
+    renderConsole();
   }
 }
 
@@ -353,13 +357,19 @@ async function loadModelCapabilities(status) {
     const preferredFps = preserveDraft ? Number(fpsSel.value) :
       Number(status.framerate || fpsSel.value || 15);
     buildFpsOptions(selectedResolution, preferredFps);
+    // The visible resolution cards mirror the (hidden) select, which stays the source of truth.
+    if (typeof renderResolutionCards === 'function') renderResolutionCards(status, outputs, available);
 
     resSel.onchange = () => {
       markStreamSettingsDirty();
       buildFpsOptions(resSel.value, Number(fpsSel.value));
       if (typeof updateBitrateLimits === 'function') updateBitrateLimits();
+      if (typeof renderResolutionCards === 'function') renderResolutionCards(status, outputs, available);
     };
-    fpsSel.onchange = markStreamSettingsDirty;
+    fpsSel.onchange = () => {
+      markStreamSettingsDirty();
+      if (typeof updateStreamSummary === 'function') updateStreamSummary();
+    };
   } catch(e) { /* keep the current draft if camera capabilities are unavailable */ }
 }
 
@@ -416,6 +426,8 @@ async function loadStreamStatus() {
       setText('chip-rtsp-url', rtsp);
       setText('chip-hls-url',  hls);
     }
+    consoleState.stream = s;
+    renderConsole();
   } catch(e) { /* ignore */ }
 }
 
@@ -428,14 +440,14 @@ async function loadSystemInfo() {
     const tempEl = document.getElementById('sys-temp');
     if (s.cpu_temp_c != null) {
       tempEl.textContent = s.cpu_temp_c.toFixed(1) + ' °C';
-      tempEl.className = 'metric-val' + (s.cpu_temp_c > 75 ? ' crit' : s.cpu_temp_c > 60 ? ' warn' : ' ok');
+      tempEl.className = 'kv-val num' + (s.cpu_temp_c >= 80 ? ' crit' : s.cpu_temp_c >= 70 ? ' warn' : '');
     }
 
     // CPU load
     const cpuEl = document.getElementById('sys-cpu');
     if (s.cpu_usage_pct != null) {
       cpuEl.textContent = s.cpu_usage_pct.toFixed(1) + ' %';
-      cpuEl.className = 'metric-val' + (s.cpu_usage_pct > 85 ? ' crit' : s.cpu_usage_pct > 65 ? ' warn' : '');
+      cpuEl.className = 'kv-val num' + (s.cpu_usage_pct > 85 ? ' crit' : s.cpu_usage_pct > 65 ? ' warn' : '');
     }
 
     if (s.memory) {
@@ -454,6 +466,8 @@ async function loadSystemInfo() {
     setText('sys-pi',     s.pi_model  || '—');
     setText('sys-uptime', s.uptime_seconds != null ? fmtUptime(s.uptime_seconds) : '—');
     toggleRow('system-reboot-section', !!s.can_reboot);
+    consoleState.system = s;
+    renderConsole();
   } catch(e) { /* ignore */ }
 }
 
@@ -488,13 +502,13 @@ function renderThrottling(state) {
   const names = flags => flags.map(flag => labels[flag] || flag).join(', ');
   if (state.active.length) {
     el.textContent = tr('system.throttle.now', { value: names(state.active) });
-    el.className = 'info-val crit';
+    el.className = 'kv-val crit';
   } else if (state.since_boot.length) {
     el.textContent = tr('system.throttle.sinceBoot', { value: names(state.since_boot) });
-    el.className = 'info-val warn';
+    el.className = 'kv-val warn';
   } else {
     el.textContent = tr('system.throttle.ok');
-    el.className = 'info-val';
+    el.className = 'kv-val';
   }
   el.title = state.raw;
 }
@@ -632,18 +646,21 @@ async function restartCamera() {
 }
 
 // ── Snapshot ───────────────────────────────────────────────────────────────
+// Snapshots are always saved, so they show up in the film strip and timeline.
 async function takeSnapshot() {
-  const save = document.getElementById('chk-snap-save').checked;
   btnLoading('btn-snapshot', true, tr('snapshot.taking'));
   try {
-    const url = '/snapshot' + (save ? '?save=true' : '');
-    window.open(url, '_blank');
-    if (save) {
-      toast(tr('snapshot.saved'));
-      await loadSnapshotList();
-    } else {
-      toast(tr('snapshot.opened'));
+    const response = await fetch('/snapshot?save=true', { credentials: 'same-origin' });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(err.error || response.statusText);
     }
+    const before = new Set(snapshotItems.map(item => item.filename));
+    await loadSnapshotList();
+    const added = snapshotItems.find(item => !before.has(item.filename));
+    newestSnapshot = added ? added.filename : null;
+    renderSnapshots();
+    toast(tr('snapshot.saved'));
   } catch(e) {
     toast(tr('common.error', { message: e.message }), 'error');
   } finally {
@@ -653,23 +670,11 @@ async function takeSnapshot() {
 
 async function loadSnapshotList() {
   try {
-    const items = await api('GET', '/snapshot/list');
-    const list = document.getElementById('snapshot-list');
-    if (!items || items.length === 0) {
-      list.innerHTML = `<span style="font-size:0.72rem;color:var(--text-faint)">${tr('snapshot.none')}</span>`;
-      return;
-    }
-    const last5 = items.slice(-5).reverse();
-    list.innerHTML = last5.map(item => `
-      <div class="snapshot-item">
-        <span class="snapshot-name">${item.filename || item.name || '—'}</span>
-        <span class="snapshot-meta">${item.size_kb ? item.size_kb + ' KB' : ''}</span>
-        <a class="snapshot-dl" href="/snapshots/${item.filename}" download title="${tr('snapshot.download')}">↓</a>
-      </div>
-    `).join('');
+    snapshotItems = await api('GET', '/snapshot/list') || [];
   } catch(e) {
-    document.getElementById('snapshot-list').innerHTML = '';
+    snapshotItems = [];
   }
+  renderSnapshots();
 }
 
 // ── Stream settings ────────────────────────────────────────────────────────
@@ -722,6 +727,7 @@ async function applyStreamSettings() {
 
     const img = document.getElementById('stream-img');
     img.src = '/stream?' + Date.now();
+    if (typeof updateStreamSummary === 'function') updateStreamSummary();
 
     toast(tr('stream.applied'));
     if (result.restarted) toast(tr('stream.cameraRestarted'));
@@ -838,18 +844,19 @@ function startUpdatePolling() {
 
 function renderUpdateStatus(s) {
   _lastUpdateStatus = s;
+  consoleState.update = s;
   setText('upd-current', s.current_version ? 'v' + s.current_version : '—');
 
   const latestEl = document.getElementById('upd-latest');
   if (s.update_available) {
     latestEl.textContent = 'v' + s.latest_version;
-    latestEl.className = 'info-val accent';
+    latestEl.className = 'kv-val accent';
   } else if (s.state === 'up_to_date') {
     latestEl.textContent = tr('update.upToDate');
-    latestEl.className = 'info-val';
+    latestEl.className = 'kv-val';
   } else {
     latestEl.textContent = s.latest_version ? 'v' + s.latest_version : '—';
-    latestEl.className = 'info-val';
+    latestEl.className = 'kv-val';
   }
 
   const releaseRow = document.getElementById('upd-release-row');
@@ -900,14 +907,15 @@ function renderUpdateStatus(s) {
     btnCheck.style.display = '';
     btnCheck.disabled = false;
     btnCheck.textContent = tr('update.retry');
-    btnCheck.className = 'btn btn-danger-outline';
+    btnCheck.className = 'btn danger';
   } else {
     btnDo.style.display = 'none';
     btnCheck.style.display = '';
     btnCheck.disabled = false;
     btnCheck.textContent = tr('update.check');
-    btnCheck.className = 'btn btn-secondary';
+    btnCheck.className = 'btn';
   }
+  renderConsole();
 }
 
 // ── Version history / downgrade ────────────────────────────────────────────
@@ -924,13 +932,13 @@ function toggleReleases() {
 
 async function loadReleases() {
   const list = document.getElementById('releases-list');
-  list.innerHTML = `<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">${tr('common.loading')}</div>`;
+  list.replaceChildren(el('div', 'muted small', tr('common.loading')));
   try {
     const releases = await api('GET', '/update/releases');
     _releasesLoaded = true;
     renderReleases(releases);
   } catch(e) {
-    list.innerHTML = `<div style="color:var(--danger);font-size:0.78rem;padding:0.4rem">${tr('common.error', { message: e.message })}</div>`;
+    list.replaceChildren(el('div', 'small update-state-msg error', tr('common.error', { message: e.message })));
   }
 }
 
@@ -938,28 +946,33 @@ function renderReleases(releases) {
   _lastReleases = releases;
   const list = document.getElementById('releases-list');
   if (!releases || releases.length === 0) {
-    list.innerHTML = `<div style="color:var(--text-dim);font-size:0.78rem;text-align:center;padding:0.5rem">${tr('update.noReleases')}</div>`;
+    list.replaceChildren(el('div', 'muted small', tr('update.noReleases')));
     return;
   }
   const currentEl = document.getElementById('upd-current');
   const currentVer = (currentEl ? currentEl.textContent : '').replace(/^v/, '');
-  list.innerHTML = '';
-  releases.forEach((r, i) => {
+  list.replaceChildren(...releases.map((r, i) => {
     const ver = r.tag_name ? r.tag_name.replace(/^v/, '') : '';
     const isCurrent = ver && ver === currentVer;
-    const isLatest  = i === 0;
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;border-radius:6px;background:var(--card-bg2,rgba(255,255,255,0.04))';
-    const badges = [];
-    if (isCurrent) badges.push(`<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--accent);color:#fff">${tr('common.current')}</span>`);
-    if (isLatest && !isCurrent) badges.push(`<span style="font-size:0.68rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--success,#22c55e);color:#fff">${tr('common.latest')}</span>`);
-    const relName = (r.name || '').replace(/^v[\d.]+\s*[-–]?\s*/,'').trim();
+    const row = el('div', 'release-row');
+    row.append(el('span', 'ver', 'v' + ver));
+    if (isCurrent) row.append(el('span', 'chip ok', tr('common.current')));
+    if (i === 0 && !isCurrent) row.append(el('span', 'chip neutral', tr('common.latest')));
+    const relName = (r.name || '').replace(/^v[\d.]+\s*[-–]?\s*/, '').trim();
     const desc = relName || (r.body ? r.body.split('\n').find(l => l.trim()) || '' : '');
-    const descHtml = desc ? `<span style="font-size:0.75rem;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${desc.replace(/"/g,'&quot;')}">${desc}</span>` : '';
-    const installBtn = isCurrent ? '' : `<button onclick="installVersion('${ver}')" style="margin-left:auto;flex-shrink:0;font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--text)'">${tr('common.install')}</button>`;
-    row.innerHTML = `<span style="font-weight:600;font-size:0.82rem;flex-shrink:0">v${ver}</span>${badges.join('')}${descHtml}${installBtn}`;
-    list.appendChild(row);
-  });
+    if (desc) {
+      const descEl = el('span', 'desc', desc);
+      descEl.title = desc;
+      row.append(descEl);
+    }
+    if (!isCurrent) {
+      const install = el('button', 'btn small', tr('common.install'));
+      install.type = 'button';
+      install.addEventListener('click', () => installVersion(ver));
+      row.append(install);
+    }
+    return row;
+  }));
 }
 
 async function installVersion(version) {
@@ -1010,10 +1023,11 @@ function toggleRow(id, show) {
   }).catch(() => {});
 })();
 
-// ── Settings modal ─────────────────────────────────────────────────────────
+// ── Settings drawer ────────────────────────────────────────────────────────
 function openSettings() {
   document.getElementById('settings-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  document.querySelector('#settings-overlay .drawer-head .icon-btn')?.focus();
 }
 function closeSettings() {
   document.getElementById('settings-overlay').classList.remove('open');
@@ -1032,6 +1046,7 @@ window.addEventListener('bambucam:languagechange', () => {
   loadCameraStatus();
   loadStreamStatus();
   loadSnapshotList();
+  renderConsole();
   if (_lastUpdateStatus) renderUpdateStatus(_lastUpdateStatus);
   if (_lastReleases) renderReleases(_lastReleases);
   const releasesPanel = document.getElementById('releases-panel');
@@ -1050,6 +1065,476 @@ window.addEventListener('bambucam:configurationchange', () => {
     loadNetworkConfig(),
   ]);
 });
+
+// ── Console layout: tabs, health, checklist, recordings ───────────────────
+const consoleState = { camera: null, stream: null, system: null, update: null };
+let snapshotItems = [];
+let newestSnapshot = null;
+let timelapseSessions = [];
+let timelapseStatus = null;
+let timelineFilter = 'all';
+let timelineLimit = 40;
+let consoleReady = false;
+const CONSOLE_VIEWS = ['live', 'recordings', 'system'];
+const THEME_KEY = 'bambucam.theme';
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = String(text);
+  return node;
+}
+
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#i-' + name);
+  svg.append(use);
+  return svg;
+}
+
+function showView(view) {
+  const target = CONSOLE_VIEWS.includes(view) ? view : 'live';
+  CONSOLE_VIEWS.forEach(name => {
+    const section = document.getElementById('view-' + name);
+    if (section) section.hidden = name !== target;
+  });
+  document.querySelectorAll('.tabs button[data-view]').forEach(button => {
+    if (button.dataset.view === target) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  if (location.hash.slice(1) !== target) history.replaceState(null, '', '#' + target);
+  // Snapshots are not polled; refresh them when the recordings are opened.
+  if (target === 'recordings' && consoleReady) loadSnapshotList();
+}
+
+function applyTheme(mode) {
+  if (mode === 'light' || mode === 'dark') document.documentElement.dataset.theme = mode;
+  else delete document.documentElement.dataset.theme;
+  document.querySelectorAll('[data-theme-set]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.themeSet === (mode || 'auto')));
+  });
+}
+
+function setTheme(mode) {
+  try {
+    if (mode === 'auto') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, mode);
+  } catch (_) { /* storage unavailable: theme lasts for this page only */ }
+  applyTheme(mode);
+}
+
+function toggleFullscreen() {
+  const view = document.getElementById('stream-view');
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (view.requestFullscreen) view.requestFullscreen().catch(() => {});
+}
+
+function pixelsOf(resolution) {
+  return String(resolution).split('x').map(Number).reduce((a, b) => a * b, 1);
+}
+
+function updateStreamSummary() {
+  const res = document.getElementById('sel-resolution')?.value;
+  const fps = document.getElementById('sel-framerate')?.value;
+  if (res) setText('sum-stream', res.replace('x', '×') + (fps ? ' · ' + fps + ' fps' : ''));
+}
+
+// Resolution cards mirror #sel-resolution and add aspect ratio and field of view.
+function renderResolutionCards(status, outputs, available) {
+  const host = document.getElementById('res-cards');
+  const select = document.getElementById('sel-resolution');
+  if (!host || !select) return;
+  const selected = select.value;
+  const cards = [...available].sort((a, b) => pixelsOf(b) - pixelsOf(a)).map(resolution => {
+    const output = outputs.find(item => item.resolution === resolution) || {};
+    const maximum = resolutionMaxFps[resolution] ?? output.max_fps ?? output.sensor_max_fps;
+    const card = el('button', 'res-card');
+    card.type = 'button';
+    card.setAttribute('role', 'radio');
+    card.setAttribute('aria-checked', String(resolution === selected));
+    card.append(el('span', 'res', resolution.replace('x', '×')));
+    card.append(el('span', 'fps', maximum != null ? tr('camera.upToFps', { value: Math.floor(maximum) }) : ''));
+    const meta = el('span', 'meta');
+    if (output.aspect) meta.append(el('span', '', output.aspect));
+    if (output.fov_width_pct != null) {
+      meta.append(output.fov_width_pct >= 97
+        ? el('span', '', tr('camera.mode.fullWidth'))
+        : el('span', 'crop', tr('camera.mode.cropped', { value: output.fov_width_pct })));
+    }
+    if (output.kind === 'scaled') meta.append(el('span', '', tr('camera.mode.scaledFrom', { value: output.sensor_resolution })));
+    if (output.limited_by === 'h264_encoder') meta.append(el('span', '', tr('camera.mode.encoderLimit')));
+    if (output.source === 'model_fallback') meta.append(el('span', '', tr('camera.mode.fallback')));
+    if (meta.childNodes.length) card.append(meta);
+    card.addEventListener('click', () => {
+      if (select.value === resolution) return;
+      select.value = resolution;
+      if (typeof select.onchange === 'function') select.onchange();
+    });
+    return card;
+  });
+  host.replaceChildren(...cards);
+  renderSensorDiagram(status, outputs, selected);
+  updateStreamSummary();
+}
+
+// Draw which part of the sensor the selected output reads (crop rectangles from rpicam).
+function renderSensorDiagram(status, outputs, resolution) {
+  const figure = document.getElementById('sensor-diagram');
+  if (!figure) return;
+  const native = (status.native_sensor_modes || []).filter(mode => Array.isArray(mode.crop));
+  const output = outputs.find(item => item.resolution === resolution);
+  const mode = output && native.find(item => item.resolution === output.sensor_resolution);
+  if (!mode) { figure.classList.add('hidden'); return; }
+  const width = Math.max(...native.map(item => item.crop[0] + item.crop[2]));
+  const height = Math.max(...native.map(item => item.crop[1] + item.crop[3]));
+  const [x, y, w, h] = mode.crop;
+  const [ow, oh] = resolution.split('x').map(Number);
+  const visibleW = Math.min(w, h * ow / oh);
+  const visibleH = Math.min(h, w * oh / ow);
+  const svg = document.getElementById('sensor-svg');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const full = document.getElementById('sensor-full');
+  full.setAttribute('width', width); full.setAttribute('height', height); full.setAttribute('rx', width * 0.015);
+  const crop = document.getElementById('sensor-crop');
+  crop.setAttribute('x', x + (w - visibleW) / 2); crop.setAttribute('y', y + (h - visibleH) / 2);
+  crop.setAttribute('width', visibleW); crop.setAttribute('height', visibleH); crop.setAttribute('rx', width * 0.01);
+  const pct = Math.round(100 * visibleW / width);
+  setText('sensor-caption', pct >= 97
+    ? tr('sensor.full', { width, height })
+    : tr('sensor.cropped', { value: pct, width, height }));
+  figure.classList.remove('hidden');
+}
+
+function renderLiveOverlay() {
+  const camera = consoleState.camera;
+  const mode = document.getElementById('ov-mode');
+  const fov = document.getElementById('ov-fov');
+  if (!mode || !fov) return;
+  if (!camera || !camera.resolution) { mode.textContent = '—'; fov.classList.add('hidden'); return; }
+  const parts = [camera.resolution.replace('x', '×'), camera.framerate + ' fps'];
+  const rtsp = consoleState.stream?.rtsp;
+  if (rtsp?.running && rtsp.bitrate_kbps) parts.push((rtsp.bitrate_kbps / 1000).toFixed(1) + ' Mbit/s');
+  mode.textContent = parts.join(' · ');
+  const output = (camera.video_output_modes || camera.output_modes || []).find(item => item.resolution === camera.resolution);
+  const pct = output?.fov_width_pct;
+  if (pct != null && pct < 97) {
+    fov.textContent = tr('camera.mode.cropped', { value: pct });
+    fov.classList.remove('hidden');
+  } else {
+    fov.classList.add('hidden');
+  }
+}
+
+function throttleNames(flags) {
+  const labels = {
+    under_voltage: tr('system.throttle.under_voltage'),
+    freq_capped: tr('system.throttle.freq_capped'),
+    throttled: tr('system.throttle.throttled'),
+    soft_temp_limit: tr('system.throttle.soft_temp_limit'),
+  };
+  return flags.map(flag => labels[flag] || flag).join(', ');
+}
+
+function temperatureLevel(celsius) {
+  if (celsius == null) return 'info';
+  return celsius >= 80 ? 'crit' : celsius >= 70 ? 'warn' : 'ok';
+}
+
+// Each check: { level: ok|warn|crit|info, title, value, text }.
+function buildChecks() {
+  const { camera, stream, system, update } = consoleState;
+  const checks = [];
+  if (camera) {
+    checks.push(camera.running
+      ? { level: 'ok', title: tr('checks.camera'), value: [camera.sensor || camera.model, camera.backend].filter(Boolean).join(' · '),
+          text: tr('checks.cameraOk', { resolution: (camera.resolution || '—').replace('x', '×'), fps: camera.framerate || '—' }) }
+      : { level: 'crit', title: tr('checks.camera'), value: camera.model || '—',
+          text: camera.setup_hint ? tr('checks.cameraMissingHint') : tr('checks.cameraStopped') });
+  } else {
+    checks.push({ level: 'crit', title: tr('checks.camera'), value: '—', text: tr('header.connectionError') });
+  }
+  if (stream) {
+    const rtsp = stream.rtsp || {};
+    if (!rtsp.running) {
+      checks.push({ level: 'info', title: tr('checks.stream'), value: 'MJPEG', text: tr('checks.streamOff') });
+    } else if (!rtsp.publisher_running || rtsp.mediamtx_running === false) {
+      checks.push({ level: 'warn', title: tr('checks.stream'), value: 'RTSP', text: tr('checks.streamDown') });
+    } else {
+      checks.push({ level: 'ok', title: tr('checks.stream'), value: 'RTSP' + (rtsp.hls_port ? ' · HLS' : ''),
+        text: tr('checks.streamOk', { bitrate: ((rtsp.bitrate_kbps || 0) / 1000).toFixed(1) }) });
+    }
+    const mjpeg = stream.mjpeg || {};
+    checks.push({ level: mjpeg.running === false ? 'warn' : 'ok', title: tr('checks.preview'),
+      value: tr(mjpeg.clients === 1 ? 'checks.clientsOne' : 'checks.clientsMany', { count: mjpeg.clients || 0 }),
+      text: mjpeg.actual_fps != null ? tr('checks.previewFps', { value: mjpeg.actual_fps }) : tr('checks.previewIdle') });
+  }
+  if (system) {
+    const temp = system.cpu_temp_c;
+    if (temp != null) {
+      checks.push({ level: temperatureLevel(temp), title: tr('checks.temperature'), value: temp.toFixed(1) + ' °C',
+        text: tr(temp >= 80 ? 'checks.temperatureCrit' : temp >= 70 ? 'checks.temperatureWarn' : 'checks.temperatureOk') });
+    }
+    const throttling = system.throttling;
+    if (throttling) {
+      if (throttling.active.length) {
+        checks.push({ level: 'crit', title: tr('checks.power'), value: throttling.raw,
+          text: tr('checks.powerNow', { value: throttleNames(throttling.active) }) + ' ' + tr('checks.powerAdvice') });
+      } else if (throttling.since_boot.length) {
+        checks.push({ level: 'warn', title: tr('checks.power'), value: throttling.raw,
+          text: tr('checks.powerSinceBoot', { value: throttleNames(throttling.since_boot) }) + ' ' + tr('checks.powerAdvice') });
+      } else {
+        checks.push({ level: 'ok', title: tr('checks.power'), value: throttling.raw, text: tr('checks.powerOk') });
+      }
+    }
+    if (system.disk) {
+      const { free_gb: free, total_gb: total } = system.disk;
+      const low = free < 1 || (total > 0 && free / total < 0.1);
+      checks.push({ level: low ? 'warn' : 'ok', title: tr('checks.storage'), value: free.toFixed(1) + ' GB',
+        text: tr(low ? 'checks.storageLow' : 'checks.storageOk', { free: free.toFixed(1), total: total.toFixed(1) }) });
+    }
+  }
+  if (update) {
+    if (update.state === 'error') {
+      checks.push({ level: 'warn', title: tr('checks.software'), value: 'v' + (update.current_version || '?'), text: update.error || tr('update.unknownError') });
+    } else if (update.update_available) {
+      checks.push({ level: 'info', title: tr('checks.software'), value: 'v' + update.current_version,
+        text: tr('checks.updateAvailable', { version: update.latest_version }) });
+    } else {
+      checks.push({ level: 'ok', title: tr('checks.software'), value: update.current_version ? 'v' + update.current_version : '—',
+        text: update.state === 'up_to_date' ? tr('update.upToDateMessage') : tr('checks.updateUnknown') });
+    }
+  }
+  return checks;
+}
+
+function renderChecks(checks) {
+  const host = document.getElementById('checks');
+  if (!host) return;
+  const iconFor = { ok: 'ok', warn: 'warn', crit: 'crit', info: 'info' };
+  host.replaceChildren(...checks.map(check => {
+    const row = el('div', 'check ' + check.level);
+    row.append(icon(iconFor[check.level]), el('b', '', check.title), el('span', 'val', check.value || ''), el('p', '', check.text || ''));
+    return row;
+  }));
+  const ok = checks.filter(check => check.level === 'ok' || check.level === 'info').length;
+  setText('checks-summary', tr('checks.summary', { ok, total: checks.length }));
+  const problems = checks.filter(check => check.level === 'warn' || check.level === 'crit');
+  const badge = document.getElementById('tab-system-badge');
+  if (badge) {
+    badge.textContent = problems.length;
+    badge.classList.toggle('hidden', problems.length === 0);
+    badge.classList.toggle('crit', problems.some(check => check.level === 'crit'));
+  }
+}
+
+function renderHealthChips() {
+  const { camera, system } = consoleState;
+  const cameraChip = document.getElementById('hc-camera');
+  if (cameraChip) cameraChip.className = 'hchip' + (camera && camera.running ? '' : ' crit');
+  const tempChip = document.getElementById('hc-temp');
+  if (tempChip) {
+    const temp = system?.cpu_temp_c;
+    tempChip.classList.toggle('hidden', temp == null);
+    if (temp != null) {
+      const level = temperatureLevel(temp);
+      tempChip.className = 'hchip ' + level;
+      setText('hc-temp-text', temp.toFixed(1) + ' °C');
+    }
+  }
+  const powerChip = document.getElementById('hc-power');
+  const throttling = system?.throttling;
+  if (powerChip) {
+    const active = throttling?.active?.length;
+    const sinceBoot = throttling?.since_boot?.length;
+    powerChip.classList.toggle('hidden', !active && !sinceBoot);
+    powerChip.className = 'hchip ' + (active ? 'crit' : 'warn') + (!active && !sinceBoot ? ' hidden' : '');
+    if (active) setText('hc-power-text', tr('checks.powerChipNow', { value: throttleNames(throttling.active) }));
+    else if (sinceBoot) setText('hc-power-text', tr('checks.powerChipBoot', { value: throttleNames(throttling.since_boot) }));
+  }
+}
+
+function renderConsole() {
+  renderHealthChips();
+  renderChecks(buildChecks());
+  renderLiveOverlay();
+}
+
+// ── Recordings: film strip and day-grouped timeline ──────────────────────
+function snapshotUrl(item) {
+  return '/snapshots/' + encodeURIComponent(item.filename);
+}
+
+function renderSnapshots() {
+  const film = document.getElementById('snapshot-film');
+  if (film) {
+    const recent = snapshotItems.slice(-12).reverse();
+    if (!recent.length) {
+      film.replaceChildren(el('span', 'film-empty', tr('snapshot.none')));
+    } else {
+      film.replaceChildren(...recent.map(item => {
+        const link = el('a', item.filename === newestSnapshot ? 'new' : '');
+        link.href = snapshotUrl(item);
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.title = item.filename;
+        const img = el('img');
+        img.loading = 'lazy';
+        img.alt = tr('recordings.snapshot') + ' ' + item.filename;
+        img.src = snapshotUrl(item);
+        link.append(img);
+        return link;
+      }));
+    }
+  }
+  renderTimeline();
+}
+
+function dayLabel(date) {
+  const language = window.BambuCamI18n ? window.BambuCamI18n.getLanguage() : 'en';
+  const today = new Date();
+  const startOf = value => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((startOf(today) - startOf(date)) / 86400000);
+  if (days === 0) return tr('recordings.today');
+  if (days === 1) return tr('recordings.yesterday');
+  return date.toLocaleDateString(language, { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function timelineEntries() {
+  const entries = [];
+  if (timelineFilter !== 'timelapse') {
+    snapshotItems.forEach(item => entries.push({ type: 'snapshot', at: (item.created || 0) * 1000, item }));
+  }
+  if (timelineFilter !== 'snapshot') {
+    timelapseSessions.forEach(item => entries.push({ type: 'timelapse', at: (item.started_at || 0) * 1000, item }));
+  }
+  return entries.sort((a, b) => b.at - a.at);
+}
+
+function timelineRow(entry) {
+  const language = window.BambuCamI18n ? window.BambuCamI18n.getLanguage() : 'en';
+  const row = el('div', 'card entry');
+  const time = el('time', '', new Date(entry.at).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' }));
+  time.dateTime = new Date(entry.at).toISOString();
+  const thumb = el('div', 'thumb');
+  const body = el('div');
+  const actions = el('div', 'actions');
+  const linkButton = (label, href, download) => {
+    const link = el('a', 'btn small', label);
+    link.href = href;
+    if (download) link.setAttribute('download', '');
+    else { link.target = '_blank'; link.rel = 'noopener'; }
+    return link;
+  };
+  if (entry.type === 'snapshot') {
+    const item = entry.item;
+    if (item.filename === newestSnapshot) row.classList.add('new');
+    const img = el('img');
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = snapshotUrl(item);
+    thumb.append(img);
+    const kind = el('div', 'kind');
+    kind.append(icon('camera'), document.createTextNode(item.size_kb ? item.size_kb + ' KB' : ''));
+    body.append(el('div', 'title', tr('recordings.snapshot')), kind);
+    actions.append(linkButton(tr('recordings.open'), snapshotUrl(item)), linkButton('↓', snapshotUrl(item), true));
+  } else {
+    const item = entry.item;
+    const running = timelapseStatus && timelapseStatus.running && timelapseStatus.session_id === item.session_id;
+    thumb.append(icon('film'));
+    const kind = el('div', 'kind');
+    const details = [tr('timelapse.frames', { count: item.frame_count })];
+    if (item.video_available) details.push((item.video_bytes / 1048576).toFixed(1) + ' MB');
+    else if (!running) details.push(tr('recordings.notRendered'));
+    kind.append(icon('film'), document.createTextNode(details.join(' · ')));
+    const title = el('div', 'title', item.title || item.session_id);
+    if (running) title.append(document.createTextNode(' '), el('span', 'chip ok', tr('timelapse.stateRunning')));
+    body.append(title, kind);
+    const id = encodeURIComponent(item.session_id);
+    if (item.video_available) {
+      actions.append(linkButton(tr('recordings.play'), `/api/v1/timelapse/${id}/video`));
+    } else if (!running) {
+      const render = el('button', 'btn small', tr('timelapse.render'));
+      render.type = 'button';
+      render.addEventListener('click', () => window.BambuCamTimelapse?.render(item.session_id));
+      actions.append(render);
+    }
+    if (!running) {
+      const remove = el('button', 'btn small danger', tr('timelapse.delete'));
+      remove.type = 'button';
+      remove.addEventListener('click', () => window.BambuCamTimelapse?.remove(item.session_id));
+      actions.append(remove);
+    }
+  }
+  row.append(time, thumb, body, actions);
+  return row;
+}
+
+function renderTimeline() {
+  const host = document.getElementById('timeline');
+  if (!host) return;
+  const entries = timelineEntries();
+  setText('rec-summary', tr('recordings.summary', { snapshots: snapshotItems.length, timelapses: timelapseSessions.length }));
+  if (!entries.length) {
+    host.replaceChildren(el('div', 'card timeline-empty', tr('recordings.empty')));
+    toggleRow('timeline-more', false);
+    return;
+  }
+  const groups = new Map();
+  entries.slice(0, timelineLimit).forEach(entry => {
+    const label = dayLabel(new Date(entry.at));
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(entry);
+  });
+  host.replaceChildren(...[...groups].map(([label, list]) => {
+    const day = el('section', 'day');
+    day.append(el('h2', 'day-label', label), ...list.map(timelineRow));
+    return day;
+  }));
+  toggleRow('timeline-more', entries.length > timelineLimit);
+}
+
+function showMoreTimeline() {
+  timelineLimit += 40;
+  renderTimeline();
+}
+
+window.addEventListener('bambucam:timelapsesessions', event => {
+  timelapseSessions = event.detail.sessions || [];
+  timelapseStatus = event.detail.status || null;
+  renderTimeline();
+});
+
+(function initConsole() {
+  document.querySelectorAll('.tabs button[data-view]').forEach(button => {
+    button.addEventListener('click', () => showView(button.dataset.view));
+  });
+  document.querySelectorAll('[data-goto]').forEach(button => {
+    button.addEventListener('click', () => showView(button.dataset.goto));
+  });
+  document.querySelectorAll('[data-theme-set]').forEach(button => {
+    button.addEventListener('click', () => setTheme(button.dataset.themeSet));
+  });
+  document.querySelectorAll('#rec-filter button[data-filter]').forEach(button => {
+    button.addEventListener('click', () => {
+      timelineFilter = button.dataset.filter;
+      timelineLimit = 40;
+      document.querySelectorAll('#rec-filter button').forEach(other => {
+        other.setAttribute('aria-pressed', String(other === button));
+      });
+      renderTimeline();
+    });
+  });
+  window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+  let savedTheme = 'auto';
+  try { savedTheme = localStorage.getItem(THEME_KEY) || 'auto'; } catch (_) { /* default */ }
+  applyTheme(savedTheme);
+  showView(location.hash.slice(1));
+  consoleReady = true;
+  window.showToast = toast;
+  window.BambuCamConsole = { go: showView };
+})();
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 init();
