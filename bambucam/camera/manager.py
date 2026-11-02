@@ -10,6 +10,12 @@ from bambucam.camera.backends.base import CameraBackend
 from bambucam.camera.detector import DetectedCamera, detect_cameras
 from bambucam.camera.models import CameraModel, Resolution
 from bambucam.camera.modes import video_output_capabilities
+from bambucam.system_info import (
+    compute_module_camera_hint,
+    compute_module_camera_hint_text,
+    has_hardware_h264,
+    pi_capability_tier,
+)
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +30,7 @@ class CameraManager:
         self._resolution: Optional[Resolution] = None
         self._framerate: int = 30
         self._settings: dict = {}
+        self._h264_enabled = False
         self._watchdog_thread: Optional[threading.Thread] = None
         self._watchdog_running = False
 
@@ -36,10 +43,14 @@ class CameraManager:
         """Detect cameras and select one after applying an optional backend filter."""
         cameras = self.detected_cameras()
         if not cameras:
-            raise RuntimeError(
+            message = (
                 "No cameras found. Check connections and run "
                 "'rpicam-hello --list-cameras' or 'v4l2-ctl --list-devices'."
             )
+            hint = compute_module_camera_hint()
+            if hint:
+                message += " " + compute_module_camera_hint_text(hint)
+            raise RuntimeError(message)
 
         backend = (preferred_backend or "auto").lower()
         if backend not in {"auto", "picamera2", "v4l2"}:
@@ -100,6 +111,7 @@ class CameraManager:
         self._resolution = selected_resolution
         self._framerate = int(framerate)
         self._settings = settings or {}
+        self._h264_enabled = enable_lores
 
         backend = self._create_backend(detected, enable_lores=enable_lores, encode_size=encode_size)
         backend.configure(self._resolution, self._framerate, **self._settings)
@@ -331,8 +343,14 @@ class CameraManager:
             if self._detected
             else []
         )
+        if self._h264_enabled and has_hardware_h264():
+            # Imported here: bambucam.encoding imports the camera package.
+            from bambucam.encoding import limit_to_hardware_h264
+
+            video_modes = limit_to_hardware_h264(video_modes, pi_capability_tier())
         return {
             "running": self.is_running,
+            "setup_hint": None if self._detected else compute_module_camera_hint(),
             "model": self.model.name if self.model else None,
             "sensor": self.model.sensor if self.model else None,
             "backend": self._detected.backend if self._detected else None,

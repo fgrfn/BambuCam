@@ -247,6 +247,14 @@ def main() -> None:
         cameras = detect_cameras()
         if not cameras:
             print("No cameras detected.")
+            from bambucam.system_info import (
+                compute_module_camera_hint,
+                compute_module_camera_hint_text,
+            )
+
+            hint = compute_module_camera_hint()
+            if hint:
+                print(compute_module_camera_hint_text(hint))
             sys.exit(1)
         print(f"Found {len(cameras)} camera(s):")
         for position, camera in enumerate(cameras):

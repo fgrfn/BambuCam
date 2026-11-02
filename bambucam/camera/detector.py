@@ -196,7 +196,8 @@ def _parse_libcamera_modes(block: str) -> list[SensorMode]:
             return []
         if width <= 0 or height <= 0 or not math.isfinite(fps) or fps <= 0:
             continue
-        mode = SensorMode(Resolution(width, height), fps, pixel_format)
+        crop_rect = tuple(int(value) for value in crop.groups()) if crop else None
+        mode = SensorMode(Resolution(width, height), fps, pixel_format, crop_rect)
         if mode not in modes:
             modes.append(mode)
     return modes

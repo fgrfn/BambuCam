@@ -49,3 +49,12 @@ legacy excessive integer bitrates are reduced and saved. Startup also reduces
 and persists values above the actual encode-stream limit, logging the change.
 New API updates are rejected rather than silently clamped. Profiles resolve
 their preset bitrates against the same effective limit.
+
+## Hardware encoder frame-rate limit
+
+Raspberry Pi boards up to the Pi 4 / CM4 encode H.264 on the VideoCore, which
+is specified for 1080p30 (the macroblock rate of H.264 level 4.0). When the
+H.264 stream is enabled on such a board, each video mode's maximum frame rate
+is capped at what the encoder sustains for that mode's encode size, and the
+WebUI marks capped modes as "H.264 encoder limit". The Pi 5 / CM5 has no
+hardware H.264 encoder and is not capped this way.

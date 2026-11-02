@@ -200,3 +200,57 @@ def test_quality_stream_profile_uses_video_capabilities_not_5mp_stills():
     quality = service.resolve("quality")
     assert quality["resolution"] == "1920x1080"
     assert quality["framerate"] == 15
+
+
+def test_output_modes_report_aspect_and_visible_sensor_width():
+    camera = _parse_libcamera_output(OV5647)[0]
+    outputs = {item["resolution"]: item for item in camera.output_modes}
+    # 1920x1080 is a centre window (1928 of 2592 columns); 720p is cropped from the
+    # binned full-frame mode, so it keeps the whole width despite fewer pixels.
+    assert outputs["1920x1080"]["fov_width_pct"] == 74
+    assert outputs["1280x720"]["fov_width_pct"] == 100
+    assert outputs["1296x972"]["fov_width_pct"] == 100
+    assert outputs["640x480"]["fov_width_pct"] == 99
+    assert outputs["1920x1080"]["aspect"] == "16:9"
+    assert outputs["1296x972"]["aspect"] == "4:3"
+    assert camera.sensor_modes[2].crop == (348, 434, 1928, 1080)
+
+
+def test_fallback_modes_carry_crop_rectangles():
+    from bambucam.camera.modes import OV5647_FALLBACK_MODES, aspect_label
+
+    assert all(mode.crop for mode in OV5647_FALLBACK_MODES)
+    assert aspect_label(Resolution(3280, 2464)) == "4:3"
+    assert aspect_label(Resolution(2560, 1080)) == "64:27"
+
+
+def test_hardware_encoder_caps_frame_rate_by_macroblock_rate():
+    from bambucam.encoding import hardware_h264_fps_limit, limit_to_hardware_h264
+
+    assert hardware_h264_fps_limit((1920, 1080)) == 30
+    assert hardware_h264_fps_limit((1296, 972)) == 49
+    modes = [
+        {"resolution": "1296x972", "max_fps": 46},
+        {"resolution": "1536x864", "max_fps": 120},
+    ]
+    limited = limit_to_hardware_h264(modes, tier=3)
+    # OV5647 stays within the encoder; a 120 fps IMX708 mode does not.
+    assert limited[0] == modes[0]
+    assert limited[1] == {"resolution": "1536x864", "max_fps": 47, "limited_by": "h264_encoder"}
+
+
+def test_camera_status_applies_encoder_limit_only_with_hardware_h264():
+    camera = _parse_libcamera_output(OV5647)[0]
+    manager = CameraManager()
+    manager._detected = camera
+    manager._h264_enabled = True
+    with (
+        patch("bambucam.camera.manager.has_hardware_h264", return_value=True),
+        patch(
+            "bambucam.encoding.limit_to_hardware_h264",
+            side_effect=lambda modes, tier: [{**m, "max_fps": 1} for m in modes],
+        ),
+    ):
+        assert {m["max_fps"] for m in manager.status()["video_output_modes"]} == {1}
+    with patch("bambucam.camera.manager.has_hardware_h264", return_value=False):
+        assert {m["max_fps"] for m in manager.status()["video_output_modes"]} != {1}

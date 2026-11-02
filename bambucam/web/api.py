@@ -1,8 +1,11 @@
 """REST API blueprint — all JSON endpoints live under /api/v1."""
 
+import errno
 import logging
 import socket
+import tempfile
 from copy import deepcopy
+from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -47,8 +50,39 @@ def _json_object() -> dict:
     return data
 
 
+def _check_storage_dir(value: str, label: str) -> None:
+    """Reject a snapshot/timelapse directory the service cannot actually write.
+
+    The systemd unit only grants write access below /var/lib/bambucam, /mnt and
+    /media; anything else fails later with a read-only error, so probe it now.
+    """
+    path = Path(value)
+    if not path.is_absolute():
+        raise ValueError(f"{label} must be an absolute path")
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path, prefix=".bambucam-write-test."):
+            pass
+    except OSError as exc:
+        hint = ""
+        if exc.errno in (errno.EROFS, errno.EACCES, errno.EPERM):
+            hint = (
+                " The bambucam service can only write below /var/lib/bambucam, /mnt and "
+                "/media, and the directory must be writable by the bambucam user."
+            )
+        raise ValueError(f"{label} {value} is not writable: {exc.strerror}.{hint}") from exc
+
+
 def _validate_config_update(data: dict) -> None:
     merged = validate_config_update(data, _cfg().as_dict())
+    streaming = data.get("streaming", {})
+    for section, label in (
+        ("snapshot", "Snapshot directory"),
+        ("timelapse", "Timelapse directory"),
+    ):
+        save_dir = streaming.get(section, {}).get("save_dir")
+        if save_dir is not None and save_dir != _cfg().get("streaming", section, "save_dir"):
+            _check_storage_dir(save_dir, label)
     camera = data.get("camera", {})
     rtsp = data.get("streaming", {}).get("rtsp", {})
     if {"resolution", "framerate"} & camera.keys() or "bitrate_kbps" in rtsp:

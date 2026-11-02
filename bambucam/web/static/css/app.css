@@ -426,6 +426,7 @@
     }
     .info-val.accent { color: var(--accent); }
     .info-val.warn   { color: var(--warn); }
+    .info-val.crit   { color: var(--error); }
     .info-val.error  { color: var(--error); }
 
     /* ── Form fields ───────────────────────────────────────────────────── */
