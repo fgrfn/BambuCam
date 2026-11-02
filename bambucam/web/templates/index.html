@@ -145,6 +145,7 @@
           <summary><svg class="chev" aria-hidden="true"><use href="#i-chev"/></svg><span data-i18n="stream.settings">Stream settings</span><span class="sum num" id="sum-stream"></span></summary>
           <div class="group">
             <div class="res-cards" id="res-cards" role="radiogroup" aria-label="Resolution" data-i18n-aria-label="camera.resolution"></div>
+            <p class="field-hint legacy-hint hidden" id="res-legacy-hint" data-i18n="camera.legacyModesHint">Datasheet values such as 720p60 or 640×480 at 90 fps apply to the legacy camera stack. Under libcamera this sensor delivers at most the rates listed here.</p>
             <select id="sel-resolution" hidden aria-hidden="true" tabindex="-1"></select>
             <figure class="sensor hidden" id="sensor-diagram">
               <svg id="sensor-svg" viewBox="0 0 100 75" role="img" aria-labelledby="sensor-caption">

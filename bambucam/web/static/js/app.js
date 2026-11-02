@@ -340,10 +340,10 @@ async function loadModelCapabilities(status) {
     // (e.g. 32 fps from OV5647 1080p); V4L2 devices only accept their discrete rates.
     const STANDARD_FPS = [60, 50, 30, 25, 20, 15, 10, 5];
     function buildFpsOptions(res, preferredFps) {
-      const maximum = Math.max(1, Math.floor(Number(
-        resolutionMaxFps[res] ?? model.max_framerate
-      ) || 30));
-      const candidates = status.backend === 'picamera2' ? STANDARD_FPS : model.supported_framerates;
+      const libcamera = status.backend === 'picamera2';
+      const rawMaximum = Number(resolutionMaxFps[res] ?? model.max_framerate) || 30;
+      const maximum = Math.max(1, libcamera ? displayMaxFps(rawMaximum) : Math.floor(rawMaximum));
+      const candidates = libcamera ? STANDARD_FPS : model.supported_framerates;
       const values = [...new Set([...candidates, maximum, preferredFps]
         .map(Number))]
         .filter(f => Number.isInteger(f) && f >= 1 && f <= maximum)
@@ -377,6 +377,16 @@ async function loadModelCapabilities(status) {
       if (typeof updateStreamSummary === 'function') updateStreamSummary();
     };
   } catch(e) { /* keep the current draft if camera capabilities are unavailable */ }
+}
+
+// Sensor maxima are odd (OV5647: 32.81, 62.5). Show the common rate just below
+// when it is close (32.81 → 30, 62.5 → 60), otherwise the whole number (46.34 → 46).
+function displayMaxFps(maximum) {
+  const value = Number(maximum);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const common = [240, 200, 120, 100, 90, 60, 50, 30, 25, 24, 20, 15, 10, 5]
+    .find(rate => rate <= value + 0.01);
+  return common != null && common >= value * 0.9 ? common : Math.floor(value);
 }
 
 // ── Stream status ──────────────────────────────────────────────────────────
@@ -1187,7 +1197,7 @@ function pixelsOf(resolution) {
 function updateStreamSummary() {
   const res = document.getElementById('sel-resolution')?.value;
   const fps = document.getElementById('sel-framerate')?.value;
-  if (res) setText('sum-stream', res.replace('x', '×') + (fps ? ' · ' + fps + ' fps' : ''));
+  if (res) setText('sum-stream', res.replace('x', '×') + (fps ? ' @ ' + fps : ''));
 }
 
 // Resolution cards mirror #sel-resolution and add aspect ratio and field of view.
@@ -1196,6 +1206,7 @@ function renderResolutionCards(status, outputs, available) {
   const select = document.getElementById('sel-resolution');
   if (!host || !select) return;
   const selected = select.value;
+  const libcamera = status.backend === 'picamera2';
   const cards = [...available].sort((a, b) => pixelsOf(b) - pixelsOf(a)).map(resolution => {
     const output = outputs.find(item => item.resolution === resolution) || {};
     const maximum = resolutionMaxFps[resolution] ?? output.max_fps ?? output.sensor_max_fps;
@@ -1203,8 +1214,13 @@ function renderResolutionCards(status, outputs, available) {
     card.type = 'button';
     card.setAttribute('role', 'radio');
     card.setAttribute('aria-checked', String(resolution === selected));
-    card.append(el('span', 'res', resolution.replace('x', '×')));
-    card.append(el('span', 'fps', maximum != null ? tr('camera.upToFps', { value: Math.floor(maximum) }) : ''));
+    // "1920×1080 @ 30 fps": the highest rate this mode delivers.
+    const title = el('span', 'res', resolution.replace('x', '×'));
+    if (maximum != null) {
+      const fps = libcamera ? displayMaxFps(maximum) : Math.floor(maximum);
+      title.append(el('span', 'at', ' @ ' + fps + ' fps'));
+    }
+    card.append(title);
     const meta = el('span', 'meta');
     if (output.aspect) meta.append(el('span', '', output.aspect));
     if (output.fov_width_pct != null) {
@@ -1224,6 +1240,8 @@ function renderResolutionCards(status, outputs, available) {
     return card;
   });
   host.replaceChildren(...cards);
+  // The OV5647's box and datasheet list 720p60 and 480p90, which only the legacy stack had.
+  toggleRow('res-legacy-hint', /ov5647/i.test(status.sensor || ''));
   renderSensorDiagram(status, outputs, selected);
   updateStreamSummary();
 }
@@ -1268,7 +1286,7 @@ function renderLiveOverlay() {
     view.style.setProperty('--stream-ar', `${width} / ${height}`);
     view.style.setProperty('--stream-ar-num', String(width / height));
   }
-  const parts = [camera.resolution.replace('x', '×'), camera.framerate + ' fps'];
+  const parts = [camera.resolution.replace('x', '×') + ' @ ' + camera.framerate + ' fps'];
   const rtsp = consoleState.stream?.rtsp;
   if (rtsp?.running && rtsp.bitrate_kbps) parts.push((rtsp.bitrate_kbps / 1000).toFixed(1) + ' Mbit/s');
   mode.textContent = parts.join(' · ');

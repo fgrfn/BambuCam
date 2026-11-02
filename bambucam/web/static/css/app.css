@@ -285,7 +285,8 @@ input[type="range"]:disabled { opacity: 0.5; }
 .res-card:hover { background: var(--raised); }
 .res-card[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .res-card .res { font-family: var(--mono); font-weight: 600; }
-.res-card .fps { font-family: var(--mono); font-size: 0.8125rem; color: var(--text-dim); }
+.res-card .at { font-weight: 500; color: var(--text-dim); }
+.legacy-hint { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--sunken); color: var(--text-dim); }
 .res-card .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 0.8125rem; color: var(--text-dim); }
 .res-card .meta .crop { color: var(--warn); font-weight: 600; }
 .sensor { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; }
