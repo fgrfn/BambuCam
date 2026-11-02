@@ -310,10 +310,9 @@
         <p class="muted small" id="checks-summary"></p>
       </div>
     </div>
-    <div class="sys">
-      <div class="card checks" id="checks"></div>
+    <div class="tiles" id="checks"></div>
 
-      <div class="sys-side">
+    <div class="sys-cards">
         <div class="card pad" id="update-card">
           <div class="card-head">
             <h2 data-i18n="update.title">Software update</h2>
@@ -357,33 +356,53 @@
           <div class="kv"><span data-i18n="system.ramFree">Free RAM</span><span class="kv-val num"><span id="sys-ram-free">—</span> / <span id="sys-ram-total">—</span></span></div>
           <div class="kv"><span data-i18n="system.diskFree">Free disk</span><span class="kv-val num"><span id="sys-disk-free">—</span> / <span id="sys-disk-total">—</span></span></div>
           <div class="kv hidden" id="sys-throttle-row"><span data-i18n="system.power">Power / throttling</span><span class="kv-val" id="sys-throttle">—</span></div>
+          <div class="card-actions">
+            <button class="btn" onclick="restartApplication()"><svg aria-hidden="true"><use href="#i-restart"/></svg><span data-i18n="restart.app">Restart BambuCam</span></button>
+            <div id="system-reboot-section" class="hidden">
+              <button class="btn danger" id="btn-reboot-system" onclick="rebootSystem()">
+                <span data-i18n="systemReboot.action">Restart Raspberry Pi</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="card-head"><h2 data-i18n="checks.camera">Camera</h2></div>
           <div class="kv"><span data-i18n="camera.model">Model</span><span class="kv-val" id="cam-model">—</span></div>
           <div class="kv"><span data-i18n="camera.sensor">Sensor</span><span class="kv-val" id="cam-sensor">—</span></div>
           <div class="kv"><span data-i18n="camera.backend">Backend</span><span class="kv-val" id="cam-backend">—</span></div>
           <div class="kv"><span data-i18n="camera.resolution">Resolution</span><span class="kv-val num" id="cam-res">—</span></div>
           <div class="kv"><span data-i18n="camera.framerate">Frame rate</span><span class="kv-val num"><span id="cam-fps">—</span><span class="muted" id="cam-fps-actual"></span></span></div>
-          <div class="row">
-            <button class="btn" onclick="restartApplication()"><svg aria-hidden="true"><use href="#i-restart"/></svg><span data-i18n="restart.app">Restart BambuCam</span></button>
-          </div>
-          <div id="system-reboot-section" class="hidden">
-            <div class="row">
-              <button class="btn danger" id="btn-reboot-system" onclick="rebootSystem()">
-                <span data-i18n="systemReboot.action">Restart Raspberry Pi</span>
-              </button>
-            </div>
-            <p class="muted small" data-i18n="systemReboot.hint">Restarts the operating system, not just BambuCam.</p>
+          <div class="card-actions">
+            <button class="btn" onclick="restartCamera()"><svg aria-hidden="true"><use href="#i-restart"/></svg><span data-i18n="camera.restart">Restart camera</span></button>
           </div>
         </div>
-
-        <div class="card pad links">
-          <a href="/metrics" target="_blank" rel="noopener">Metrics ↗</a>
-          <a href="/api/v1/diagnostics/download" data-i18n="footer.diagnostics">Diagnostics package ↓</a>
-          <a href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-github"/></svg>GitHub ↗</a>
-        </div>
-      </div>
     </div>
   </section>
 </main>
+
+<footer class="footer">
+  <span class="footer-brand">BambuCam <span class="num" id="footer-version">—</span></span>
+  <button type="button" class="footer-update hidden" id="footer-update" data-goto="system"></button>
+  <span class="spacer"></span>
+  <a href="/metrics" target="_blank" rel="noopener">Metrics</a>
+  <a href="/api/v1/diagnostics/download" data-i18n="footer.diagnostics">Diagnostics package ↓</a>
+  <a href="https://github.com/fgrfn/bambucam" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
+</footer>
+
+<!-- Shown once per session when the background check found a newer release. -->
+<div class="update-popup" id="update-popup" role="dialog" aria-labelledby="update-popup-title" aria-describedby="update-popup-text" hidden>
+  <span class="update-popup-icon"><svg aria-hidden="true"><use href="#i-info"/></svg></span>
+  <div class="update-popup-body">
+    <b id="update-popup-title" data-i18n="updatePopup.title">Update available</b>
+    <p id="update-popup-text"></p>
+    <div class="row">
+      <button type="button" class="btn primary small" id="update-popup-view" data-i18n="updatePopup.view">View update</button>
+      <button type="button" class="btn ghost small" id="update-popup-later" data-i18n="updatePopup.later">Later</button>
+    </div>
+  </div>
+  <button type="button" class="icon-btn small" id="update-popup-close" aria-label="Close" data-i18n-aria-label="common.close"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
+</div>
 
 <!-- Toast container -->
 <div id="toast-container" aria-live="polite"></div>

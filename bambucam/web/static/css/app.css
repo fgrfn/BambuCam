@@ -312,19 +312,27 @@ input[type="range"]:disabled { opacity: 0.5; }
 .timeline-empty { padding: 28px; text-align: center; color: var(--text-dim); }
 .timeline-more { display: flex; justify-content: center; }
 
-/* ── System checklist ───────────────────────────────────────────────── */
-.sys { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
-.sys-side { display: grid; gap: 16px; }
-.check { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 3px 12px; align-items: center; padding: 14px 18px; }
-.check + .check { border-top: 1px solid var(--border); }
-.check > svg { width: 22px; height: 22px; }
-.check.ok > svg { color: var(--ok); }
-.check.warn > svg { color: var(--warn); }
-.check.crit > svg { color: var(--error); }
-.check.info > svg { color: var(--text-faint); }
-.check .val { font-family: var(--mono); font-size: 0.875rem; color: var(--text-dim); text-align: right; }
-.check p { grid-column: 2 / -1; font-size: 0.875rem; color: var(--text-dim); }
-.check.warn p, .check.crit p { color: var(--text); }
+/* ── System: health tiles, then detail cards ────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { display: grid; gap: 6px; align-content: start; padding: 16px 18px; }
+.tile-head { display: flex; align-items: center; gap: 10px; }
+.tile-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--raised); color: var(--text-faint); }
+.tile-icon svg { width: 18px; height: 18px; }
+.tile-title { font-size: 0.875rem; font-weight: 600; color: var(--text-dim); }
+.tile-state { margin-left: auto; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
+.tile-value { font-size: 1.6rem; font-weight: 650; line-height: 1.2; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.tile-text { font-size: 0.875rem; color: var(--text-dim); }
+.tile.ok .tile-icon { background: var(--ok-soft); color: var(--ok); }
+.tile.ok .tile-state { color: var(--ok); }
+.tile.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn-soft) 55%, var(--surface)); }
+.tile.warn .tile-icon { background: var(--warn-soft); color: var(--warn); }
+.tile.warn .tile-state { color: var(--warn); }
+.tile.crit { border-color: color-mix(in srgb, var(--error) 45%, var(--border)); background: color-mix(in srgb, var(--error-soft) 55%, var(--surface)); }
+.tile.crit .tile-icon { background: var(--error-soft); color: var(--error); }
+.tile.crit .tile-state { color: var(--error); }
+.tile.warn .tile-text, .tile.crit .tile-text { color: var(--text); }
+.sys-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 6px; }
 .kv { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 0.9375rem; }
 .card-head + .kv { border-top: 0; }
 .kv > span:first-child { color: var(--text-dim); }
@@ -347,9 +355,29 @@ input[type="range"]:disabled { opacity: 0.5; }
 .release-row .ver { font-family: var(--mono); font-weight: 600; flex: none; }
 .release-row .desc { color: var(--text-dim); font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .release-row .btn { margin-left: auto; }
-.links { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.links a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; text-decoration: none; }
-.links svg { width: 15px; height: 15px; }
+
+/* ── Footer and update notice ───────────────────────────────────────── */
+.footer {
+  display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; margin-top: 8px;
+  padding-block: 16px max(16px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px)); padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
+  border-top: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font-size: 0.875rem;
+}
+.footer-brand { font-weight: 600; color: var(--text); }
+.footer a { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); text-decoration: none; }
+.footer a:hover { color: var(--text); }
+.footer svg { width: 15px; height: 15px; }
+.footer-update { border: 0; background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; font-size: 0.8125rem; padding: 2px 10px; border-radius: 999px; }
+.update-popup {
+  position: fixed; z-index: 45; display: flex; gap: 12px; align-items: flex-start; width: min(380px, calc(100vw - 32px));
+  right: max(20px, env(safe-area-inset-right, 0px)); bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  padding: 14px 12px 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.25); animation: toast-in 0.25s ease;
+}
+.update-popup-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--accent-soft); color: var(--accent-ink); }
+.update-popup-icon svg { width: 18px; height: 18px; }
+.update-popup-body { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.update-popup-body p { font-size: 0.875rem; color: var(--text-dim); }
 
 /* ── Settings drawer ────────────────────────────────────────────────── */
 .settings-overlay { position: fixed; inset: 0; z-index: 40; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }

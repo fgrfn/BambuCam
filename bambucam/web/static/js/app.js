@@ -189,6 +189,7 @@ async function init() {
   setInterval(loadCameraStatus, 5000);
   setInterval(loadSystemInfo, 10000);
   setInterval(loadStreamStatus, 8000);
+  setInterval(refreshUpdateStatus, 10 * 60 * 1000);
 }
 
 // ── Camera status ──────────────────────────────────────────────────────────
@@ -915,6 +916,8 @@ function renderUpdateStatus(s) {
     btnCheck.textContent = tr('update.check');
     btnCheck.className = 'btn';
   }
+  if (s.current_version) setText('footer-version', 'v' + s.current_version);
+  renderUpdateNotice(s);
   renderConsole();
 }
 
@@ -985,11 +988,51 @@ async function loadInitialUpdateStatus() {
     renderUpdateStatus(s);
     if (s.current_version) {
       document.getElementById('hdr-version').textContent = 'v' + s.current_version;
+      setText('footer-version', 'v' + s.current_version);
     }
     if (['downloading', 'installing', 'restarting'].includes(s.state)) {
       startUpdatePolling();
     }
   } catch(e) { /* ignore */ }
+}
+
+// The server checks GitHub in the background; pages left open pick up its result.
+async function refreshUpdateStatus() {
+  if (_updatePollTimer) return;
+  try {
+    renderUpdateStatus(await api('GET', '/update/status'));
+  } catch (e) { /* offline or restarting */ }
+}
+
+const UPDATE_POPUP_KEY = 'bambucam.updatePopupDismissed';
+
+// Footer note and a one-time notice per browser session for a newer release.
+function renderUpdateNotice(s) {
+  const footer = document.getElementById('footer-update');
+  const popup = document.getElementById('update-popup');
+  const busy = ['downloading', 'installing', 'restarting'].includes(s.state);
+  const available = !!s.update_available && !busy;
+  if (footer) {
+    footer.classList.toggle('hidden', !available);
+    if (available) footer.textContent = tr('footer.updateAvailable', { version: s.latest_version });
+  }
+  if (!popup) return;
+  let dismissed = null;
+  try { dismissed = sessionStorage.getItem(UPDATE_POPUP_KEY); } catch (_) { /* storage unavailable */ }
+  if (!available || dismissed === s.latest_version) {
+    popup.hidden = true;
+    return;
+  }
+  setText('update-popup-text', tr('updatePopup.text', { version: s.latest_version, current: s.current_version }));
+  popup.hidden = false;
+  popup.dataset.version = s.latest_version;
+}
+
+function dismissUpdatePopup() {
+  const popup = document.getElementById('update-popup');
+  if (!popup) return;
+  try { sessionStorage.setItem(UPDATE_POPUP_KEY, popup.dataset.version || ''); } catch (_) { /* storage unavailable */ }
+  popup.hidden = true;
 }
 
 // ── DOM helpers ────────────────────────────────────────────────────────────
@@ -1248,9 +1291,10 @@ function buildChecks() {
   const checks = [];
   if (camera) {
     checks.push(camera.running
-      ? { level: 'ok', title: tr('checks.camera'), value: [camera.sensor || camera.model, camera.backend].filter(Boolean).join(' · '),
-          text: tr('checks.cameraOk', { resolution: (camera.resolution || '—').replace('x', '×'), fps: camera.framerate || '—' }) }
-      : { level: 'crit', title: tr('checks.camera'), value: camera.model || '—',
+      ? { level: 'ok', title: tr('checks.camera'),
+          value: (camera.resolution || '—').replace('x', '×') + ' · ' + (camera.framerate || '—') + ' fps',
+          text: [camera.sensor || camera.model, camera.backend].filter(Boolean).join(' · ') }
+      : { level: 'crit', title: tr('checks.camera'), value: tr('checks.cameraStoppedValue'),
           text: camera.setup_hint ? tr('checks.cameraMissingHint') : tr('checks.cameraStopped') });
   } else {
     checks.push({ level: 'crit', title: tr('checks.camera'), value: '—', text: tr('header.connectionError') });
@@ -1262,8 +1306,8 @@ function buildChecks() {
     } else if (!rtsp.publisher_running || rtsp.mediamtx_running === false) {
       checks.push({ level: 'warn', title: tr('checks.stream'), value: 'RTSP', text: tr('checks.streamDown') });
     } else {
-      checks.push({ level: 'ok', title: tr('checks.stream'), value: 'RTSP' + (rtsp.hls_port ? ' · HLS' : ''),
-        text: tr('checks.streamOk', { bitrate: ((rtsp.bitrate_kbps || 0) / 1000).toFixed(1) }) });
+      checks.push({ level: 'ok', title: tr('checks.stream'), value: ((rtsp.bitrate_kbps || 0) / 1000).toFixed(1) + ' Mbit/s',
+        text: tr('checks.streamOk', { protocols: 'RTSP' + (rtsp.hls_port ? ' · HLS' : '') }) });
     }
     const mjpeg = stream.mjpeg || {};
     checks.push({ level: mjpeg.running === false ? 'warn' : 'ok', title: tr('checks.preview'),
@@ -1279,13 +1323,13 @@ function buildChecks() {
     const throttling = system.throttling;
     if (throttling) {
       if (throttling.active.length) {
-        checks.push({ level: 'crit', title: tr('checks.power'), value: throttling.raw,
-          text: tr('checks.powerNow', { value: throttleNames(throttling.active) }) + ' ' + tr('checks.powerAdvice') });
+        checks.push({ level: 'crit', title: tr('checks.power'), value: throttleNames(throttling.active),
+          text: tr('checks.powerNow', { value: throttling.raw }) + ' ' + tr('checks.powerAdvice') });
       } else if (throttling.since_boot.length) {
-        checks.push({ level: 'warn', title: tr('checks.power'), value: throttling.raw,
-          text: tr('checks.powerSinceBoot', { value: throttleNames(throttling.since_boot) }) + ' ' + tr('checks.powerAdvice') });
+        checks.push({ level: 'warn', title: tr('checks.power'), value: throttleNames(throttling.since_boot),
+          text: tr('checks.powerSinceBoot', { value: throttling.raw }) + ' ' + tr('checks.powerAdvice') });
       } else {
-        checks.push({ level: 'ok', title: tr('checks.power'), value: throttling.raw, text: tr('checks.powerOk') });
+        checks.push({ level: 'ok', title: tr('checks.power'), value: tr('checks.powerStable'), text: tr('checks.powerOk') });
       }
     }
     if (system.disk) {
@@ -1313,10 +1357,16 @@ function renderChecks(checks) {
   const host = document.getElementById('checks');
   if (!host) return;
   const iconFor = { ok: 'ok', warn: 'warn', crit: 'crit', info: 'info' };
+  const stateFor = { ok: 'checks.stateOk', warn: 'checks.stateWarn', crit: 'checks.stateCrit', info: 'checks.stateInfo' };
   host.replaceChildren(...checks.map(check => {
-    const row = el('div', 'check ' + check.level);
-    row.append(icon(iconFor[check.level]), el('b', '', check.title), el('span', 'val', check.value || ''), el('p', '', check.text || ''));
-    return row;
+    const tile = el('div', 'card tile ' + check.level);
+    const head = el('div', 'tile-head');
+    const badge = el('span', 'tile-icon');
+    badge.append(icon(iconFor[check.level]));
+    head.append(badge, el('span', 'tile-title', check.title), el('span', 'tile-state', tr(stateFor[check.level])));
+    tile.append(head, el('div', 'tile-value', check.value || '—'));
+    if (check.text) tile.append(el('p', 'tile-text', check.text));
+    return tile;
   }));
   const ok = checks.filter(check => check.level === 'ok' || check.level === 'info').length;
   setText('checks-summary', tr('checks.summary', { ok, total: checks.length }));
@@ -1527,6 +1577,13 @@ window.addEventListener('bambucam:timelapsesessions', event => {
     });
   });
   window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+  document.getElementById('update-popup-view')?.addEventListener('click', () => {
+    dismissUpdatePopup();
+    showView('system');
+    document.getElementById('update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  document.getElementById('update-popup-later')?.addEventListener('click', dismissUpdatePopup);
+  document.getElementById('update-popup-close')?.addEventListener('click', dismissUpdatePopup);
   let savedTheme = 'auto';
   try { savedTheme = localStorage.getItem(THEME_KEY) || 'auto'; } catch (_) { /* default */ }
   applyTheme(savedTheme);
