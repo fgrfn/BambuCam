@@ -145,21 +145,25 @@ class SnapshotService:
                         continue
                     if self._unlink_item(item):
                         deleted.append(str(item["filename"]))
-                    snapshots.remove(item)
+                        snapshots.remove(item)
 
             if self._max_count > 0:
-                while len(snapshots) > self._max_count:
-                    item = snapshots.pop(0)
+                for item in list(snapshots):
+                    if len(snapshots) <= self._max_count:
+                        break
                     if self._unlink_item(item):
                         deleted.append(str(item["filename"]))
+                        snapshots.remove(item)
 
             if self._max_bytes > 0:
                 total_bytes = sum(int(item["size"]) for item in snapshots)
-                while snapshots and total_bytes > self._max_bytes:
-                    item = snapshots.pop(0)
+                for item in list(snapshots):
+                    if total_bytes <= self._max_bytes:
+                        break
                     if self._unlink_item(item):
                         deleted.append(str(item["filename"]))
-                    total_bytes -= int(item["size"])
+                        snapshots.remove(item)
+                        total_bytes -= int(item["size"])
 
             if deleted:
                 log.info("Snapshot retention removed %d file(s)", len(deleted))
