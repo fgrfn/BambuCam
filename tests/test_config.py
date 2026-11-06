@@ -80,6 +80,20 @@ class TestConfig:
         assert cfg.get("streaming", "mjpeg", "enabled") is True
         path.unlink()
 
+    @pytest.mark.parametrize(
+        ("content", "message"),
+        [
+            ("camera: [unterminated\n", "Could not load configuration"),
+            ("- camera\n- streaming\n", "must contain a YAML object"),
+        ],
+    )
+    def test_invalid_config_file_stops_startup(self, tmp_path, content, message):
+        path = tmp_path / "invalid.yaml"
+        path.write_text(content, encoding="utf-8")
+
+        with pytest.raises(ValueError, match=message):
+            Config().load(path)
+
     def test_inaccessible_optional_user_config_does_not_prevent_startup(
         self, tmp_path, monkeypatch, caplog
     ):
