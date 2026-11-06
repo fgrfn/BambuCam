@@ -305,10 +305,13 @@ class Config:
 def _load_yaml(path: Path) -> dict:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception as exc:
-        log.warning("Failed to load config from %s: %s", path, exc)
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        raise ValueError(f"Could not load configuration {path}: {exc}") from exc
+    if data is None:
         return {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Configuration {path} must contain a YAML object")
+    return data
 
 
 def _optional_path_exists(path: Path) -> bool:
