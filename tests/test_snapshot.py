@@ -122,6 +122,33 @@ def test_retention_can_be_updated_at_runtime(tmp_path: Path):
     assert service.list_snapshots()[0]["filename"] == "snapshot_two.jpg"
 
 
+def test_retention_keeps_failed_deletions_in_count_and_byte_accounting(tmp_path: Path, monkeypatch):
+    now = time.time()
+    old = _write_snapshot(tmp_path, "snapshot_old.jpg", b"12345", now - 20)
+    new = _write_snapshot(tmp_path, "snapshot_new.jpg", b"67890", now - 10)
+    service = SnapshotService(
+        lambda: b"new",
+        snapshot_dir=tmp_path,
+        max_count=1,
+        max_bytes=5,
+    )
+    original_unlink = Path.unlink
+
+    def fail_for_old(path, *args, **kwargs):
+        if path == old:
+            raise PermissionError("read-only filesystem")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_for_old)
+
+    deleted = service.prune(now=now)
+
+    assert deleted == [new.name]
+    assert old.exists()
+    assert not new.exists()
+    assert service.retention_status()["count"] == 1
+
+
 def _test_app(service: SnapshotService) -> Flask:
     app = Flask(__name__)
     app.config["snapshot_service"] = service
