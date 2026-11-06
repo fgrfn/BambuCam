@@ -156,6 +156,25 @@ class TestReleaseSelection:
 
         get.assert_not_called()
 
+    def test_package_selection_ignores_unrelated_release_assets(self):
+        release = ReleaseInfo(
+            **{
+                **_MOCK_RELEASE.__dict__,
+                "assets": [
+                    {"name": "other-9.9.9-py3-none-any.whl"},
+                    {"name": "bambucam-0.9.0-py3-none-any.whl"},
+                    {"name": "bambucam-1.0.0-py3-none-any.whl"},
+                ],
+            }
+        )
+
+        assert Updater._select_package_asset(release)["name"] == ("bambucam-1.0.0-py3-none-any.whl")
+
+    def test_release_with_only_unrelated_packages_is_not_installable(self):
+        release = _api_release("v1.0.0", ["other-1.0.0-py3-none-any.whl"])
+
+        assert _updater()._is_installable_release(release) is False
+
 
 class TestChecksums:
     def test_parses_standard_checksum_file(self):

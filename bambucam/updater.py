@@ -7,6 +7,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -377,13 +378,22 @@ class Updater:
 
     @staticmethod
     def _select_package_asset(release: ReleaseInfo) -> Optional[dict]:
-        wheels = [asset for asset in release.assets if str(asset.get("name", "")).endswith(".whl")]
+        wheel_version = release.version.replace("-", "_")
+        wheel_pattern = re.compile(
+            rf"^bambucam-{re.escape(wheel_version)}-py3-none-any\.whl$",
+            re.IGNORECASE,
+        )
+        wheels = [
+            asset for asset in release.assets if wheel_pattern.fullmatch(str(asset.get("name", "")))
+        ]
         if wheels:
             return wheels[0]
+        sdist_names = {
+            f"bambucam-{release.version}.tar.gz".lower(),
+            f"bambucam-{release.version}.tgz".lower(),
+        }
         sdists = [
-            asset
-            for asset in release.assets
-            if str(asset.get("name", "")).endswith((".tar.gz", ".tgz"))
+            asset for asset in release.assets if str(asset.get("name", "")).lower() in sdist_names
         ]
         return sdists[0] if sdists else None
 
